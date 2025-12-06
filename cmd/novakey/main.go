@@ -1,3 +1,10 @@
+// Copyright © 2025 Tobor (IT Senior Systems Engineer)
+// All rights reserved.
+//
+// This file is part of the PassLink software suite.
+// Unauthorized copying, distribution, modification, or reverse‑engineering
+// of this source code, in whole or in part, is strictly prohibited.
+//
 // cmd/novakey/main.go
 // NovaKey – Quantum-resistant BLE password filler
 // Works on Linux with go-ble/ble and crypto/mlkem (Go 1.24+)
