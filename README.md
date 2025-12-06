@@ -1,11 +1,11 @@
-# PassLink – Quantum‑Resistant BLE Bridge for Password‑Manager Secrets  
-**What is PassLink?**  
-*PassLink is a one‑tap, post‑quantum‑secure agent that runs as a background service, waits for a phone to push a Kyber‑768 encrypted password/MFA payload over BLE, decrypts it, and auto‑types that secret into a selected text box.*  
+# NovaKey – Quantum‑Resistant BLE Bridge for Password‑Manager Secrets  
+**What is NovaKey?**  
+*NovaKey is a one‑tap, post‑quantum‑secure agent that runs as a background service, waits for a phone to push a Kyber‑768 encrypted password/MFA payload over BLE, decrypts it, and auto‑types that secret into a selected text box.*  
 
 **Why would I need this?**  
 *Even with a password manager you still have to remember at least one master password, the one that unlocks the vault. 
 That password often becomes the weakest link because it’s either memorised or stored insecurely.  
-PassLink lets you store a strong, high‑entropy master password on your phone and retrieve it with a single tap via a secure, post‑quantum BLE connection. 
+NovaKey lets you store a strong, high‑entropy master password on your phone and retrieve it with a single tap via a secure, post‑quantum BLE connection. 
 The desktop agent automatically types the secret for you, so you never have to recall or manually enter that critical password again. 
 In short, it gives you the security of a truly strong master password without the burden of remembering it.*
 
@@ -13,8 +13,8 @@ In short, it gives you the security of a truly strong master password without th
 
 <div align="center">
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/yourorg/passlink?label=release)](https://github.com/yourorg/passlink/releases)  
-[![Go Report Card](https://goreportcard.com/badge/github.com/yourorg/passlink)](https://goreportcard.com/report/github.com/yourorg/passlink)  
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/OsbornePro/NovaKey?label=release)](https://github.com/OsbornePro/NovaKey/releases)  
+[![Go Report Card](https://goreportcard.com/badge/github.com/OsbornePro/NovaKey)](https://goreportcard.com/report/github.com/OsbornePro/NovaKey)  
 [![License: Commercial](https://img.shields.io/badge/license-Commercial-blue.svg)](./LICENSE.txt)  
 
 </div>  
@@ -41,8 +41,8 @@ In short, it gives you the security of a truly strong master password without th
 
 ## Overview  
 
-PassLink is a **stand‑alone BLE peripheral** that sits on a workstation (*Windows, macOS, or Linux*).  
-* The **phone app** (*your existing Lumo/PassLink mobile client*) acts as a BLE **central**.  
+NovaKey is a **stand‑alone BLE peripheral** that sits on a workstation (*Windows, macOS, or Linux*).  
+* The **phone app** (*your existing Lumo/NovaKey mobile client*) acts as a BLE **central**.  
 * When the phone discovers the peripheral, it **writes** a single BLE characteristic containing:  
 ```[Kyber‑768 ciphertext] || [XChaCha20‑Poly1305 encrypted payload]```
 * The peripheral **decapsulates** the Kyber ciphertext, derives a 256‑bit session key, **decrypts** the payload, and **auto‑types** the password/MFA code into whatever window currently has focus.  
@@ -120,47 +120,47 @@ Underlying crypto: Kyber‑768 → XChaCha20‑Poly1305
 1. **Download the latest release**  
 
    ```powershell
-   Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/OsbornePro/PassLink/releases/latest/download/passlink-windows-amd64.zip" -OutFile "$env:USERPROFILE\Downloads\passlink.zip"
-   Expand-Archive -Force "$env:USERPROFILE\Downloads\passlink.zip" -DestinationPath "$env:ProgramFiles\PassLink"
+   Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/OsbornePro/NovaKey/releases/latest/download/novakey-windows-amd64.zip" -OutFile "$env:USERPROFILE\Downloads\novakey.zip"
+   Expand-Archive -Force "$env:USERPROFILE\Downloads\novakey.zip" -DestinationPath "$env:ProgramFiles\NovaKey"
    # You can also use tar. Expand-Archive is known to have issues
-   tar -xf $env:USERPROFILE\Downloads\passlink.zip -C $env:ProgramFiles\PassLink
+   tar -xf $env:USERPROFILE\Downloads\novakey.zip -C $env:ProgramFiles\NovaKey
 
 2. Install the service (requires admin rights)
    ```powershell
-   cd $env:ProgramFiles\PassLink
-   .\passlink.exe install
-   .\passlink.exe start
+   cd $env:ProgramFiles\NovaKey
+   .\novakey.exe install
+   .\novakey.exe start
    ```
    
-The service will now advertise the BLE service 0000c0de‑0000‑1000‑8000‑00805f9b34fb under the name PassLinkAgent.
+The service will now advertise the BLE service 0000c0de‑0000‑1000‑8000‑00805f9b34fb under the name NovaKeyAgent.
 
 3. Verify it is running
    ```powershell
-   Get-Service PassLink
+   Get-Service NovaKey
    # or
-   sc query PassLink
+   sc query NovaKey
    ```
 
 4. Stop / Uninstall (*if you ever need to*)
    ```powershell
-   .\passlink.exe stop
-   .\passlink.exe uninstall
+   .\novakey.exe stop
+   .\novakey.exe uninstall
    ```
 
 ### Linux / Unix / OpenBSD – Daemon
 **macOS**
    ```bash
 # 1. Install binary
-sudo mkdir -p /Library/PrivilegedHelperTools/com.passlink.agent
-sudo cp passlink-macos-amd64 /Library/PrivilegedHelperTools/com.passlink.agent/passlink
-sudo chmod 755 /Library/PrivilegedHelperTools/com.passlink.agent/passlink
+sudo mkdir -p /Library/PrivilegedHelperTools/com.novakey.agent
+sudo cp novakey-macos-amd64 /Library/PrivilegedHelperTools/com.novakey.agent/novakey
+sudo chmod 755 /Library/PrivilegedHelperTools/com.novakey.agent/novakey
 
 # 2. Code-sign with required Bluetooth entitlement
-sudo codesign --remove-signature "/Library/PrivilegedHelperTools/com.passlink.agent/passlink" 2>/dev/null || true
+sudo codesign --remove-signature "/Library/PrivilegedHelperTools/com.novakey.agent/novakey" 2>/dev/null || true
 sudo /usr/bin/codesign --force --options runtime \
      --entitlements - \
      --sign - \
-     "/Library/PrivilegedHelperTools/com.passlink.agent/passlink" <<EOF
+     "/Library/PrivilegedHelperTools/com.novakey.agent/novakey" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -174,27 +174,27 @@ EOF
 
 # 3. Install the daemon plist
 ```bash
-cat <<EOF | sudo tee /Library/LaunchDaemons/com.passlink.agent.plist
+cat <<EOF | sudo tee /Library/LaunchDaemons/com.novakey.agent.plist
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.passlink.agent</string>
+    <string>com.novakey.agent</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Library/PrivilegedHelperTools/com.passlink.agent/passlink</string>
+        <string>/Library/PrivilegedHelperTools/com.novakey.agent/novakey</string>
     </array>
     <key>MachServices</key>
     <dict>
-        <key>com.passlink.agent</key><true/>
+        <key>com.novakey.agent</key><true/>
     </dict>
     <key>KeepAlive</key><true/>
     <key>RunAtLoad</key><true/>
 
     <!-- Use unified logging instead of files -->
-    <key>StandardOutPath</key><string>/var/log/com.passlink.agent.stdout.log</string>
-    <key>StandardErrorPath</key><string>/var/log/com.passlink.agent.stderr.log</string>
+    <key>StandardOutPath</key><string>/var/log/com.novakey.agent.stdout.log</string>
+    <key>StandardErrorPath</key><string>/var/log/com.novakey.agent.stderr.log</string>
 
     <!-- Apple-recommended hardening -->
     <key>EnablePressuredExit</key><false/>
@@ -205,46 +205,46 @@ EOF
 
 # 4. Register and start (macOS 13+ preferred way)
 sudo /System/Library/Frameworks/ServiceManagement.framework/Versions/A/Resources/SMAppService daemon register \
-    /Library/LaunchDaemons/com.passlink.agent.plist
+    /Library/LaunchDaemons/com.novakey.agent.plist
 # Fallback for older macOS versions
-# sudo launchctl load -w /Library/LaunchDaemons/com.passlink.agent.plist
+# sudo launchctl load -w /Library/LaunchDaemons/com.novakey.agent.plist
 
 # Start it
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.passlink.agent.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.novakey.agent.plist
 
 # Or simply:
-sudo launchctl load -w /Library/LaunchDaemons/com.passlink.agent.plist
+sudo launchctl load -w /Library/LaunchDaemons/com.novakey.agent.plist
 
 # 5. View logs
-log show --predicate 'process == "passlink"' --last 15m --info --debug
+log show --predicate 'process == "novakey"' --last 15m --info --debug
 # or tail the files
-tail -f /var/log/com.passlink.agent.{stdout,stderr}.log
+tail -f /var/log/com.novakey.agent.{stdout,stderr}.log
 ```
 
 **Linux (systemd)**
 
 ```bash
 # 1. Install binary
-sudo mkdir -p /opt/passlink
-sudo cp passlink-linux-amd64 /opt/passlink/passlink
-sudo chmod 755 /opt/passlink/passlink
+sudo mkdir -p /opt/novakey
+sudo cp novakey-linux-amd64 /opt/novakey/novakey
+sudo chmod 755 /opt/novakey/novakey
 
 # 2. Create dedicated unprivileged user
-sudo useradd --system --no-create-home --user-group passlink || true
+sudo useradd --system --no-create-home --user-group novakey || true
 
 # 3. systemd unit
-sudo tee /etc/systemd/system/passlink.service > /dev/null <<EOF
+sudo tee /etc/systemd/system/novakey.service > /dev/null <<EOF
 [Unit]
-Description=PassLink BLE Agent
+Description=NovaKey BLE Agent
 After=bluetooth.target
 Wants=bluetooth.target
 
 [Service]
-ExecStart=/opt/passlink/passlink
+ExecStart=/opt/novakey/novakey
 Restart=always
 RestartSec=5
-User=passlink
-Group=passlink
+User=novakey
+Group=novakey
 SupplementaryGroups=bluetooth
 ProtectSystem=strict
 ProtectHome=true
@@ -259,11 +259,11 @@ EOF
 
 # 4. Enable and start
 sudo systemctl daemon-reload
-sudo systemctl enable --now passlink.service
+sudo systemctl enable --now novakey.service
 
 # 5. Check status & logs
-sudo systemctl status passlink.service
-journalctl -u passlink.service -f
+sudo systemctl status novakey.service
+journalctl -u novakey.service -f
 ```
 
 ---  
@@ -274,8 +274,8 @@ If you prefer to compile the agent yourself (or want to contribute), follow thes
 
 ```bash
 # 1. Clone and enter the repo
-git clone https://github.com/OsbornePro/PassLink.git
-cd PassLink
+git clone https://github.com/OsbornePro/NovaKey.git
+cd NovaKey
 
 # 2. Make sure you have Go 1.22 or newer
 go version   # → should say go1.22 or higher
@@ -284,27 +284,27 @@ go version   # → should say go1.22 or higher
 go mod tidy
 
 # Windows (amd64)
-GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o passlink.exe ./cmd/passlink
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o novakey.exe ./cmd/novakey
 
 # macOS Intel (amd64)
-GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o passlink-macos-amd64 ./cmd/passlink
+GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o novakey-macos-amd64 ./cmd/novakey
 
 # macOS Apple Silicon (arm64) – recommended for modern Macs
-GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o passlink-macos-arm64 ./cmd/passlink
+GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o novakey-macos-arm64 ./cmd/novakey
 
 # Linux (amd64)
-GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o passlink-linux-amd64 ./cmd/passlink
+GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o novakey-linux-amd64 ./cmd/novakey
 
 # Linux (arm64) – Raspberry Pi 4/5, modern servers, etc.
-GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o passlink-linux-arm64 ./cmd/passlink
+GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o novakey-linux-arm64 ./cmd/novakey
 ```
 
 After building on macOS you need to sign it (required for Bluetooth)
 ```bash
 # Ad-hoc signing (works without paid Apple Developer account)
-codesign --remove-signature passlink-macos-* 2>/dev/null || true
+codesign --remove-signature novakey-macos-* 2>/dev/null || true
 codesign --force --options runtime --sign - \
-  --entitlements - ./passlink-macos-* <<EOF
+  --entitlements - ./novakey-macos-* <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -325,7 +325,7 @@ for os in windows darwin linux; do
   for arch in amd64 arm64; do
     ext=""; [ "$os" = "windows" ] && ext=".exe"
     GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" \
-      -o "passlink-$$ {os}- $${arch}${ext}" ./cmd/passlink
+      -o "novakey-$$ {os}- $${arch}${ext}" ./cmd/novakey
   done
 done
 # then sign the two macOS binaries as shown above
@@ -337,12 +337,12 @@ The resulting binary is ready to be installed as a service (*see the Installatio
 
 ## Running the agent
 
-When the service is up, you should see a BLE advertisement named PassLinkAgent (*or whatever you set in BLEAdvertiseName*).
+When the service is up, you should see a BLE advertisement named NovaKeyAgent (*or whatever you set in BLEAdvertiseName*).
 
-1. Open the companion phone app (*the Lumo/PassLink mobile client*).
+1. Open the companion phone app (*the Lumo/NovaKey mobile client*).
 2. The app scans for the service UUID `0000c0de‑0000‑1000‑8000‑00805f9b34fb`.
 3. Tap "*Unlock*" in the app – the phone encrypts the master password + TOTP seed, writes the payload to the characteristic `0000c0df‑0000‑1000‑8000‑00805f9b34fb`.
-4. PassLink receives the data, decapsulates, decrypts, and auto‑types the secret into the currently focused window (*e.g., the password field of your password manager*).
+4. NovaKey receives the data, decapsulates, decrypts, and auto‑types the secret into the currently focused window (*e.g., the password field of your password manager*).
 
 You’ll see a short toast (*Windows*) or a notification (*macOS/Linux*) confirming success, and a log entry in the service log.
 
@@ -354,18 +354,18 @@ They can be set in the service definition (Windows `sc config`, systemd unit `En
 
 | Variable                     | Default                | Description                                                                                              |
 |------------------------------|------------------------|----------------------------------------------------------------------------------------------------------|
-| `PASSLINK_ADVERTISE_NAME`   | `PassLinkAgent`        | BLE local name shown to phones.                                                                          |
-| `PASSLINK_AUTO_TYPE`        | `true`                 | `true` → auto‑type the secret; `false` → only log it.                                                    |
-| `PASSLINK_COOLDOWN_SECONDS` | `2`                    | Minimum seconds to wait after a successful unlock before accepting another request.                       |
-| `PASSLINK_LOG_LEVEL`        | `info`                 | Logging verbosity – `debug`, `info`, `warn`, `error`.                                                    |
-| `PASSLINK_KEYRING_SERVICE`  | `PassLink`             | Identifier used for the OS key‑ring entry that stores the public key.                                    |
-| `PASSLINK_KEYRING_USER`     | `clientKyberPublicKey` | Username for the key‑ring entry.                                                                        |
+| `NOVAKEY_ADVERTISE_NAME`   | `NovaKeyAgent`        | BLE local name shown to phones.                                                                          |
+| `NOVAKEY_AUTO_TYPE`        | `true`                 | `true` → auto‑type the secret; `false` → only log it.                                                    |
+| `NOVAKEY_COOLDOWN_SECONDS` | `2`                    | Minimum seconds to wait after a successful unlock before accepting another request.                       |
+| `NOVAKEY_LOG_LEVEL`        | `info`                 | Logging verbosity – `debug`, `info`, `warn`, `error`.                                                    |
+| `NOVAKEY_KEYRING_SERVICE`  | `NovaKey`             | Identifier used for the OS key‑ring entry that stores the public key.                                    |
+| `NOVAKEY_KEYRING_USER`     | `clientKyberPublicKey` | Username for the key‑ring entry.                                                                        |
 
 Example (systemd unit)
 ```
-Environment="PASSLINK_ADVERTISE_NAME=MyOfficePassLink"
-Environment="PASSLINK_AUTO_TYPE=false"
-Environment="PASSLINK_LOG_LEVEL=debug"
+Environment="NOVAKEY_ADVERTISE_NAME=MyOfficeNovaKey"
+Environment="NOVAKEY_AUTO_TYPE=false"
+Environment="NOVAKEY_LOG_LEVEL=debug"
 ```
 
 ---  
@@ -375,17 +375,17 @@ Environment="PASSLINK_LOG_LEVEL=debug"
 |---------------------------------|--------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
 | No BLE advertisement appears    | Bluetooth adapter disabled or driver missing                                                              | Enable Bluetooth in OS settings; on Linux ensure `bluetooth.service` is running (`sudo systemctl start bluetooth`).       |
 | Phone can’t find the service    | Wrong UUID or the service isn’t advertising                                                                | Verify the service UUID in the source (`serviceUUID`). Re‑install the service to reload the binary.                      |
-| Auto‑type does nothing          | `PASSLINK_AUTO_TYPE` set to `false` **or** the active window blocks synthetic keystrokes (e.g., admin apps) | Set `PASSLINK_AUTO_TYPE=true`. Run the binary interactively (`passlink.exe run`) to see debug logs.                     |
-| “Decapsulation failed” error   | Mismatch between the phone’s public key and the stored desktop public key | Delete the persisted key‑ring entry (`keyring.Delete("PassLink","clientKyberPublicKey")`) and restart the service – a new key pair will be generated.      |
+| Auto‑type does nothing          | `NOVAKEY_AUTO_TYPE` set to `false` **or** the active window blocks synthetic keystrokes (e.g., admin apps) | Set `NOVAKEY_AUTO_TYPE=true`. Run the binary interactively (`novakey.exe run`) to see debug logs.                     |
+| “Decapsulation failed” error   | Mismatch between the phone’s public key and the stored desktop public key | Delete the persisted key‑ring entry (`keyring.Delete("NovaKey","clientKyberPublicKey")`) and restart the service – a new key pair will be generated.      |
 | Service crashes on startup (Windows) | Missing Visual C++ Redistributable (required by `robotgo`)                                                | Install the latest **Microsoft Visual C++ Redistributable** (x64).                                                   |
-| Logs are empty                  | Service started with `PASSLINK_LOG_LEVEL=error` and no errors occurred                                      | Change to `debug` or `info` to see more output (`PASSLINK_LOG_LEVEL=debug`).                                            |
+| Logs are empty                  | Service started with `NOVAKEY_LOG_LEVEL=error` and no errors occurred                                      | Change to `debug` or `info` to see more output (`NOVAKEY_LOG_LEVEL=debug`).                                            |
 
 Logs are written to:
 | OS      | Log location |
 |---------|--------------|
-| **Windows** | Event Viewer → **Applications and Services Logs → PassLink** |
-| **macOS**   | `/var/log/passlink.out` and `/var/log/passlink.err` (*as defined in the launchd plist*) |
-| **Linux**   | `journalctl -u passlink.service` |
+| **Windows** | Event Viewer → **Applications and Services Logs → NovaKey** |
+| **macOS**   | `/var/log/novakey.out` and `/var/log/novakey.err` (*as defined in the launchd plist*) |
+| **Linux**   | `journalctl -u novakey.service` |
 
 ---  
 
@@ -403,16 +403,16 @@ We welcome contributions! Please follow these steps:
 ---  
 
 ## License
-PassLink is **proprietary commercial software**. See the full terms in `EULA.md`.
+NovaKey is **proprietary commercial software**. See the full terms in `EULA.md`.
 The source code in this repository is provided **as‑is** for the purpose of building the binary; redistribution of the source or compiled binaries is prohibited without a separate written licence from OsbornePro LLC.
 
 ---
 
 ## Contact & Support
 
-* Product website / purchase – [https://passlink.com](https://passlink.com)
-* Technical support – [support@passlink.com](mailto:support@passlink.com)
-* Security disclosures – security@passlink.com (PGP fingerprint: 0xDEADBEEF…)
+* Product website / purchase – [https://novakey.app](https://novakey.app)
+* Technical support – [support@novakey.app](mailto:support@novakey.app)
+* Security disclosures – review the SECURITY.md file in GitHub
 * GitHub issues – open a ticket in the Issues tab for bugs, feature requests, or installation help.
 
 ---
