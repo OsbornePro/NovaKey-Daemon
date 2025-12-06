@@ -11,16 +11,6 @@ In short, it gives you the security of a truly strong master password without th
 
 ---  
 
-<div align="center">
-
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/OsbornePro/NovaKey?label=release)](https://github.com/OsbornePro/NovaKey/releases)  
-[![Go Report Card](https://goreportcard.com/badge/github.com/OsbornePro/NovaKey)](https://goreportcard.com/report/github.com/OsbornePro/NovaKey)  
-[![License: Commercial](https://img.shields.io/badge/license-Commercial-blue.svg)](./LICENSE.txt)  
-
-</div>  
-
----  
-
 ## Table of Contents
 1. [Overview](#overview)  
 2. [Features](#features)  
