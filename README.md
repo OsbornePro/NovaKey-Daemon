@@ -4,7 +4,7 @@
 
 **Why would I need this?**  
 *Even with a password manager you still have to remember at least one master password, the one that unlocks the vault. 
-That password often becomes the weakest link because it’s either memorised or stored insecurely.  
+That password often becomes the weakest link because it’s either memorized or stored insecurely.  
 NovaKey lets you store a strong, high‑entropy master password on your phone and retrieve it with a single tap via a secure, post‑quantum BLE connection. 
 The desktop agent automatically types the secret for you, so you never have to recall or manually enter that critical password again. 
 In short, it gives you the security of a truly strong master password without the burden of remembering it.*
