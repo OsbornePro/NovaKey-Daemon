@@ -1,4 +1,6 @@
-# 🔐 NovaKey 🗝️ – Quantum‑Resistant BLE Bridge for Password‑Manager Secrets  
+# 🔐 NovaKey 
+### A Quantum‑Resistant BLE Bridge for Password‑Manager Secrets
+
 **What is NovaKey?**  
 *NovaKey is a one‑tap, post‑quantum‑secure agent that runs as a background service, waits for a phone to push a Kyber‑768 encrypted password/MFA payload over BLE, decrypts it, and auto‑types that secret into a selected text box.*  
 
