@@ -1,4 +1,4 @@
-// Copyright © 2025 Tobor (IT Senior Systems Engineer)
+// Copyright © 2025 Robert H. Osborne (OsbornePro)
 // All rights reserved.
 //
 // This file is part of the PassLink software suite.
