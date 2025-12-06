@@ -412,7 +412,8 @@ The source code in this repository is provided **as‑is** for the purpose of bu
 
 * Product website / purchase – [https://novakey.app](https://novakey.app)
 * Technical support – [support@novakey.app](mailto:support@novakey.app)
-* Security disclosures – review the SECURITY.md file in GitHub
+* Security disclosures – review the security policy [HERE](https://github.com/OsbornePro/NovaKey/blob/main/SECURITY.md)
+* [Download PGP Key](https://downloads.osbornepro.com/publickey.asc) for sending encrypted emails
 * GitHub issues – open a ticket in the Issues tab for bugs, feature requests, or installation help.
 
 ---
