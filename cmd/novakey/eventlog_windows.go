@@ -1,3 +1,10 @@
+// Copyright © 2025 Tobor (IT Senior Systems Engineer)
+// All rights reserved.
+//
+// This file is part of the PassLink software suite.
+// Unauthorized copying, distribution, modification, or reverse‑engineering
+// of this source code, in whole or in part, is strictly prohibited.
+//
 //go:build windows
 // +build windows
 
