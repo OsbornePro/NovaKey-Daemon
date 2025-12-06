@@ -1,4 +1,4 @@
-# 🔐 NovaKey 
+# 🔐 NovaKey from OsbornePro
 ### A Quantum‑Resistant BLE Bridge for Password‑Manager Secrets
 
 **What is NovaKey?**  
