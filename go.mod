@@ -8,7 +8,7 @@ require (
 	github.com/kardianos/service v1.2.4
 	github.com/sirupsen/logrus v1.9.3
 	github.com/zalando/go-keyring v0.2.6
-	golang.org/x/crypto v0.12.0
+	golang.org/x/crypto v0.45.0
 	golang.org/x/sys v0.38.0
 )
 
