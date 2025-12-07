@@ -6,6 +6,7 @@ package main
 import (
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -19,10 +20,19 @@ const (
 	VK_SHIFT        = 0x10
 )
 
-func TypeString(s string) {
+// SecureType sends the given UTF-8 bytes as synthetic key presses.
+func SecureType(b []byte) {
 	time.Sleep(600 * time.Millisecond)
 
-	for _, r := range s {
+	for len(b) > 0 {
+		r, size := utf8.DecodeRune(b)
+		if r == utf8.RuneError && size == 1 {
+			// Skip invalid byte and continue.
+			b = b[1:]
+			continue
+		}
+		b = b[size:]
+
 		if r == '\n' || r == '\r' {
 			keyDownUp(VK_RETURN)
 			continue
@@ -33,14 +43,14 @@ func TypeString(s string) {
 		if needShift {
 			procKeybdEvent.Call(uintptr(VK_SHIFT), 0, 0, 0)
 		}
-		keyDownUp(int(vk))
+		keyDownUp(vk)
 		if needShift {
 			procKeybdEvent.Call(uintptr(VK_SHIFT), 0, KEYEVENTF_KEYUP, 0)
 		}
+
 		time.Sleep(12 * time.Millisecond)
 	}
 
-	// Final Enter
 	keyDownUp(VK_RETURN)
 }
 
@@ -51,7 +61,7 @@ func keyDownUp(vk int) {
 
 func runeToVK(r rune) (vk int, shift bool) {
 	if r >= 'a' && r <= 'z' {
-		return int(r - 32), false // uppercase VK code
+		return int(r - 32), false
 	}
 	if r >= 'A' && r <= 'Z' {
 		return int(r), true
@@ -60,18 +70,39 @@ func runeToVK(r rune) (vk int, shift bool) {
 		return int(r), false
 	}
 
-	m := map[rune]int{
-		' ': 0x20, '!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
-		'^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
-		'-': 0xBD, '_': 0xBD, '=': 0xBB, '+': 0xBB,
-		'[': 0xDB, '{': 0xDB, ']': 0xDD, '}': 0xDD,
-		';': 0xBA, ':': 0xBA, '\'': 0xDE, '"': 0xDE,
-		',': 0xBC, '<': 0xBC, '.': 0xBE, '>': 0xBE,
-		'/': 0xBF, '?': 0xBF, '\\': 0xDC, '|': 0xDC,
-		'`': 0xC0, '~': 0xC0,
+	m := map[rune]struct {
+		vk    int
+		shift bool
+	}{
+		' ': {0x20, false},
+
+		'!': {'1', true}, '@': {'2', true}, '#': {'3', true}, '$': {'4', true},
+		'%': {'5', true}, '^': {'6', true}, '&': {'7', true}, '*': {'8', true},
+		'(': {'9', true}, ')': {'0', true},
+
+		'-': {0xBD, false}, '_': {0xBD, true},
+		'=': {0xBB, false}, '+': {0xBB, true},
+
+		'[': {0xDB, false}, '{': {0xDB, true},
+		']': {0xDD, false}, '}': {0xDD, true},
+
+		';': {0xBA, false}, ':': {0xBA, true},
+
+		'\'': {0xDE, false}, '"': {0xDE, true},
+
+		',': {0xBC, false}, '<': {0xBC, true},
+		'.': {0xBE, false}, '>': {0xBE, true},
+		'/': {0xBF, false}, '?': {0xBF, true},
+
+		'\\': {0xDC, false}, '|': {0xDC, true},
+
+		'`': {0xC0, false}, '~': {0xC0, true},
 	}
+
 	if v, ok := m[r]; ok {
-		return v, true
+		return v.vk, v.shift
 	}
-	return 0x20, false // fallback space
+
+	// Fallback to space
+	return 0x20, false
 }
