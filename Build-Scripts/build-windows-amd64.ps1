@@ -2,7 +2,7 @@
 # REQUIREMENTS:
 # 1.) git https://git-scm.com/install/windows
 # 2.) golang https://go.dev/doc/install
-# 3.) mingw-w64 https://github.com/mingw-w64/mingw-w64/tags
+# 3.) mingw-w64 https://code.visualstudio.com/docs/cpp/config-mingw
 Set-Location -Path ($PSScriptRoot | Split-Path)   # go to project root
 
 # Get latest git tag or default to "dev"
