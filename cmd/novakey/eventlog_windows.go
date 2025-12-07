@@ -48,3 +48,14 @@ func (h *eventLogHook) Fire(e *logrus.Entry) error {
 		return h.logger.Info(line)
 	}
 }
+
+// init attaches the Windows Event Log hook to the global logrus logger.
+func init() {
+	hook, err := NewEventLogHook("NovaKey")
+	if err != nil {
+		// If we can't initialize the event log hook, just fall back to
+		// standard logrus stderr logging.
+		return
+	}
+	logrus.AddHook(hook)
+}
