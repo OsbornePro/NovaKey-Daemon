@@ -26,6 +26,7 @@ When you need to log in—whether at the Windows login screen, BitLocker PIN, ma
 - [Roadmap](#roadmap)
 - [Security Notes](#security-notes)
 - [Build from Source](#build-from-source)
+- [How to Install](#how-to-install)
 - [Logging](#logging)
 - [Contributing](#contributing)
 - [License](#license)
@@ -248,6 +249,147 @@ cd NovaKey
 # Build for Linux (or macOS – the same script detects GOOS)
 ./Build-Scripts/build.sh -t linux   # replace "linux" with "darwin" for macOS
 ```
+
+---
+
+## How to Install
+
+NovaKey is distributed as a **precompiled system service**.
+You do **not** need to compile anything from source.
+
+> **Administrator privileges are required during installation only.**
+> After installation, NovaKey runs as a restricted system service.
+
+---
+
+### Linux Installation (systemd-based distributions)
+
+#### Requirements
+
+* systemd-based Linux distribution
+* `sudo` access
+* `xdotool` installed (required for auto-typing)
+
+#### Install
+
+Run the following commands:
+
+```bash
+tar -xzf novakey-linux.tar.gz
+cd novakey-linux
+sudo ./install-linux.sh
+```
+
+The installer will:
+
+* Create a dedicated `novakey` system user with no login shell
+* Install the service binary to `/usr/local/bin`
+* Create configuration, data, and log directories with restricted permissions
+* Register and start the NovaKey service at boot
+
+#### Verify Installation
+
+```bash
+systemctl status novakey
+```
+
+#### View Logs
+
+```bash
+journalctl -u novakey
+```
+
+> **Note:** The service listens on IPv4 only.
+> Make sure your firewall allows inbound connections on the configured port if required.
+
+---
+
+### macOS Installation
+
+#### Requirements
+
+* macOS 12 or newer
+* `sudo` access
+* User approval for Accessibility and Input Monitoring permissions
+
+#### Install
+
+```bash
+tar -xzf novakey-macos.tar.gz
+cd novakey-macos
+sudo ./install-macos.sh
+```
+
+The installer will:
+
+* Install the NovaKey service binary to `/usr/local/bin`
+* Create required directories under `/Library/Application Support/NovaKey`
+* Register and start a persistent LaunchDaemon at system boot
+
+---
+
+#### Required Permissions (macOS)
+
+macOS requires user approval for applications that inject keystrokes.
+
+After installation, grant NovaKey permission in:
+
+* **System Settings → Privacy & Security → Accessibility**
+* **System Settings → Privacy & Security → Input Monitoring**
+
+After granting permissions, restart the service:
+
+```bash
+sudo launchctl unload /Library/LaunchDaemons/com.osbornepro.novakey.plist
+sudo launchctl load /Library/LaunchDaemons/com.osbornepro.novakey.plist
+```
+
+---
+
+### Updating
+
+To update NovaKey, stop the service and re-run the installer.
+
+**Linux**
+
+```bash
+sudo systemctl stop novakey
+sudo ./install-linux.sh
+```
+
+**macOS**
+
+```bash
+sudo ./install-macos.sh
+```
+
+---
+
+### Uninstalling
+
+Uninstall scripts are not yet included.
+NovaKey can be removed manually as follows.
+
+#### Linux
+
+```bash
+sudo systemctl disable --now novakey
+sudo rm /etc/systemd/system/novakey.service
+sudo rm /usr/local/bin/novakey-service
+sudo rm -rf /etc/novakey /var/lib/novakey /var/log/novakey
+sudo userdel novakey
+```
+
+#### macOS
+
+```bash
+sudo launchctl unload /Library/LaunchDaemons/com.osbornepro.novakey.plist
+sudo rm /Library/LaunchDaemons/com.osbornepro.novakey.plist
+sudo rm /usr/local/bin/novakey-service
+sudo rm -rf "/Library/Application Support/NovaKey"
+```
+
+If installation fails, verify that you downloaded the correct archive for your operating system and that you have administrator privileges.
 
 ---
 
