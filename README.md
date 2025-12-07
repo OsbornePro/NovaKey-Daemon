@@ -108,6 +108,7 @@ Features that are planned for the future:
 | BLE fallback (optional)            | Future |
 | GUI tray icon & config UI          | Planned |
 | TOTP / MFA code support            | Planned |
+| Add option to approve before auto-typing | Planned |
 
 ---
 
