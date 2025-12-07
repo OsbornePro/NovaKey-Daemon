@@ -1,14 +1,15 @@
 # Build-Scripts\build-windows-amd64.ps1
 # REQUIREMENTS:
-# 1.) git
-# 2.) golang
+# 1.) git https://git-scm.com/install/windows
+# 2.) golang https://go.dev/doc/install
+# 3.) mingw-w64 https://github.com/mingw-w64/mingw-w64/tags
 Set-Location -Path ($PSScriptRoot | Split-Path)   # go to project root
 
 # Get latest git tag or default to "dev"
-$Version = (git describe --tags --abbrev=0 2>$Null) ?? "dev"
-$LdFlags = "-s -w -X main.version=$($Version) -X main.buildDate=$(Get-Date -Format o)"
+$Version = (git describe --tags --abbrev=0 2>$null) -replace '^\s+|\s+$',''
+$LdFlags = "-s -w -X main.version=$Version -X main.buildDate=$(Get-Date -Format o)"
 
-Write-Output -InputObject "Building NovaKey $Version for Windows AMD64"
+Write-Output -InputObject "Building NovaKey latest for Windows AMD64"
 
 # Clean previous build if requested
 If ($Args -contains "clean") {
