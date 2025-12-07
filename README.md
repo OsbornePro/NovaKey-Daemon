@@ -112,10 +112,15 @@ Features that are planned for the future:
 ---
 
 ## Security Notes
+
 * Private key is generated in memory on startup and never written to disk.
-* No logs contain decrypted secrets.
-* All crypto uses the official Cloudflare circl v1.6+ library (constant‑time).
+* No logs contain decrypted secrets. Only password length is logged when auto-typing.
+* All crypto uses the official Cloudflare circl v1.6+ library (*constant‑time*) and XChaCha20‑Poly1305 authenticated encryption.
+* Payloads are validated to prevent memory exhaustion (*maximum ciphertext and plaintext sizes enforced*).
+* Sensitive buffers (*shared secrets, decrypted payloads, passwords*) are zeroed in memory immediately after use.
+* Keystrokes are typed via a SecureType abstraction; this allows future use of OS-level secure input APIs instead of raw key events.
 * You control the network – use Tailscale, Zerotier, or a local Wi‑Fi subnet.
+* All files are compiled within a single package to ensure security helpers (*like memory zeroing*) are applied consistently.
 
 ---
 
