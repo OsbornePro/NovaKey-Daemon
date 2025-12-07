@@ -260,7 +260,104 @@ You do **not** need to compile anything from source.
 > **Administrator privileges are required during installation only.**
 > After installation, NovaKey runs as a restricted system service.
 
----
+## Windows Installation
+
+NovaKey for Windows is distributed as a **precompiled Windows service**.
+No build tools or source compilation are required.
+
+> **Administrator privileges are required during installation only.**
+> After installation, NovaKey runs as a restricted Windows service using a virtual service account.
+
+### Requirements
+
+* Windows 10 or newer
+* PowerShell 5.1 or newer
+* Administrator access
+
+### Install
+
+1. Download and extract the Windows archive:
+
+```powershell
+Expand-Archive -Path NovaKey-Windows.zip
+Set-Location -Path NovaKey-Windows
+```
+
+2. Run the installer **as Administrator**:
+
+* Right-click `install-windows.ps1`
+* Select **Run with PowerShell**
+
+If script execution is restricted, you may temporarily allow it:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\install-windows.ps1
+```
+
+### What the Installer Does
+
+The Windows installer performs the following actions:
+
+* Installs NovaKey to `C:\Program Files\NovaKey`
+* Registers a Windows service that starts automatically at boot
+* Runs the service under a dedicated virtual service account (`NT SERVICE\NovaKey`)
+* Applies restricted filesystem permissions
+* Adds a Windows Firewall rule for the NovaKey listening port
+* Starts the service immediately after installation
+
+### Verify Installation
+
+Check that the service is running:
+
+```powershell
+Get-Service NovaKey
+```
+
+View recent service events:
+
+```powershell
+Get-WinEvent -LogName Application | Where-Object { $_.ProviderName -like "*NovaKey*" }
+```
+
+### Logs
+
+Runtime logs (if enabled) are stored in:
+
+```
+C:\Program Files\NovaKey\logs\
+```
+
+### Updating
+
+To update NovaKey:
+
+1. Stop the running service:
+
+```powershell
+Stop-Service -Name NovaKey
+```
+
+2. Replace `novakey-service.exe` with the new version
+3. Re-run the installer script:
+
+```powershell
+.\install-windows.ps1
+```
+
+### Uninstalling
+
+An automated uninstaller is not yet included.  
+To remove NovaKey manually:
+
+```powershell
+Stop-Service -Name NovaKey -Force
+sc.exe delete NovaKey
+Remove-Item -Recurse -Force -Path "C:\Program Files\NovaKey"
+Remove-NetFirewallRule -DisplayName "NovaKey TCP Listener"
+```
+
+If installation fails, ensure that you are running PowerShell as Administrator and that no existing NovaKey service is already active.
 
 ### Linux Installation (systemd-based distributions)
 
