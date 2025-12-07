@@ -34,7 +34,7 @@ In short, it gives you the security of a truly strong master password without th
 ## Overview  
 
 NovaKey is a **stand‑alone BLE peripheral** that sits on a workstation (*Windows, macOS, or Linux*).  
-* The **phone app** (*your existing Lumo/NovaKey mobile client*) acts as a BLE **central**.  
+* The **phone app** (*your existing NovaKey mobile client*) acts as a BLE **central**.  
 * When the phone discovers the peripheral, it **writes** a single BLE characteristic containing:  
 ```[Kyber‑768 ciphertext] || [XChaCha20‑Poly1305 encrypted payload]```
 * The peripheral **decapsulates** the Kyber ciphertext, derives a 256‑bit session key, **decrypts** the payload, and **auto‑types** the password/MFA code into whatever window currently has focus.  
