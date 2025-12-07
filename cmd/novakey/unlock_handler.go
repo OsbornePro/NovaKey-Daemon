@@ -1,24 +1,58 @@
 package main
 
 import (
-	"fmt"
+	"encoding/binary"
 	"io"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// kyberCtSize is defined in crypto_shared.go — DO NOT redeclare here
-// const kyberCtSize = 1088   ← DELETE THIS LINE
+const (
+	maxPayloadSize  = 16 * 1024       // 16 KB max total payload
+	maxPasswordSize = 4096            // 4 KB max password
+	replayWindow    = 5 * time.Minute // how long nonces are remembered
+
+	rateWindow       = 1 * time.Minute // per-IP window
+	maxRequestsPerIP = 30              // max connections per IP per window
+
+	headerTimestampLen = 8  // int64 seconds
+	headerNonceLen     = 16 // 16-byte nonce
+	headerLen          = headerTimestampLen + headerNonceLen
+)
+
+var (
+	rateMu      sync.Mutex
+	clientRates = make(map[string]*clientRate)
+
+	replayMu   sync.Mutex
+	seenNonces = make(map[[headerNonceLen]byte]int64)
+)
+
+type clientRate struct {
+	windowStart time.Time
+	count       int
+}
 
 func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 	defer conn.Close()
 
-	data, err := io.ReadAll(conn)
+	ip := clientIP(conn)
+	if !allowClient(ip) {
+		LogError("Rate limit exceeded for "+ip, nil)
+		return
+	}
+
+	limitedReader := &io.LimitedReader{R: conn, N: maxPayloadSize}
+	data, err := io.ReadAll(limitedReader)
 	if err != nil {
 		LogError("Read failed", err)
 		return
 	}
+
 	if len(data) < kyberCtSize {
 		LogError("Payload too short", nil)
 		return
@@ -27,23 +61,127 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 	ct := data[:kyberCtSize]
 	encPayload := data[kyberCtSize:]
 
+	// Encapsulated payload must still be large enough to contain AEAD nonce + header + password.
+	if len(encPayload) < chacha20poly1305.NonceSizeX+headerLen {
+		LogError("Encrypted payload too short", nil)
+		return
+	}
+	if len(encPayload) > maxPayloadSize {
+		LogError("Encrypted payload too large", nil)
+		return
+	}
+
 	sharedSecret, err := Decapsulate(priv, ct)
 	if err != nil {
 		LogError("Decapsulation failed", err)
 		return
 	}
+	defer zeroBytes(sharedSecret)
 
 	plain, err := DecryptPayload(sharedSecret, encPayload)
 	if err != nil {
 		LogError("DecryptPayload failed", err)
 		return
 	}
+	defer zeroBytes(plain)
 
-	HandlePayload(plain)
+	if len(plain) < headerLen {
+		LogError("Decrypted payload too short for header", nil)
+		return
+	}
+	if len(plain)-headerLen > maxPasswordSize {
+		LogError("Decrypted payload too large", nil)
+		return
+	}
+
+	// Parse replay-protection header: 8-byte big-endian timestamp + 16-byte random nonce.
+	ts := int64(binary.BigEndian.Uint64(plain[:headerTimestampLen]))
+	var nonce [headerNonceLen]byte
+	copy(nonce[:], plain[headerTimestampLen:headerLen])
+
+	now := time.Now()
+	nowUnix := now.Unix()
+
+	// Basic freshness check to limit replay window.
+	if ts > nowUnix+60 || ts < nowUnix-int64(replayWindow.Seconds()) {
+		LogError("Decrypted payload timestamp out of acceptable window", nil)
+		return
+	}
+
+	if isReplay(nonce, ts) {
+		LogError("Replay detected; dropping payload", nil)
+		return
+	}
+
+	password := plain[headerLen:]
+	if len(password) == 0 {
+		LogError("Empty password payload", nil)
+		return
+	}
+
+	HandlePayload(password)
 }
 
-func HandlePayload(data []byte) {
-	password := string(data)
-	fmt.Printf("Auto-typing password (%d chars)...\n", len(password))
-	TypeString(password)
+func HandlePayload(password []byte) {
+	// Do not log length or contents of the password.
+	LogInfo("Auto-typing password payload")
+	SecureType(password)
+	zeroBytes(password)
+}
+
+func clientIP(conn net.Conn) string {
+	if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+		if ip4 := addr.IP.To4(); ip4 != nil {
+			return ip4.String()
+		}
+		return addr.IP.String()
+	}
+	return conn.RemoteAddr().String()
+}
+
+func allowClient(ip string) bool {
+	now := time.Now()
+
+	rateMu.Lock()
+	defer rateMu.Unlock()
+
+	cr, ok := clientRates[ip]
+	if !ok || now.Sub(cr.windowStart) > rateWindow {
+		clientRates[ip] = &clientRate{
+			windowStart: now,
+			count:       1,
+		}
+		return true
+	}
+
+	if cr.count >= maxRequestsPerIP {
+		return false
+	}
+
+	cr.count++
+	return true
+}
+
+func isReplay(nonce [headerNonceLen]byte, ts int64) bool {
+	now := time.Now()
+	cutoff := now.Add(-replayWindow).Unix()
+
+	replayMu.Lock()
+	defer replayMu.Unlock()
+
+	// Garbage collect old entries.
+	for k, v := range seenNonces {
+		if v < cutoff {
+			delete(seenNonces, k)
+		}
+	}
+
+	if oldTs, ok := seenNonces[nonce]; ok {
+		if oldTs == ts {
+			return true
+		}
+	}
+
+	seenNonces[nonce] = ts
+	return false
 }
