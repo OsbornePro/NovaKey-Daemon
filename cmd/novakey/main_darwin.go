@@ -1,3 +1,4 @@
+//go:build darwin
 // +build darwin
 
 package main
@@ -16,13 +17,13 @@ func main() {
 	}
 
 	addr := ":60768"
-	ln, err := net.Listen("tcp", addr)
+	ln, err := net.Listen("tcp4", addr)
 	if err != nil {
 		LogError("Failed to start TCP server", err)
 		return
 	}
 	defer ln.Close()
-	LogInfo("TCP listener started on " + addr)
+	LogInfo("TCP listener started on " + addr + " (IPv4 only)")
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
