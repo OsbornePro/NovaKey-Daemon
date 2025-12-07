@@ -114,14 +114,110 @@ Features that are planned for the future:
 
 ## Security Notes
 
-* Private key is generated in memory on startup and never written to disk.
-* No logs contain decrypted secrets. Only password length is logged when auto-typing.
-* All crypto uses the official Cloudflare circl v1.6+ library (*constant‑time*) and XChaCha20‑Poly1305 authenticated encryption.
-* Payloads are validated to prevent memory exhaustion (*maximum ciphertext and plaintext sizes enforced*).
-* Sensitive buffers (*shared secrets, decrypted payloads, passwords*) are zeroed in memory immediately after use.
-* Keystrokes are typed via a SecureType abstraction; this allows future use of OS-level secure input APIs instead of raw key events.
-* You control the network – use Tailscale, Zerotier, or a local Wi‑Fi subnet.
-* All files are compiled within a single package to ensure security helpers (*like memory zeroing*) are applied consistently.
+### Security Design Principles
+
+- **Local-first by design** – no cloud storage, no relays, no third-party dependencies at runtime  
+- **Cryptographically authenticated input** – keystrokes are only accepted after successful cryptographic verification  
+- **Minimized trust and privilege** – the service operates with the least permissions required by the host OS  
+- **Defense-in-depth** – multiple independent protections against compromise, misuse, and abuse  
+
+### Cryptography & Secure Transport
+
+- **Ephemeral post-quantum key material.**  
+  On startup, each service instance generates an in-memory Kyber768 private key which is never persisted to disk. Restarting the service automatically rotates all cryptographic material.
+
+- **Post-quantum authenticated encryption.**  
+  NovaKey uses Cloudflare’s official `circl` Kyber768 KEM (constant-time) to establish a shared secret, followed by XChaCha20-Poly1305 authenticated encryption to ensure payload confidentiality and integrity.
+
+- **No plaintext acceptance.**  
+  All inbound messages must pass cryptographic verification before any data is processed. Plaintext inputs are never accepted.
+
+### Replay & Abuse Prevention
+
+- **Replay-attack protection.**  
+  Each encrypted payload includes a UNIX timestamp and a cryptographically secure random nonce. The service maintains a bounded replay cache and rejects duplicate or stale messages outside a strict validity window.
+
+- **Denial-of-Service (DoS) protection.**  
+  Incoming connections are rate-limited per IPv4 address prior to performing expensive cryptographic operations. Strict payload size limits prevent memory exhaustion and computational abuse.
+
+- **IPv4-only listener with explicit validation.**  
+  The service listens exclusively on IPv4 and performs full validation and authentication on every connection.
+
+### Secret Handling & Memory Safety
+
+- **No secrets stored on disk.**  
+  Passwords, session keys, and decrypted payloads exist only in memory during active processing.
+
+- **No secret leakage via logs or process metadata.**  
+  Decrypted secrets, password contents, and derived metadata are never logged. Passwords are never passed via command-line arguments, preventing leakage through system process inspection tools.
+
+- **Byte-buffer based secret handling.**  
+  Sensitive data is handled as mutable byte slices rather than immutable language-level strings, reducing unintended memory persistence.
+
+- **Best-effort memory wiping.**  
+  Shared secrets, decrypted payloads, and password buffers are explicitly overwritten immediately after use to minimize their lifetime in memory.
+
+### Keystroke Injection Security
+
+- **Isolated secure typing abstraction.**  
+  All OS-specific keystroke injection is encapsulated behind a `SecureType` interface. This prevents cryptographic or networking logic from interacting directly with platform APIs.
+
+- **Forward-compatible with OS secure input APIs.**  
+  The abstraction layer allows future migration to native secure input mechanisms (where available) without redesigning transport or cryptography.
+
+### Least-Privilege Execution Environment
+
+- **Dedicated service account.**  
+  The NovaKey service runs under a non-interactive, dedicated system account with no login shell and minimal filesystem access.
+
+- **Linux sandboxing and hardening.**  
+  When installed on Linux, NovaKey runs under a hardened systemd service configuration that disables privilege escalation, restricts filesystem access, and limits writable paths to explicitly required directories.
+
+- **No elevated privileges during runtime.**  
+  Administrative privileges are required only during installation; normal operation does not require root or administrator access.
+
+### Build & Dependency Integrity
+
+- **Single-package build model.**  
+  Core functionality is compiled into a single Go package, ensuring consistent application of security helpers such as memory zeroing and payload validation.
+
+- **Auditable, well-maintained dependencies.**  
+  All cryptographic operations rely exclusively on widely used, peer-reviewed libraries maintained by reputable organizations.
+
+### Network Trust Model
+
+- **User-controlled trust boundary.**  
+  NovaKey is designed to operate on a trusted local network or user-managed VPN such as Tailscale or Zerotier. No external servers or cloud infrastructure are required or contacted.
+
+## Threat Model Appendix
+
+### In-Scope Threats
+
+| Threat | Mitigation |
+|------|----------|
+| Network eavesdropping | Post-quantum authenticated encryption |
+| Replay attacks | Timestamp + nonce validation with replay cache |
+| Packet injection | Mandatory cryptographic verification |
+| Memory scraping | Byte-buffer handling and immediate wiping |
+| Privilege escalation | Dedicated service accounts and OS sandboxing |
+| DoS via expensive crypto | Rate limiting before decapsulation |
+| Process inspection | No secrets in argv or logs |
+
+### Out-of-Scope / Assumed Trust
+
+- Compromised host operating system
+- Malicious kernel-level malware
+- User-approved accessibility misuse on macOS
+- Physical access to an unlocked system
+- Malicious applications with equivalent keystroke injection privileges
+
+### Security Posture Summary
+
+NovaKey assumes a **zero-trust network** and **honest-but-curious local environment** while defending aggressively against remote attacks, replay abuse, cryptographic compromise, and accidental leakage of sensitive data. The system favors transparency, simplicity, and minimal privilege over opaque or cloud-dependent approaches.
+
+### Disclosure & Review
+
+NovaKey’s security architecture is designed to be auditable and reviewable. All cryptographic choices, memory handling practices, and runtime permissions are explicitly documented and enforced at build and install time.
 
 ---
 
