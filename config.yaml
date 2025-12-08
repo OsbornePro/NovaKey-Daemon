@@ -63,7 +63,10 @@ allowlist:
       - firefox
       - brave
 
-
 devices:
-  require_known_device: false
-  paired_devices: {}
+  require_known_device: true
+  paired_devices:
+    iphone-rob:
+      secret: "this-is-a-long-random-device-secret-1"
+    ipad-rob:
+      secret: "this-is-another-long-random-device-secret-2"

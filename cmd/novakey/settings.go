@@ -101,3 +101,18 @@ func loadSettings() {
 		settings.Devices.PairedDevices = make(map[string]DeviceConfig)
 	}
 }
+
+func saveSettings(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	enc := yaml.NewEncoder(f)
+	enc.SetIndent(2)
+	if err := enc.Encode(&settings); err != nil {
+		return err
+	}
+	return enc.Close()
+}
