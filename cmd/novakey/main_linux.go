@@ -10,7 +10,15 @@ import (
 )
 
 func main() {
-	priv, _, err := GenerateKeyPair()
+	// priv, _, err := GenerateKeyPair()
+    priv, pub, err := GenerateKeyPair()
+
+    // TEMPORARY: export public key for local testing (safe to remove later)
+    pubBytes, err := pub.MarshalBinary()
+    if err == nil {
+	    _ = os.WriteFile("server.pub", pubBytes, 0600)
+    }
+    // TEMPORARY END BLOCK
 	if err != nil {
 		LogError("Key generation failed", err)
 		return

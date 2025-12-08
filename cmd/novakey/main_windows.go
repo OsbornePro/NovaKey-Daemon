@@ -7,14 +7,36 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 )
 
 func main() {
-	priv, _, err := GenerateKeyPair()
+	// Generate Kyber keypair
+	priv, pub, err := GenerateKeyPair()
 	if err != nil {
 		LogError("Key generation failed", err)
 		return
 	}
+
+	// TEMPORARY: export public key for novakey-send testing
+	// This writes server.pub next to the executable (safe for Windows services)
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		pubPath := filepath.Join(exeDir, "server.pub")
+
+		if pubBytes, err := pub.MarshalBinary(); err == nil {
+			if err := os.WriteFile(pubPath, pubBytes, 0600); err == nil {
+				LogInfo("Exported server public key to " + pubPath)
+			} else {
+				LogError("Failed to write server.pub", err)
+			}
+		} else {
+			LogError("Failed to marshal public key", err)
+		}
+	} else {
+		LogError("Failed to determine executable path", err)
+	}
+	// TEMPORARY END BLOCK
 
 	addr := ":60768"
 	ln, err := net.Listen("tcp4", addr)
