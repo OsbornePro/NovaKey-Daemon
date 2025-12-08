@@ -61,8 +61,8 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 	ct := data[:kyberCtSize]
 	encPayload := data[kyberCtSize:]
 
-	// Encapsulated payload must still be large enough to contain AEAD nonce + header + password.
-	if len(encPayload) < chacha20poly1305.NonceSizeX+headerLen {
+	// Must contain AEAD nonce + header + at least 1 byte (device ID length)
+	if len(encPayload) < chacha20poly1305.NonceSizeX+headerLen+1 {
 		LogError("Encrypted payload too short", nil)
 		return
 	}
@@ -85,16 +85,12 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 	}
 	defer zeroBytes(plain)
 
-	if len(plain) < headerLen {
-		LogError("Decrypted payload too short for header", nil)
-		return
-	}
-	if len(plain)-headerLen > maxPasswordSize {
-		LogError("Decrypted payload too large", nil)
+	if len(plain) < headerLen+1 {
+		LogError("Decrypted payload too short for header+device ID", nil)
 		return
 	}
 
-	// Parse replay-protection header: 8-byte big-endian timestamp + 16-byte random nonce.
+	// --- Replay protection header ---
 	ts := int64(binary.BigEndian.Uint64(plain[:headerTimestampLen]))
 	var nonce [headerNonceLen]byte
 	copy(nonce[:], plain[headerTimestampLen:headerLen])
@@ -102,7 +98,6 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 	now := time.Now()
 	nowUnix := now.Unix()
 
-	// Basic freshness check to limit replay window.
 	if ts > nowUnix+60 || ts < nowUnix-int64(replayWindow.Seconds()) {
 		LogError("Decrypted payload timestamp out of acceptable window", nil)
 		return
@@ -113,20 +108,59 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 		return
 	}
 
-	password := plain[headerLen:]
-	if len(password) == 0 {
-		LogError("Empty password payload", nil)
+	// --- Device ID + password ---
+	payload := plain[headerLen:]
+
+	deviceID, password, err := extractDeviceID(payload)
+	if err != nil {
+		LogError("Invalid payload format (device ID)", err)
 		return
+	}
+
+	if len(password) > maxPasswordSize {
+		LogError("Decrypted password too large", nil)
+		return
+	}
+
+	// Enforce known-device policy if enabled
+	if settings.Devices.RequireKnownDevice {
+		if !settings.Devices.PairedDevices[deviceID] {
+			LogError("Typing denied: unknown device ("+deviceID+")", nil)
+			return
+		}
 	}
 
 	HandlePayload(password)
 }
 
 func HandlePayload(password []byte) {
-	// Do not log length or contents of the password.
-	LogInfo("Auto-typing password payload")
+	// Require explicit arming if enabled
+	if settings.Security.RequireArming && !isArmed() {
+		LogError("Typing denied: service is not armed", nil)
+		return
+	}
+
+	// Enforce foreground application allowlist if enabled
+	if settings.Security.EnforceAllowlist {
+		allowed, exe, err := foregroundAppAllowed()
+		if err != nil {
+			LogError("Failed to determine foreground application", err)
+			return
+		}
+		if !allowed {
+			LogError("Typing denied: foreground app not allowed ("+exe+")", nil)
+			return
+		}
+	}
+
+	LogInfo("Typing allowed; injecting keystrokes")
+
 	SecureType(password)
 	zeroBytes(password)
+
+	if settings.Security.RequireArming {
+		disarm()
+	}
 }
 
 func clientIP(conn net.Conn) string {
@@ -169,17 +203,15 @@ func isReplay(nonce [headerNonceLen]byte, ts int64) bool {
 	replayMu.Lock()
 	defer replayMu.Unlock()
 
-	// Garbage collect old entries.
+	// Garbage collect expired nonces
 	for k, v := range seenNonces {
 		if v < cutoff {
 			delete(seenNonces, k)
 		}
 	}
 
-	if oldTs, ok := seenNonces[nonce]; ok {
-		if oldTs == ts {
-			return true
-		}
+	if oldTs, ok := seenNonces[nonce]; ok && oldTs == ts {
+		return true
 	}
 
 	seenNonces[nonce] = ts

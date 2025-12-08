@@ -1,0 +1,69 @@
+﻿version: 1
+control:
+  enabled: true
+  listen_address: "127.0.0.1"
+  listen_port: 60769
+  token: "Vv7aADeE9[HREQX%aW$>DK^FZZB?qnyM&KhAxC#(FF;[)$N5p*JvG]qH[:uhMdMT"
+
+network:
+  listen_address: "0.0.0.0"
+  listen_port: 60768
+  ipv6: false
+
+security:
+  require_arming: true
+  enforce_allowlist: true
+
+arming:
+  allow_hotkey: true
+  allow_cli: true
+  auto_disarm: true
+  hotkey:
+    ctrl: true
+    alt: true
+    shift: false
+    win: false
+    key: "N"
+
+allowlist:
+  windows:
+    browsers:
+      - chrome.exe
+      - chromium.exe
+      - msedge.exe
+      - opera.exe
+      - firefox.exe
+      - waterfox.exe
+      - brave.exe
+      - browser.exe
+      - comet.exe
+      - workona.exe
+      - chatgpt.exe
+    password_managers:
+      - bitwarden.exe
+      - protonpass.exe
+      - keeper.exe
+      - keepass.exe
+      - keepassxc.exe
+      - lastpass.exe
+      - 1password.exe
+      - nordpass.exe
+      - roboform.exe
+  darwin:
+    bundle_ids:
+      - com.apple.Safari
+      - com.google.Chrome
+      - org.mozilla.firefox
+      - com.brave.Browser
+      - com.operasoftware.Opera
+      - company.thebrowser.Browser
+    executables:
+      - safari
+      - chrome
+      - firefox
+      - brave
+
+
+devices:
+  require_known_device: false
+  paired_devices: {}

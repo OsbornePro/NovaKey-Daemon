@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+﻿#!/bin/bash
 # =============================================================================
-# NovaKey – Unified cross-platform build script (Linux & macOS)
+# NovaKey - Unified cross-platform build script (Linux & macOS)
 # Contact: security@novakey.app
 # Author: Robert H. Osborne (OsbornePro)
 # Date: December 2025
@@ -16,126 +16,85 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# ----------------------------- Usage -----------------------------
-readonly USAGE=$(cat <<EOF
-${CYAN}NovaKey Cross-Platform Build Script${NC}
-
-Syntax: ./build.sh [-t target] [-c] [-f filename]
-
-OPTIONS:
-  -t, --target     Build target: windows | linux | darwin          [default: linux]
-  -c, --clean      Delete dist/ folder before building
-  -f, --file       Output filename (default: NovaKey or NovaKey.exe)
-  -h, --help       Show this help
-
-EXAMPLES:
-  ./build.sh                    # Build for current OS (Linux)
-  ./build.sh -t windows         # Cross-compile for Windows
-  ./build.sh -t darwin -c       # Clean + build universal macOS binary
-  ./build.sh -t linux -f mykey  # Build Linux binary named "mykey"
-
-EOF
-)
-
-# ----------------------------- Helpers -----------------------------
-log()    { printf "${CYAN}[-] %s ${NC}%s${NC}\n" "$(date '+%m-%d-%Y %H:%M:%S')" "$1"; }
+log()    { printf "${CYAN}[-] %s ${NC}%s\n" "$(date '+%m-%d-%Y %H:%M:%S')" "$1"; }
+warn()   { printf "${YELLOW}[!] %s${NC}\n" "$1"; }
 success(){ printf "${GREEN}[✓] %s${NC}\n" "$1"; }
 error()  { printf "${RED}[x] %s${NC}\n" "$1" >&2; exit 1; }
 
-# ----------------------------- Parse Args -----------------------------
+# ----------------------------- Host OS -----------------------------
+HOST_OS="$(uname | tr '[:upper:]' '[:lower:]')"
+case "$HOST_OS" in
+    linux*)  HOST_OS="linux" ;;
+    darwin*) HOST_OS="darwin" ;;
+    *) error "Unsupported host OS: $HOST_OS" ;;
+esac
+
+# ----------------------------- Args -----------------------------
 TARGET="linux"
 CLEAN=false
 FILENAME=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -t|--target)
-            TARGET="$2"
-            shift 2
-            ;;
-        -c|--clean)
-            CLEAN=true
-            shift
-            ;;
-        -f|--file|--filename)
-            FILENAME="$2"
-            shift 2
-            ;;
+        -t|--target) TARGET="$2"; shift 2 ;;
+        -c|--clean)  CLEAN=true; shift ;;
+        -f|--file)   FILENAME="$2"; shift 2 ;;
         -h|--help)
-            printf "%b\n" "$USAGE"
+            echo "Usage: ./build.sh -t windows|linux|darwin [-c]"
             exit 0
             ;;
-        *)
-            error "Unknown option: $1"
-            ;;
+        *) error "Unknown option: $1" ;;
     esac
 done
-
-case "$TARGET" in
-    windows|linux|darwin) ;;
-    *) error "Invalid target: $TARGET (use: windows, linux, darwin)" ;;
-esac
 
 # ----------------------------- Project Root -----------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
-PROJECT_ROOT="$PWD"
 
-# ----------------------------- Version & Flags -----------------------------
+# ----------------------------- Version -----------------------------
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS="-s -w -X main.version=${VERSION} -X main.buildDate=${BUILD_DATE}"
 
-log "Building NovaKey ${VERSION} for ${TARGET^^}"
+log "Building NovaKey $VERSION for target=$TARGET (host=$HOST_OS)"
 
 # ----------------------------- Clean -----------------------------
-if $CLEAN; then
-    log "Cleaning previous build artifacts"
-    rm -rf dist
-fi
-
+$CLEAN && rm -rf dist
 mkdir -p dist
 
-# ----------------------------- Platform Setup -----------------------------
-GOOS="$TARGET"
-GOARCH="amd64"
-OUTPUT_NAME="NovaKey"
-
+# ----------------------------- Build -----------------------------
 case "$TARGET" in
+
     windows)
-        OUTPUT_NAME="NovaKey.exe"
-        [[ -n "$FILENAME" ]] && OUTPUT_NAME="$FILENAME"
-        [[ "$OUTPUT_NAME" != *.exe ]] && OUTPUT_NAME+=".exe"
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -trimpath -ldflags="$LDFLAGS" -o "dist/${FILENAME:-NovaKey.exe}" ./cmd/novakey
         ;;
-    darwin)
-        # Universal binary (Intel + Apple Silicon)
-        GOARCH="all"
-        [[ -n "$FILENAME" ]] && OUTPUT_NAME="$FILENAME"
-        ;;
+
     linux)
-        [[ -n "$FILENAME" ]] && OUTPUT_NAME="$FILENAME"
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="$LDFLAGS" -o "dist/${FILENAME:-NovaKey}" ./cmd/novakey
+        ;;
+
+    darwin)
+        if [[ "$HOST_OS" != "darwin" ]]; then
+            warn "macOS builds must be performed on macOS."
+            warn "Reason: CGO + Cocoa APIs cannot be cross-compiled from $HOST_OS."
+            warn "Run this script on a Mac with Xcode installed."
+            exit 0
+        fi
+
+        for ARCH in amd64 arm64; do
+            log "Building darwin/$ARCH"
+            CGO_ENABLED=1 GOOS=darwin GOARCH="$ARCH" \
+                go build -trimpath -ldflags="$LDFLAGS" -o "dist/NovaKey-darwin-$ARCH" ./cmd/novakey
+        done
+
+        log "To create universal binary:"
+        log "lipo -create -output NovaKey NovaKey-darwin-amd64 NovaKey-darwin-arm64"
+        ;;
+    *)
+        error "Invalid target: $TARGET"
         ;;
 esac
 
-OUTPUT_PATH="dist/$OUTPUT_NAME"
-
-# ----------------------------- Build -----------------------------
-log "Target → ${GOOS}/${GOARCH} → ${OUTPUT_PATH}"
-log "Running: go build -ldflags='$LDFLAGS' -o '$OUTPUT_PATH' ./cmd/novakey"
-
-CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-    go build -trimpath -ldflags="$LDFLAGS" -o "$OUTPUT_PATH" ./cmd/novakey || \
-    error "Go build failed"
-
-# ----------------------------- Success -----------------------------
-printf "\n${GREEN}"
-cat <<EOF
-╔══════════════════════════════════════════════════════════╗
-║                    BUILD SUCCESSFUL                      ║
-║ Target   : $TARGET $( [[ "$TARGET" == "darwin" ]] && echo "(Universal)" )      ║
-║ Binary   : $PROJECT_ROOT/$OUTPUT_PATH
-║ Size     : $(du -h "$OUTPUT_PATH" | cut -f1)
-║ SHA256   : $(sha256sum "$OUTPUT_PATH" | cut -d' ' -f1)
-╚══════════════════════════════════════════════════════════╝
-EOF
-printf "${NC}\n"
+success "Build artifacts created in dist/"

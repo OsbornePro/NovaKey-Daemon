@@ -80,7 +80,7 @@ Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy HH:mm:ss') Bu
 
 If ($Clean.IsPresent) {
 
-    Write-Information "[-] $(Get-Date -Format 'MM-dd-yyyy HH:mm:ss') Cleaning previous build artifacts"
+    Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy HH:mm:ss') Cleaning previous build artifacts"
     Remove-Item -Recurse -Force -Path dist -ErrorAction SilentlyContinue
 
 }  # End If
@@ -88,39 +88,66 @@ If ($Clean.IsPresent) {
 $DistDir = Join-Path -Path $ProjectRoot -ChildPath "dist"
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 
-$env:GOARCH = "amd64"
-$env:GOOS    = $Target
-$env:CGO_ENABLED = "0"
-
 Switch ($Target) {
 
     "windows" {
-        $env:CGO_ENABLED = "0"
-        $DefaultName = "NovaKey.exe"
+
+        $env:CGO_ENABLED = 0
+        $env:GOOS = "windows"
+        $env:GOARCH = "amd64"
+        $OutName = $FileName
+        If (-not $OutName) { $OutName = "NovaKey.exe" }
+        If ($OutName -notmatch '\.exe$') { $OutName += ".exe" }
+        $Output = Join-Path -Path $DistDir -ChildPath $OutName
+
+        Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') go build (windows/amd64)"
+        go build -trimpath -ldflags $LdFlags -o $Output ./cmd/novakey
+
     } "linux" {
-        $DefaultName = "NovaKey"
+
+        $env:CGO_ENABLED = 0
+        $env:GOOS = "linux"
+        $env:GOARCH = "amd64"
+        $OutName = $FileName
+        If (-not $OutName) { $OutName = "NovaKey" }
+        $Output = Join-Path -Path $DistDir -ChildPath $OutName
+
+        Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') go build (linux/amd64)"
+        go build -trimpath -ldflags $LdFlags -o $Output ./cmd/novakey
+
     } "darwin" {
-        $env:GOARCH = "all"     # Go 1.20+ magic for universal darwin binaries
-        $DefaultName = "NovaKey"
-    }  # End Switch options
+
+        Write-Warning -Message @"
+macOS builds must be performed on macOS.
+
+Reason:
+  NovaKey uses CGO + Apple Cocoa / Accessibility APIs,
+  which cannot be cross-compiled from $Target.
+
+What to do:
+  Run this command on a Mac with Xcode installed:
+      ./Build-Scripts/build.sh -t darwin
+      ./Build-Scripts/build.ps1 -Target darwin
+"@
+        Return
+<#
+# In case it ever becomes possible
+        Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Attempting build of macOS binaries"
+        ForEach ($Arch in @("amd64", "arm64")) {
+
+            $env:GOOS = "darwin"
+            $env:GOARCH = $Arch
+            $env:CGO_ENABLED = "1"
+
+            $Output = Join-Path $DistDir "NovaKey-darwin-$Arch"
+            Write-Information "[-] go build (darwin/$Arch)"
+            go build -trimpath -ldflags $LdFlags -o $Output ./cmd/novakey
+
+        }  # End ForEach
+
+        Write-Information "[-] To create a universal binary on macOS:"
+        Write-Information "    lipo -create -output NovaKey NovaKey-darwin-amd64 NovaKey-darwin-arm64"
+#>
+    }  # End Switch Options
 
 }  # End Switch
-
-# Final filename
-If (-not $FileName) { $FileName = $DefaultName }
-If ($Target -eq "windows" -and $FileName -notmatch '\.exe$') {
-    $FileName += ".exe"
-}  # End If
-
-$OutputPath = Join-Path -Path $DistDir -ChildPath $FileName
-
-# Build!
-Write-Information "[-] $(Get-Date -Format 'MM-dd-yyyy HH:mm:ss') Running: go build -ldflags='$LdFlags' -o $OutputPath ./cmd/novakey"
-go build -trimpath -ldflags $LdFlags -o $OutputPath ./cmd/novakey
-
-If ($LASTEXITCODE -ne 0) {
-    Throw "[x] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Go build failed with exit code $LASTEXITCODE"
-}  # End If
-
-Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') SUCCESS! Binary created:`n   $OutputPath`n"
-Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Platform: $Target $(If($Target -eq 'darwin'){'(Universal Intel + Apple Silicon)'} Else {''})" 
