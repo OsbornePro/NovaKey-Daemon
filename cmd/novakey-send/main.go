@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -18,12 +19,22 @@ import (
 	"github.com/cloudflare/circl/kem"
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
 	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/hkdf"
+)
+
+const (
+	// Must match the server-side constants.
+	deviceMACInfo    = "NovaKey-device-mac-v1"
+	transportContext = "NovaKey-transport-v1"
 )
 
 type PairingQRPayload struct {
 	Version      int    `json:"v"`
 	DeviceID     string `json:"device_id"`
 	DeviceSecret string `json:"device_secret"`
+	ServerPubKey string `json:"server_pub"`
+	KeyID        string `json:"key_id"`
+	IssuedAt     int64  `json:"iat"`
 	Host         string `json:"host"`
 	Port         int    `json:"port"`
 }
@@ -57,9 +68,9 @@ func main() {
 		die("Invalid base64 device secret:", err)
 	}
 
-	pubKey, err := loadServerPublicKey()
+	pubKey, err := loadServerPublicKeyFromQR(qr)
 	if err != nil {
-		die("Failed to load server public key:", err)
+		die("Failed to load server public key from pairing JSON:", err)
 	}
 
 	// Build plaintext (replay header + deviceID + password + HMAC)
@@ -75,10 +86,24 @@ func main() {
 		die("Kyber encapsulation failed:", err)
 	}
 
-	// Encrypt payload with XChaCha20-Poly1305 using shared secret
-	payload, err := encryptPayload(ss, plaintext)
+	// Derive the transport session key via HKDF-SHA256 with a fixed context,
+	// matching the server's Decapsulate().
+	sessionKey, err := deriveSessionKey(ss)
+	if err != nil {
+		die("Failed to derive session key:", err)
+	}
+	// ss is no longer needed after deriving the key
+	for i := range ss {
+		ss[i] = 0
+	}
+
+	// Encrypt payload with XChaCha20-Poly1305 using the derived session key.
+	payload, err := encryptPayload(sessionKey, plaintext)
 	if err != nil {
 		die("AEAD encrypt failed:", err)
+	}
+	for i := range sessionKey {
+		sessionKey[i] = 0
 	}
 
 	// Send [ct || payload] to service
@@ -111,6 +136,12 @@ func loadQR(path string) (*PairingQRPayload, error) {
 	return &p, nil
 }
 
+// buildPlaintext constructs:
+//
+//	header  = [8-byte big-endian timestamp || 16-byte random nonce]
+//	body    = [1-byte deviceID length || deviceID || password]
+//	mac     = HMAC-SHA256 over (deviceMACInfo || header || deviceID || password)
+//	final   = header || body || mac
 func buildPlaintext(deviceID string, password []byte, secret []byte) ([]byte, error) {
 	ts := time.Now().Unix()
 
@@ -126,23 +157,43 @@ func buildPlaintext(deviceID string, password []byte, secret []byte) ([]byte, er
 	copy(header[8:], replay)
 
 	// body = [deviceIDLen (1 byte) || deviceID || password]
+	if len(deviceID) > 255 {
+		return nil, fmt.Errorf("device ID too long")
+	}
 	body := []byte{byte(len(deviceID))}
 	body = append(body, []byte(deviceID)...)
 	body = append(body, password...)
 
-	// HMAC over (header || deviceID || password)
+	// HMAC over (deviceMACInfo || header || deviceID || password)
 	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(deviceMACInfo))
 	mac.Write(header)
 	mac.Write([]byte(deviceID))
 	mac.Write(password)
 	sum := mac.Sum(nil)
 
 	// final plaintext = header || body || hmac
-	return append(append(header, body...), sum...), nil
+	plaintext := make([]byte, 0, len(header)+len(body)+len(sum))
+	plaintext = append(plaintext, header...)
+	plaintext = append(plaintext, body...)
+	plaintext = append(plaintext, sum...)
+	return plaintext, nil
 }
 
-func encryptPayload(ss []byte, plaintext []byte) ([]byte, error) {
-	aead, err := chacha20poly1305.NewX(ss)
+// deriveSessionKey mirrors the server-side HKDF derivation in Decapsulate().
+func deriveSessionKey(ss []byte) ([]byte, error) {
+	h := hkdf.New(sha256.New, ss, nil, []byte(transportContext))
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(h, key); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+// encryptPayload encrypts the plaintext with XChaCha20-Poly1305 using
+// the provided session key and returns [nonce || ciphertext].
+func encryptPayload(sessionKey []byte, plaintext []byte) ([]byte, error) {
+	aead, err := chacha20poly1305.NewX(sessionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -155,15 +206,20 @@ func encryptPayload(ss []byte, plaintext []byte) ([]byte, error) {
 	return append(nonce, cipher...), nil
 }
 
-func loadServerPublicKey() (kem.PublicKey, error) {
-	// For now, read raw public key bytes from a file:
-	// future: expose via pairing QR or control API
-	b, err := os.ReadFile("server.pub")
-	if err != nil {
-		return nil, err
+// loadServerPublicKeyFromQR decodes the server's Kyber public key
+// from the pairing JSON.
+func loadServerPublicKeyFromQR(qr *PairingQRPayload) (kem.PublicKey, error) {
+	if qr.ServerPubKey == "" {
+		return nil, fmt.Errorf("pairing payload missing server_pub")
 	}
+
+	pubBytes, err := base64.StdEncoding.DecodeString(qr.ServerPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64 server_pub: %w", err)
+	}
+
 	scheme := kyber768.Scheme()
-	return scheme.UnmarshalBinaryPublicKey(b)
+	return scheme.UnmarshalBinaryPublicKey(pubBytes)
 }
 
 func die(msg string, err error) {

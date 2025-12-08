@@ -1,80 +1,66 @@
 ﻿package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
-    "github.com/OsbornePro/NovaKey/internal/config"
-    "github.com/OsbornePro/NovaKey/internal/pairing"
+	"github.com/OsbornePro/NovaKey/internal/pairing"
 )
 
 func main() {
 	var (
-		deviceID = flag.String("device-id", "", "Device ID to pair (e.g. iphone-rob)")
-		host     = flag.String("host", "127.0.0.1", "Host/IP the phone should connect to")
-		port     = flag.Int("port", 60768, "Port NovaKey service is listening on")
-		cfgPath  = flag.String("config", "config.yaml", "Path to config.yaml")
+		serverPubPath = flag.String("server-pub", "", "Path to server Kyber public key")
+		outPath       = flag.String("out", "pairing.json", "Output file")
+		host          = flag.String("host", "127.0.0.1", "NovaKey host")
+		port          = flag.Int("port", 60768, "NovaKey port")
 	)
 	flag.Parse()
 
-	// Resolve config path & chdir
-	absCfg, err := filepath.Abs(*cfgPath)
+	if *serverPubPath == "" {
+		fatal("You must specify --server-pub")
+	}
+
+	pubBytes, err := os.ReadFile(*serverPubPath)
 	if err != nil {
-		die(err)
-	}
-	if err := os.Chdir(filepath.Dir(absCfg)); err != nil {
-		die(err)
+		fatal("Failed to read server public key", err)
 	}
 
-	// Load config
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		die(err)
+	// Allow base64 or raw
+	if decoded, err := base64.StdEncoding.DecodeString(string(pubBytes)); err == nil {
+		pubBytes = decoded
 	}
 
-	if cfg.Devices.PairedDevices == nil {
-		cfg.Devices.PairedDevices = make(map[string]config.DeviceConfig)
-	}
-
-	// Device ID
-	id := *deviceID
-	if id == "" {
-		id = pairing.GenerateDeviceID()
-
-	}
-
-	// Device secret
+	deviceID := pairing.GenerateDeviceID()
 	secret, err := pairing.GenerateDeviceSecret()
 	if err != nil {
-		die(err)
+		fatal("Failed to generate device secret", err)
 	}
 
-	// Store (hashed)
-	cfg.Devices.PairedDevices[id] = config.DeviceConfig{
-		SecretHash: config.HashSecret(secret),
-	}
-
-	if err := config.Save("config.yaml", cfg); err != nil {
-		die(err)
-	}
-
-	// Build QR payload
 	payload, err := pairing.BuildPairingPayload(
-		id,
+		deviceID,
 		secret,
+		pubBytes,
 		*host,
 		*port,
 	)
 	if err != nil {
-		die(err)
+		fatal("Failed to build pairing payload", err)
 	}
 
-	pairing.PrintPairingInfo(id, secret, payload)
+	// ✅ Write bytes directly (UTF-8, no BOM, no shell interference)
+	if err := os.WriteFile(*outPath, payload, 0600); err != nil {
+		fatal("Failed to write pairing file", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "✅ Pairing file written to %s\n", *outPath)
 }
 
-func die(err error) {
-	fmt.Println("x Error:", err)
+func fatal(msg string, err ...error) {
+	fmt.Fprintln(os.Stderr, "❌", msg)
+	if len(err) > 0 && err[0] != nil {
+		fmt.Fprintln(os.Stderr, err[0])
+	}
 	os.Exit(1)
 }

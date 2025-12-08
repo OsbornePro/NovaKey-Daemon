@@ -6,7 +6,10 @@ import (
 	"errors"
 )
 
-const deviceMACLen = 32 // HMAC-SHA256 size
+const (
+	deviceMACLen  = 32 // HMAC-SHA256 size
+	deviceMACInfo = "NovaKey-device-mac-v1"
+)
 
 // parseDevicePayload splits the payload into (deviceID, password, mac).
 // Layout (after header):
@@ -42,7 +45,10 @@ func parseDevicePayload(data []byte) (string, []byte, []byte, error) {
 	return deviceID, password, mac, nil
 }
 
-// verifyDeviceMAC checks HMAC-SHA256 over (header || deviceID || password)
+// verifyDeviceMAC checks HMAC-SHA256 over:
+//
+//   deviceMACInfo || header || deviceID || password
+//
 // using the per-device secret from config.
 func verifyDeviceMAC(header []byte, deviceID string, password []byte, mac []byte, cfg DeviceConfig) bool {
 	if cfg.Secret == "" {
@@ -51,6 +57,10 @@ func verifyDeviceMAC(header []byte, deviceID string, password []byte, mac []byte
 	}
 
 	h := hmac.New(sha256.New, []byte(cfg.Secret))
+
+	// Scope this MAC to the NovaKey device-auth protocol/version.
+	h.Write([]byte(deviceMACInfo))
+
 	h.Write(header)
 	h.Write([]byte(deviceID))
 	h.Write(password)

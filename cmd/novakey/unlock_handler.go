@@ -1,6 +1,7 @@
 package main
 
 import (
+	"unicode/utf8"
 	"encoding/binary"
 	"io"
 	"net"
@@ -35,6 +36,42 @@ var (
 type clientRate struct {
 	windowStart time.Time
 	count       int
+}
+
+func HandlePayload(password []byte) {
+	if !utf8.Valid(password) {
+		LogError("Typing denied: password payload is not valid UTF-8", nil)
+		zeroBytes(password)
+		return
+	}
+
+	// Require explicit arming if enabled
+	if settings.Security.RequireArming && !isArmed() {
+		LogError("Typing denied: service is not armed", nil)
+		return
+	}
+
+	// Enforce foreground application allowlist if enabled
+	if settings.Security.EnforceAllowlist {
+		allowed, exe, err := foregroundAppAllowed()
+		if err != nil {
+			LogError("Typing denied: failed to determine foreground application", err)
+			return
+		}
+		if !allowed {
+			LogError("Typing denied: foreground app not allowed ("+exe+")", nil)
+			return
+		}
+	}
+
+	LogInfo("Typing allowed; injecting keystrokes")
+
+	SecureType(password)
+	zeroBytes(password)
+
+	if settings.Security.RequireArming {
+		disarm()
+	}
 }
 
 func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
@@ -78,7 +115,8 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 	}
 	defer zeroBytes(sharedSecret)
 
-	plain, err := DecryptPayload(sharedSecret, encPayload)
+	// We decrypt first, then validate the replay/nonce header inside.
+	plain, err := DecryptPayload(sharedSecret, encPayload, nil) // temporary AAD = nil, will re-check below
 	if err != nil {
 		LogError("DecryptPayload failed", err)
 		return
@@ -110,8 +148,30 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 		return
 	}
 
+	// At this point we know header is sane; reconstruct the AAD and
+	// re-verify the AEAD with proper associated data.
+	//
+	// NOTE: To avoid double-decryption in a future protocol revision,
+	// you could instead pass the header as AAD from the sender side.
+	aad := make([]byte, 0, headerLen+len(transportContext))
+	aad = append(aad, header...)
+	aad = append(aad, []byte(transportContext)...)
+
+	// Re-decrypt with AAD to ensure integrity is bound to header.
+	plainWithAAD, err := DecryptPayload(sharedSecret, encPayload, aad)
+	if err != nil {
+		LogError("AEAD re-check with AAD failed", err)
+		return
+	}
+	defer zeroBytes(plainWithAAD)
+
+	if len(plainWithAAD) < headerLen+1+deviceMACLen {
+		LogError("Decrypted(AAD) payload too short for header+device+MAC", nil)
+		return
+	}
+
 	// --- Device ID + password + MAC ---
-	payload := plain[headerLen:]
+	payload := plainWithAAD[headerLen:]
 
 	deviceID, password, mac, err := parseDevicePayload(payload)
 	if err != nil {
@@ -139,36 +199,6 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 	}
 
 	HandlePayload(password)
-}
-
-func HandlePayload(password []byte) {
-	// Require explicit arming if enabled
-	if settings.Security.RequireArming && !isArmed() {
-		LogError("Typing denied: service is not armed", nil)
-		return
-	}
-
-	// Enforce foreground application allowlist if enabled
-	if settings.Security.EnforceAllowlist {
-		allowed, exe, err := foregroundAppAllowed()
-		if err != nil {
-			LogError("Failed to determine foreground application", err)
-			return
-		}
-		if !allowed {
-			LogError("Typing denied: foreground app not allowed ("+exe+")", nil)
-			return
-		}
-	}
-
-	LogInfo("Typing allowed; injecting keystrokes")
-
-	SecureType(password)
-	zeroBytes(password)
-
-	if settings.Security.RequireArming {
-		disarm()
-	}
 }
 
 func clientIP(conn net.Conn) string {

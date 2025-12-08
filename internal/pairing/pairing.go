@@ -4,21 +4,31 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
+	"time"
+)
+
+const (
+	PairingVersion = 1
+	DefaultKeyID   = "kyber768-v1"
 )
 
 type PairingPayload struct {
 	Version      int    `json:"v"`
 	DeviceID     string `json:"device_id"`
 	DeviceSecret string `json:"device_secret"`
-	Host         string `json:"host"`
-	Port         int    `json:"port"`
+
+	ServerPubKey string `json:"server_pub"`
+	KeyID        string `json:"key_id"`
+	IssuedAt     int64  `json:"iat"`
+
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
 // GenerateDeviceID returns a random URL-safe device ID
 func GenerateDeviceID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
@@ -29,28 +39,27 @@ func GenerateDeviceSecret() ([]byte, error) {
 	return b, err
 }
 
-// BuildPairingPayload creates the QR JSON payload
+// BuildPairingPayload creates a signed JSON pairing payload
 func BuildPairingPayload(
 	deviceID string,
-	secret []byte,
+	deviceSecret []byte,
+	serverPub []byte,
 	host string,
 	port int,
 ) ([]byte, error) {
-	p := PairingPayload{
-		Version:      1,
-		DeviceID:     deviceID,
-		DeviceSecret: base64.StdEncoding.EncodeToString(secret),
-		Host:         host,
-		Port:         port,
-	}
-	return json.MarshalIndent(p, "", "  ")
-}
 
-// PrintPairingInfo prints user-friendly pairing info
-func PrintPairingInfo(deviceID string, secret []byte, payload []byte) {
-	fmt.Println("Device paired successfully")
-	fmt.Println("Device ID :", deviceID)
-	fmt.Println()
-	fmt.Println("Save this JSON (QR payload):")
-	fmt.Println(string(payload))
+	p := PairingPayload{
+		Version:      PairingVersion,
+		DeviceID:     deviceID,
+		DeviceSecret: base64.StdEncoding.EncodeToString(deviceSecret),
+
+		ServerPubKey: base64.StdEncoding.EncodeToString(serverPub),
+		KeyID:        DefaultKeyID,
+		IssuedAt:     time.Now().Unix(),
+
+		Host: host,
+		Port: port,
+	}
+
+	return json.MarshalIndent(p, "", "  ")
 }

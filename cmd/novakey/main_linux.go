@@ -4,49 +4,80 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
 )
 
 func main() {
-	// priv, _, err := GenerateKeyPair()
-    priv, pub, err := GenerateKeyPair()
+	loadSettings()
 
-    // TEMPORARY: export public key for local testing (safe to remove later)
-    pubBytes, err := pub.MarshalBinary()
-    if err == nil {
-	    _ = os.WriteFile("server.pub", pubBytes, 0600)
-    }
-    // TEMPORARY END BLOCK
+	priv, _, err := GenerateKeyPair()
 	if err != nil {
 		LogError("Key generation failed", err)
 		return
 	}
 
-	addr := ":60768"
-	ln, err := net.Listen("tcp4", addr)
-	if err != nil {
-		LogError("Failed to start TCP server", err)
-		return
+	var listeners []net.Listener
+
+	addrV4 := fmt.Sprintf("%s:%d", settings.Network.ListenAddress, settings.Network.ListenPort)
+	addrV6 := fmt.Sprintf(":%d", settings.Network.ListenPort)
+
+	switch settings.Network.Mode {
+	case "ipv4":
+		ln, err := net.Listen("tcp4", addrV4)
+		if err != nil {
+			LogError("Failed to start IPv4 listener", err)
+			return
+		}
+		listeners = append(listeners, ln)
+		LogInfo("Listening on IPv4 " + addrV4)
+
+	case "ipv6":
+		ln, err := net.Listen("tcp6", addrV6)
+		if err != nil {
+			LogError("Failed to start IPv6 listener", err)
+			return
+		}
+		listeners = append(listeners, ln)
+		LogInfo("Listening on IPv6 " + addrV6)
+
+	case "dual":
+		ln4, err4 := net.Listen("tcp4", addrV4)
+		if err4 == nil {
+			listeners = append(listeners, ln4)
+			LogInfo("Listening on IPv4 " + addrV4)
+		}
+
+		ln6, err6 := net.Listen("tcp6", addrV6)
+		if err6 == nil {
+			listeners = append(listeners, ln6)
+			LogInfo("Listening on IPv6 " + addrV6)
+		}
+
+		if len(listeners) == 0 {
+			LogError("Failed to start any listeners in dual mode", nil)
+			return
+		}
 	}
-	defer ln.Close()
-	LogInfo("TCP listener started on " + addr + " (IPv4 only)")
+
+	for _, ln := range listeners {
+		go func(l net.Listener) {
+			defer l.Close()
+			for {
+				conn, err := l.Accept()
+				if err != nil {
+					continue
+				}
+				go handleConn(conn, priv)
+			}
+		}(ln)
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
-
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				LogError("Accept error", err)
-				continue
-			}
-			go handleConn(conn, priv)
-		}
-	}()
-
 	<-stop
+
 	LogInfo("Stopping server")
 }

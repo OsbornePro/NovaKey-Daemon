@@ -2,6 +2,7 @@
 
 import (
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,7 +17,7 @@ type Settings struct {
 	Network struct {
 		ListenAddress string `yaml:"listen_address"`
 		ListenPort    int    `yaml:"listen_port"`
-		IPv6          bool   `yaml:"ipv6"`
+		Mode          string `yaml:"mode"` // ipv4 | ipv6 | dual
 	} `yaml:"network"`
 
 	Security struct {
@@ -38,17 +39,17 @@ type Settings struct {
 		} `yaml:"hotkey"`
 	} `yaml:"arming"`
 
-    Allowlist struct {
-	    Windows struct {
-		    Browsers         []string `yaml:"browsers"`
-		    PasswordManagers []string `yaml:"password_managers"`
-	    } `yaml:"windows"`
+	Allowlist struct {
+		Windows struct {
+			Browsers         []string `yaml:"browsers"`
+			PasswordManagers []string `yaml:"password_managers"`
+		} `yaml:"windows"`
 
-	    Darwin struct {
-		    BundleIDs    []string `yaml:"bundle_ids"`
-		    Executables []string `yaml:"executables"`
-	    } `yaml:"darwin"`
-    } `yaml:"allowlist"`
+		Darwin struct {
+			BundleIDs  []string `yaml:"bundle_ids"`
+			Executables []string `yaml:"executables"`
+		} `yaml:"darwin"`
+	} `yaml:"allowlist"`
 
 	Devices struct {
 		RequireKnownDevice bool                    `yaml:"require_known_device"`
@@ -69,6 +70,13 @@ func loadSettings() {
 	f, err := os.Open("config.yaml")
 	if err != nil {
 		LogInfo("No config.yaml found; using defaults")
+
+		settings.Version = 1
+
+		// Network defaults
+		settings.Network.ListenAddress = "0.0.0.0"
+		settings.Network.ListenPort = 60768
+		settings.Network.Mode = "ipv4"
 
 		// Security defaults
 		settings.Security.RequireArming = true
@@ -99,6 +107,18 @@ func loadSettings() {
 
 	if settings.Devices.PairedDevices == nil {
 		settings.Devices.PairedDevices = make(map[string]DeviceConfig)
+	}
+
+	// Normalize and validate network mode
+	mode := strings.ToLower(strings.TrimSpace(settings.Network.Mode))
+	switch mode {
+	case "", "ipv4":
+		settings.Network.Mode = "ipv4"
+	case "ipv6", "dual":
+		settings.Network.Mode = mode
+	default:
+		LogError("Invalid network.mode in config.yaml; defaulting to ipv4", nil)
+		settings.Network.Mode = "ipv4"
 	}
 }
 
