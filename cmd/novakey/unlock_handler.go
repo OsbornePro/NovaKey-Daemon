@@ -61,8 +61,8 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 	ct := data[:kyberCtSize]
 	encPayload := data[kyberCtSize:]
 
-	// Must contain AEAD nonce + header + at least 1 byte (device ID length)
-	if len(encPayload) < chacha20poly1305.NonceSizeX+headerLen+1 {
+	// Must contain AEAD nonce + header + device+password+MAC.
+	if len(encPayload) < chacha20poly1305.NonceSizeX+headerLen+1+deviceMACLen {
 		LogError("Encrypted payload too short", nil)
 		return
 	}
@@ -85,12 +85,14 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 	}
 	defer zeroBytes(plain)
 
-	if len(plain) < headerLen+1 {
-		LogError("Decrypted payload too short for header+device ID", nil)
+	if len(plain) < headerLen+1+deviceMACLen {
+		LogError("Decrypted payload too short for header+device+MAC", nil)
 		return
 	}
 
 	// --- Replay protection header ---
+	header := plain[:headerLen]
+
 	ts := int64(binary.BigEndian.Uint64(plain[:headerTimestampLen]))
 	var nonce [headerNonceLen]byte
 	copy(nonce[:], plain[headerTimestampLen:headerLen])
@@ -108,12 +110,12 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 		return
 	}
 
-	// --- Device ID + password ---
+	// --- Device ID + password + MAC ---
 	payload := plain[headerLen:]
 
-	deviceID, password, err := extractDeviceID(payload)
+	deviceID, password, mac, err := parseDevicePayload(payload)
 	if err != nil {
-		LogError("Invalid payload format (device ID)", err)
+		LogError("Invalid payload format (device ID / MAC)", err)
 		return
 	}
 
@@ -122,10 +124,16 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 		return
 	}
 
-	// Enforce known-device policy if enabled
+	// Enforce known-device policy + HMAC verification if enabled.
 	if settings.Devices.RequireKnownDevice {
-		if !settings.Devices.PairedDevices[deviceID] {
+		devCfg, ok := settings.Devices.PairedDevices[deviceID]
+		if !ok {
 			LogError("Typing denied: unknown device ("+deviceID+")", nil)
+			return
+		}
+
+		if !verifyDeviceMAC(header, deviceID, password, mac, devCfg) {
+			LogError("Typing denied: invalid device MAC ("+deviceID+")", nil)
 			return
 		}
 	}

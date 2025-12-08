@@ -6,6 +6,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type DeviceConfig struct {
+	Secret string `yaml:"secret"`
+}
+
 type Settings struct {
 	Version int `yaml:"version"`
 
@@ -47,8 +51,8 @@ type Settings struct {
     } `yaml:"allowlist"`
 
 	Devices struct {
-		RequireKnownDevice bool            `yaml:"require_known_device"`
-		PairedDevices      map[string]bool `yaml:"paired_devices"`
+		RequireKnownDevice bool                    `yaml:"require_known_device"`
+		PairedDevices      map[string]DeviceConfig `yaml:"paired_devices"`
 	} `yaml:"devices"`
 
 	Control struct {
@@ -77,7 +81,7 @@ func loadSettings() {
 
 		// Device defaults
 		settings.Devices.RequireKnownDevice = false
-		settings.Devices.PairedDevices = make(map[string]bool)
+		settings.Devices.PairedDevices = make(map[string]DeviceConfig)
 
 		// Control listener defaults
 		settings.Control.Enabled = true
@@ -94,6 +98,6 @@ func loadSettings() {
 	}
 
 	if settings.Devices.PairedDevices == nil {
-		settings.Devices.PairedDevices = make(map[string]bool)
+		settings.Devices.PairedDevices = make(map[string]DeviceConfig)
 	}
 }
