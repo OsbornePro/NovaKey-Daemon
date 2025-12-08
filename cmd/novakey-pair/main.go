@@ -1,73 +1,80 @@
-package main
+﻿package main
 
 import (
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+
+    "github.com/OsbornePro/NovaKey/internal/config"
+    "github.com/OsbornePro/NovaKey/internal/pairing"
 )
 
 func main() {
 	var (
 		deviceID = flag.String("device-id", "", "Device ID to pair (e.g. iphone-rob)")
-		host     = flag.String("host", "192.168.1.10", "Host/IP the phone should connect to")
+		host     = flag.String("host", "127.0.0.1", "Host/IP the phone should connect to")
 		port     = flag.Int("port", 60768, "Port NovaKey service is listening on")
-		config   = flag.String("config", "config.yaml", "Path to config.yaml")
+		cfgPath  = flag.String("config", "config.yaml", "Path to config.yaml")
 	)
 	flag.Parse()
 
-	// Change working dir to location of config if it's a relative path.
-	configPath, err := filepath.Abs(*config)
+	// Resolve config path & chdir
+	absCfg, err := filepath.Abs(*cfgPath)
 	if err != nil {
-		fmt.Println("Error resolving config path:", err)
-		os.Exit(1)
+		die(err)
 	}
-	if err := os.Chdir(filepath.Dir(configPath)); err != nil {
-		fmt.Println("Error changing directory:", err)
-		os.Exit(1)
+	if err := os.Chdir(filepath.Dir(absCfg)); err != nil {
+		die(err)
 	}
 
-	// Load existing settings
-	loadSettings()
-
-	// Ensure map is initialized
-	if settings.Devices.PairedDevices == nil {
-		settings.Devices.PairedDevices = make(map[string]DeviceConfig)
+	// Load config
+	cfg, err := config.Load("config.yaml")
+	if err != nil {
+		die(err)
 	}
 
-	// Determine device ID
+	if cfg.Devices.PairedDevices == nil {
+		cfg.Devices.PairedDevices = make(map[string]config.DeviceConfig)
+	}
+
+	// Device ID
 	id := *deviceID
 	if id == "" {
-		id, err = generateRandomDeviceID()
-		if err != nil {
-			fmt.Println("Error generating device ID:", err)
-			os.Exit(1)
-		}
+		id = pairing.GenerateDeviceID()
+
 	}
 
-	// Generate secret
-	secret, err := generateDeviceSecret()
+	// Device secret
+	secret, err := pairing.GenerateDeviceSecret()
 	if err != nil {
-		fmt.Println("Error generating device secret:", err)
-		os.Exit(1)
+		die(err)
 	}
 
-	// Store in config
-	settings.Devices.PairedDevices[id] = DeviceConfig{
-		Secret: secret,
+	// Store (hashed)
+	cfg.Devices.PairedDevices[id] = config.DeviceConfig{
+		SecretHash: config.HashSecret(secret),
 	}
 
-	if err := saveSettings("config.yaml"); err != nil {
-		fmt.Println("Error saving config.yaml:", err)
-		os.Exit(1)
+	if err := config.Save("config.yaml", cfg); err != nil {
+		die(err)
 	}
 
 	// Build QR payload
-	payload, err := buildPairingPayload(id, secret, *host, *port)
+	payload, err := pairing.BuildPairingPayload(
+		id,
+		secret,
+		*host,
+		*port,
+	)
 	if err != nil {
-		fmt.Println("Error building pairing payload:", err)
-		os.Exit(1)
+		die(err)
 	}
 
-	printPairingInfo(id, secret, payload)
+	pairing.PrintPairingInfo(id, secret, payload)
+}
+
+func die(err error) {
+	fmt.Println("x Error:", err)
+	os.Exit(1)
 }
