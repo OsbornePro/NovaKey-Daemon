@@ -12,15 +12,14 @@ import (
 )
 
 var (
-	user32                   = syscall.NewLazyDLL("user32.dll")
-	kernel32                 = syscall.NewLazyDLL("kernel32.dll")
-	psapi                    = syscall.NewLazyDLL("psapi.dll")
+	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	psapi    = syscall.NewLazyDLL("psapi.dll")
 
-	getForegroundWindow       = user32.NewProc("GetForegroundWindow")
-	getWindowThreadProcessId  = user32.NewProc("GetWindowThreadProcessId")
-	openProcess               = kernel32.NewProc("OpenProcess")
-	closeHandle               = kernel32.NewProc("CloseHandle")
-	getModuleFileNameExW      = psapi.NewProc("GetModuleFileNameExW")
+	getForegroundWindow      = user32.NewProc("GetForegroundWindow")
+	getWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
+	openProcess              = kernel32.NewProc("OpenProcess")
+	closeHandle              = kernel32.NewProc("CloseHandle")
+	getModuleFileNameExW     = psapi.NewProc("GetModuleFileNameExW")
 )
 
 const (
@@ -39,7 +38,7 @@ func getForegroundExe() (string, error) {
 		uintptr(unsafe.Pointer(&pid)),
 	)
 	if pid == 0 {
-		return "", errors.New("unable to resolve foreground PID")
+		return "", errors.New("failed to resolve foreground PID")
 	}
 
 	hProc, _, err := openProcess.Call(
@@ -64,6 +63,37 @@ func getForegroundExe() (string, error) {
 	}
 
 	fullPath := syscall.UTF16ToString(buf)
-	exe := strings.ToLower(filepath.Base(fullPath))
-	return exe, nil
+	return strings.ToLower(filepath.Base(fullPath)), nil
+}
+
+func foregroundAppAllowed() (bool, string, error) {
+	exe, err := getForegroundExe()
+	if err != nil {
+		return false, "", err
+	}
+
+	// --- HARD DENY (testing / safety) ---
+	if exe == "cmd.exe" {
+		return false, exe, nil
+	}
+
+	// --- FOR TESTING: ALWAYS ALLOW POWERSHELL ---
+	if exe == "powershell.exe" || exe == "pwsh.exe" {
+		return true, exe, nil
+	}
+
+	// --- Normal allowlist enforcement ---
+	for _, allowed := range settings.Allowlist.Windows.Browsers {
+		if exe == strings.ToLower(allowed) {
+			return true, exe, nil
+		}
+	}
+
+	for _, allowed := range settings.Allowlist.Windows.PasswordManagers {
+		if exe == strings.ToLower(allowed) {
+			return true, exe, nil
+		}
+	}
+
+	return false, exe, nil
 }

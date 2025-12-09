@@ -36,27 +36,25 @@ import (
 
 func foregroundAppAllowed() (bool, string, error) {
 	bundlePtr := C.frontmostBundleID()
-	if bundlePtr == nil {
-		return false, "", errors.New("no foreground bundle ID")
+	exePtr := C.frontmostExecutable()
+
+	if bundlePtr == nil || exePtr == nil {
+		return false, "", errors.New("failed to determine foreground application")
 	}
 	defer C.free(unsafe.Pointer(bundlePtr))
-
-	exePtr := C.frontmostExecutable()
-	if exePtr == nil {
-		return false, "", errors.New("no foreground executable")
-	}
 	defer C.free(unsafe.Pointer(exePtr))
 
 	bundleID := strings.ToLower(C.GoString(bundlePtr))
 	exe := strings.ToLower(C.GoString(exePtr))
 
-	// Match against allowlist
+	// Prefer bundle ID match
 	for _, allowed := range settings.Allowlist.Darwin.BundleIDs {
 		if bundleID == strings.ToLower(allowed) {
 			return true, bundleID, nil
 		}
 	}
 
+	// Fallback to executable
 	for _, allowed := range settings.Allowlist.Darwin.Executables {
 		if exe == strings.ToLower(allowed) {
 			return true, exe, nil

@@ -18,9 +18,8 @@ func startControlListener() {
 		return
 	}
 
-	listenAddr := settings.Control.ListenAddress
-	if strings.TrimSpace(listenAddr) == "" {
-		// Fail-safe default: bind to localhost only.
+	listenAddr := strings.TrimSpace(settings.Control.ListenAddress)
+	if listenAddr == "" {
 		listenAddr = "127.0.0.1"
 	}
 
@@ -33,7 +32,7 @@ func startControlListener() {
 	}
 
 	if listenAddr == "0.0.0.0" || listenAddr == "::" {
-		LogError("Control listener is bound to a wildcard address; this is unsafe in most environments", nil)
+		LogError("WARNING: control listener bound to wildcard address", nil)
 	}
 
 	LogInfo("Control listener active on " + addr)
@@ -43,7 +42,6 @@ func startControlListener() {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
-				// Noisy log here could be spammy; keep quiet on transient errors.
 				continue
 			}
 			go handleControlConn(conn)
@@ -63,8 +61,7 @@ func handleControlConn(conn net.Conn) {
 	fields := strings.Fields(line)
 
 	if len(fields) != 2 {
-		// Require "COMMAND TOKEN"
-		LogError("Control command rejected: malformed line", nil)
+		LogError("Control command rejected: malformed input", nil)
 		return
 	}
 
@@ -78,10 +75,16 @@ func handleControlConn(conn net.Conn) {
 
 	switch command {
 	case "ARM":
-		armOnce()
+		arm()
 	case "DISARM":
 		disarm()
+	case "RELOAD":
+		if err := reloadSettings(); err != nil {
+			LogError("Config reload failed via control channel", err)
+			return
+		}
+		LogInfo("Config reloaded via control channel")
 	default:
-		LogError("Control command rejected: unknown command "+command, nil)
+		LogError("Unknown control command: "+command, nil)
 	}
 }

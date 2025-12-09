@@ -4,105 +4,110 @@
 package main
 
 import (
-	"syscall"
+	"runtime"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 )
 
-var (
-	moduser32      = syscall.NewLazyDLL("user32.dll")
-	procKeybdEvent = moduser32.NewProc("keybd_event")
-)
+var sendInput = user32.NewProc("SendInput")
 
 const (
-	KEYEVENTF_KEYUP = 0x0002
-	VK_RETURN       = 0x0D
-	VK_SHIFT        = 0x10
+	INPUT_KEYBOARD    = 1
+	KEYEVENTF_KEYUP   = 0x0002
+	KEYEVENTF_UNICODE = 0x0004
 )
 
-// SecureType sends the given UTF-8 bytes as synthetic key presses.
-func SecureType(b []byte) {
-	time.Sleep(600 * time.Millisecond)
+type KEYBDINPUT struct {
+	WVk         uint16
+	WScan       uint16
+	DwFlags     uint32
+	Time        uint32
+	DwExtraInfo uintptr
+}
 
-	for len(b) > 0 {
-		r, size := utf8.DecodeRune(b)
+// INPUT MUST be 40 bytes on amd64
+type INPUT struct {
+	Type uint32
+	Ki   KEYBDINPUT
+	_    [8]byte // REQUIRED padding
+}
+
+func SecureType(password []byte) {
+	// 🔒 REQUIRED: must stay on one Windows thread
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	LogInfo("SecureType: injecting keystrokes")
+
+	time.Sleep(500 * time.Millisecond)
+
+	if len(password) == 0 {
+		LogError("SecureType: empty password", nil)
+		return
+	}
+
+	inputs := make([]INPUT, 0, len(password)*2+2)
+
+	for len(password) > 0 {
+		r, size := utf8.DecodeRune(password)
 		if r == utf8.RuneError && size == 1 {
-			// Skip invalid byte and continue.
-			b = b[1:]
+			password = password[1:]
 			continue
 		}
-		b = b[size:]
+		password = password[size:]
 
-		if r == '\n' || r == '\r' {
-			keyDownUp(VK_RETURN)
-			continue
-		}
+		// Key down
+		inputs = append(inputs, INPUT{
+			Type: INPUT_KEYBOARD,
+			Ki: KEYBDINPUT{
+				WVk:     0,
+				WScan:   uint16(r),
+				DwFlags: KEYEVENTF_UNICODE,
+			},
+		})
 
-		vk, needShift := runeToVK(r)
-
-		if needShift {
-			procKeybdEvent.Call(uintptr(VK_SHIFT), 0, 0, 0)
-		}
-		keyDownUp(vk)
-		if needShift {
-			procKeybdEvent.Call(uintptr(VK_SHIFT), 0, KEYEVENTF_KEYUP, 0)
-		}
-
-		time.Sleep(12 * time.Millisecond)
+		// Key up
+		inputs = append(inputs, INPUT{
+			Type: INPUT_KEYBOARD,
+			Ki: KEYBDINPUT{
+				WVk:     0,
+				WScan:   uint16(r),
+				DwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+			},
+		})
 	}
 
-	keyDownUp(VK_RETURN)
-}
+	// Press Enter
+	inputs = append(inputs,
+		INPUT{
+			Type: INPUT_KEYBOARD,
+			Ki: KEYBDINPUT{
+				WVk:     0,
+				WScan:   '\r',
+				DwFlags: KEYEVENTF_UNICODE,
+			},
+		},
+		INPUT{
+			Type: INPUT_KEYBOARD,
+			Ki: KEYBDINPUT{
+				WVk:     0,
+				WScan:   '\r',
+				DwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+			},
+		},
+	)
 
-func keyDownUp(vk int) {
-	procKeybdEvent.Call(uintptr(vk), 0, 0, 0)
-	procKeybdEvent.Call(uintptr(vk), 0, KEYEVENTF_KEYUP, 0)
-}
+	ret, _, err := sendInput.Call(
+		uintptr(len(inputs)),
+		uintptr(unsafe.Pointer(&inputs[0])),
+		uintptr(unsafe.Sizeof(INPUT{})),
+	)
 
-func runeToVK(r rune) (vk int, shift bool) {
-	if r >= 'a' && r <= 'z' {
-		return int(r - 32), false
-	}
-	if r >= 'A' && r <= 'Z' {
-		return int(r), true
-	}
-	if r >= '0' && r <= '9' {
-		return int(r), false
-	}
-
-	m := map[rune]struct {
-		vk    int
-		shift bool
-	}{
-		' ': {0x20, false},
-
-		'!': {'1', true}, '@': {'2', true}, '#': {'3', true}, '$': {'4', true},
-		'%': {'5', true}, '^': {'6', true}, '&': {'7', true}, '*': {'8', true},
-		'(': {'9', true}, ')': {'0', true},
-
-		'-': {0xBD, false}, '_': {0xBD, true},
-		'=': {0xBB, false}, '+': {0xBB, true},
-
-		'[': {0xDB, false}, '{': {0xDB, true},
-		']': {0xDD, false}, '}': {0xDD, true},
-
-		';': {0xBA, false}, ':': {0xBA, true},
-
-		'\'': {0xDE, false}, '"': {0xDE, true},
-
-		',': {0xBC, false}, '<': {0xBC, true},
-		'.': {0xBE, false}, '>': {0xBE, true},
-		'/': {0xBF, false}, '?': {0xBF, true},
-
-		'\\': {0xDC, false}, '|': {0xDC, true},
-
-		'`': {0xC0, false}, '~': {0xC0, true},
+	if ret == 0 {
+		LogError("SendInput failed", err)
+		return
 	}
 
-	if v, ok := m[r]; ok {
-		return v.vk, v.shift
-	}
-
-	// Fallback to space
-	return 0x20, false
+	LogInfo("SendInput succeeded (keystrokes injected)")
 }

@@ -1,77 +1,45 @@
 package main
 
 import (
-	"unicode/utf8"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
-	maxPayloadSize  = 16 * 1024       // 16 KB max total payload
-	maxPasswordSize = 4096            // 4 KB max password
-	replayWindow    = 5 * time.Minute // how long nonces are remembered
+	maxPayloadSize  = 16 * 1024
+	maxPasswordSize = 4096
+	replayWindow    = 5 * time.Minute
 
-	rateWindow       = 1 * time.Minute // per-IP window
-	maxRequestsPerIP = 30              // max connections per IP per window
+	rateWindow       = 1 * time.Minute
+	maxRequestsPerIP = 30
 
-	headerTimestampLen = 8  // int64 seconds
-	headerNonceLen     = 16 // 16-byte nonce
-	headerLen          = headerTimestampLen + headerNonceLen
+	protocolVersion    = 1
+	headerVersionLen   = 1
+	headerTimestampLen = 8
+	headerNonceLen     = 16
+	headerLen          = headerVersionLen + headerTimestampLen + headerNonceLen
+
+	CommandTypePassword = 0x01
 )
 
 var (
 	rateMu      sync.Mutex
-	clientRates = make(map[string]*clientRate)
+	clientRates = map[string]*clientRate{}
 
 	replayMu   sync.Mutex
-	seenNonces = make(map[[headerNonceLen]byte]int64)
+	seenNonces = map[[headerNonceLen]byte]int64{}
 )
 
 type clientRate struct {
 	windowStart time.Time
 	count       int
-}
-
-func HandlePayload(password []byte) {
-	if !utf8.Valid(password) {
-		LogError("Typing denied: password payload is not valid UTF-8", nil)
-		zeroBytes(password)
-		return
-	}
-
-	// Require explicit arming if enabled
-	if settings.Security.RequireArming && !isArmed() {
-		LogError("Typing denied: service is not armed", nil)
-		return
-	}
-
-	// Enforce foreground application allowlist if enabled
-	if settings.Security.EnforceAllowlist {
-		allowed, exe, err := foregroundAppAllowed()
-		if err != nil {
-			LogError("Typing denied: failed to determine foreground application", err)
-			return
-		}
-		if !allowed {
-			LogError("Typing denied: foreground app not allowed ("+exe+")", nil)
-			return
-		}
-	}
-
-	LogInfo("Typing allowed; injecting keystrokes")
-
-	SecureType(password)
-	zeroBytes(password)
-
-	if settings.Security.RequireArming {
-		disarm()
-	}
 }
 
 func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
@@ -83,123 +51,158 @@ func handleConn(conn net.Conn, priv *kyber768.PrivateKey) {
 		return
 	}
 
-	limitedReader := &io.LimitedReader{R: conn, N: maxPayloadSize}
-	data, err := io.ReadAll(limitedReader)
+	data, err := io.ReadAll(&io.LimitedReader{R: conn, N: maxPayloadSize})
 	if err != nil {
 		LogError("Read failed", err)
 		return
 	}
-
 	if len(data) < kyberCtSize {
 		LogError("Payload too short", nil)
 		return
 	}
 
 	ct := data[:kyberCtSize]
-	encPayload := data[kyberCtSize:]
+	enc := data[kyberCtSize:]
 
-	// Must contain AEAD nonce + header + device+password+MAC.
-	if len(encPayload) < chacha20poly1305.NonceSizeX+headerLen+1+deviceMACLen {
-		LogError("Encrypted payload too short", nil)
-		return
-	}
-	if len(encPayload) > maxPayloadSize {
-		LogError("Encrypted payload too large", nil)
-		return
-	}
-
-	sharedSecret, err := Decapsulate(priv, ct)
+	shared, err := Decapsulate(priv, ct)
 	if err != nil {
 		LogError("Decapsulation failed", err)
 		return
 	}
-	defer zeroBytes(sharedSecret)
+	defer zeroBytes(shared)
 
-	// We decrypt first, then validate the replay/nonce header inside.
-	plain, err := DecryptPayload(sharedSecret, encPayload, nil) // temporary AAD = nil, will re-check below
+	plain, err := DecryptPayload(shared, enc)
 	if err != nil {
 		LogError("DecryptPayload failed", err)
 		return
 	}
 	defer zeroBytes(plain)
 
-	if len(plain) < headerLen+1+deviceMACLen {
-		LogError("Decrypted payload too short for header+device+MAC", nil)
+	if len(plain) < headerLen+3+deviceMACLen {
+		LogError("Decrypted payload too short", nil)
 		return
 	}
 
-	// --- Replay protection header ---
+	// ---------------- Header ----------------
 	header := plain[:headerLen]
 
-	ts := int64(binary.BigEndian.Uint64(plain[:headerTimestampLen]))
+	if header[0] != protocolVersion {
+		LogError("Unsupported protocol version", nil)
+		return
+	}
+
+	ts := int64(binary.BigEndian.Uint64(header[1:9]))
 	var nonce [headerNonceLen]byte
-	copy(nonce[:], plain[headerTimestampLen:headerLen])
+	copy(nonce[:], header[9:headerLen])
 
-	now := time.Now()
-	nowUnix := now.Unix()
-
-	if ts > nowUnix+60 || ts < nowUnix-int64(replayWindow.Seconds()) {
-		LogError("Decrypted payload timestamp out of acceptable window", nil)
+	now := time.Now().Unix()
+	if ts < now-int64(replayWindow.Seconds()) || ts > now+60 {
+		LogError("Timestamp outside replay window", nil)
 		return
 	}
-
 	if isReplay(nonce, ts) {
-		LogError("Replay detected; dropping payload", nil)
+		LogError("Replay detected", nil)
 		return
 	}
 
-	// At this point we know header is sane; reconstruct the AAD and
-	// re-verify the AEAD with proper associated data.
-	//
-	// NOTE: To avoid double-decryption in a future protocol revision,
-	// you could instead pass the header as AAD from the sender side.
-	aad := make([]byte, 0, headerLen+len(transportContext))
-	aad = append(aad, header...)
-	aad = append(aad, []byte(transportContext)...)
+	// ---------------- Body ----------------
+	body := plain[headerLen:]
 
-	// Re-decrypt with AAD to ensure integrity is bound to header.
-	plainWithAAD, err := DecryptPayload(sharedSecret, encPayload, aad)
-	if err != nil {
-		LogError("AEAD re-check with AAD failed", err)
-		return
-	}
-	defer zeroBytes(plainWithAAD)
-
-	if len(plainWithAAD) < headerLen+1+deviceMACLen {
-		LogError("Decrypted(AAD) payload too short for header+device+MAC", nil)
+	cmd := body[0]
+	if cmd != CommandTypePassword {
+		LogError(fmt.Sprintf("Unsupported command type: %d", cmd), nil)
 		return
 	}
 
-	// --- Device ID + password + MAC ---
-	payload := plainWithAAD[headerLen:]
-
-	deviceID, password, mac, err := parseDevicePayload(payload)
-	if err != nil {
-		LogError("Invalid payload format (device ID / MAC)", err)
+	idLen := int(body[1])
+	if idLen <= 0 || len(body) < 2+idLen+deviceMACLen {
+		LogError("Invalid device ID length", nil)
 		return
 	}
 
+	deviceID := string(body[2 : 2+idLen])
+	password := body[2+idLen : len(body)-deviceMACLen]
+	mac := body[len(body)-deviceMACLen:]
+
+	if len(password) == 0 {
+		LogError("Empty password received", nil)
+		return
+	}
 	if len(password) > maxPasswordSize {
-		LogError("Decrypted password too large", nil)
+		LogError("Password too long", nil)
+		return
+	}
+	if !utf8.Valid(password) {
+		LogError("Password not UTF-8", nil)
 		return
 	}
 
-	// Enforce known-device policy + HMAC verification if enabled.
-	if settings.Devices.RequireKnownDevice {
-		devCfg, ok := settings.Devices.PairedDevices[deviceID]
-		if !ok {
-			LogError("Typing denied: unknown device ("+deviceID+")", nil)
+	LogInfo(fmt.Sprintf(
+		"Payload received from device=%s len=%d",
+		deviceID, len(password),
+	))
+
+	// ---------------- Device policy ----------------
+	settingsMu.RLock()
+	devCfg, known := settings.Devices.PairedDevices[deviceID]
+	requireKnown := settings.Devices.RequireKnownDevice
+	autoRegister := settings.Devices.AutoRegister
+	settingsMu.RUnlock()
+
+	if !known {
+		if !autoRegister && len(settings.Devices.PairedDevices) > 0 {
+			LogError("Typing denied: unknown device", nil)
 			return
 		}
 
-		if !verifyDeviceMAC(header, deviceID, password, mac, devCfg) {
-			LogError("Typing denied: invalid device MAC ("+deviceID+")", nil)
-			return
+		LogInfo("Auto-registering new device: " + deviceID)
+
+		settingsMu.Lock()
+		if settings.Devices.PairedDevices == nil {
+			settings.Devices.PairedDevices = make(map[string]DeviceConfig)
 		}
+		settings.Devices.PairedDevices[deviceID] = DeviceConfig{}
+		settings.Devices.AutoRegister = false
+		_ = saveSettings("config.yaml")
+		settingsMu.Unlock()
 	}
 
+	if requireKnown {
+		if !verifyDeviceMAC(header, deviceID, password, mac, devCfg) {
+			LogError("Invalid device MAC", nil)
+			return
+		}
+		LogInfo("Device MAC verified")
+	}
+
+	// ✅✅✅ THIS MUST EXECUTE ✅✅✅
+	LogInfo("Invoking HandlePayload")
 	HandlePayload(password)
 }
+
+// ---------------- Typing ----------------
+
+func HandlePayload(password []byte) {
+	LogInfo(fmt.Sprintf("HandlePayload called (len=%d)", len(password)))
+
+	if settings.Security.RequireArming && !isArmed() {
+		LogError("Typing denied: service not armed", nil)
+		return
+	}
+
+	LogInfo("Calling SecureType")
+	SecureType(password)
+	LogInfo("SecureType returned")
+
+	zeroBytes(password)
+
+	if settings.Security.RequireArming {
+		disarm()
+		LogInfo("Service disarmed after typing")
+	}
+}
+
+// ---------------- Infrastructure ----------------
 
 func clientIP(conn net.Conn) string {
 	if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
@@ -235,20 +238,18 @@ func allowClient(ip string) bool {
 }
 
 func isReplay(nonce [headerNonceLen]byte, ts int64) bool {
-	now := time.Now()
-	cutoff := now.Add(-replayWindow).Unix()
+	cutoff := time.Now().Add(-replayWindow).Unix()
 
 	replayMu.Lock()
 	defer replayMu.Unlock()
 
-	// Garbage collect expired nonces
 	for k, v := range seenNonces {
 		if v < cutoff {
 			delete(seenNonces, k)
 		}
 	}
 
-	if oldTs, ok := seenNonces[nonce]; ok && oldTs == ts {
+	if old, ok := seenNonces[nonce]; ok && old == ts {
 		return true
 	}
 

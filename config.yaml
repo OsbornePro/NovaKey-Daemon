@@ -1,33 +1,55 @@
 version: 1
-
 network:
-  listen_address: "0.0.0.0"
+  listen_address: 0.0.0.0
   listen_port: 60768
-  mode: "ipv4"   # ipv4 | ipv6 | dual
-
-control:
-  enabled: true
-  listen_address: "127.0.0.1"
-  listen_port: 60769
-  token: "Vv7aADeE9[HREQX%aW$>DK^FZZB?qnyM&KhAxC#(FF;[)$N5p*JvG]qH[:uhMdMT"
-
+  mode: ipv4
 security:
   require_arming: true
-  enforce_allowlist: true
-
+  enforce_allowlist: false
 arming:
   allow_hotkey: true
   allow_cli: true
   auto_disarm: true
+  timeout_seconds: 30
   hotkey:
     ctrl: true
     alt: true
     shift: false
     win: false
     key: "N"
-
+allowlist:
+  windows:
+    browsers:
+      - chrome.exe
+      - chromium.exe
+      - msedge.exe
+      - opera.exe
+      - firefox.exe
+      - waterfox.exe
+      - brave.exe
+      - browser.exe
+      - comet.exe
+      - workona.exe
+      - chatgpt.exe
+    password_managers:
+      - bitwarden.exe
+      - protonpass.exe
+      - keeper.exe
+      - keepass.exe
+      - keepassxc.exe
+      - lastpass.exe
+      - 1password.exe
+      - nordpass.exe
+      - roboform.exe
+  darwin:
+    bundle_ids: []
+    executables: []
 devices:
-  require_known_device: true
-  paired_devices:
-    iphone-rob:
-      secret: "this-is-a-long-random-device-secret-1"
+  require_known_device: false
+  auto_register: true
+  paired_devices: {}
+control:
+  enabled: true
+  listen_address: 127.0.0.1
+  listen_port: 60769
+  token: Vv7aADeE9[HREQX%aW$>DK^FZZB?qnyM&KhAxC#(FF;[)$N5p*JvG]qH[:uhMdMT

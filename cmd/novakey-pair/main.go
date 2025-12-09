@@ -11,28 +11,51 @@ import (
 
 func main() {
 	var (
-		serverPubPath = flag.String("server-pub", "", "Path to server Kyber public key")
+		serverPubPath = flag.String("server-pub", "", "Path to server Kyber public key (Option A)")
+		serverPubB64  = flag.String("server-pub-base64", "", "Base64 server Kyber public key (Option B)")
 		outPath       = flag.String("out", "pairing.json", "Output file")
 		host          = flag.String("host", "127.0.0.1", "NovaKey host")
 		port          = flag.Int("port", 60768, "NovaKey port")
 	)
 	flag.Parse()
 
-	if *serverPubPath == "" {
-		fatal("You must specify --server-pub")
+	// ---- argument validation ----
+
+	if *serverPubPath == "" && *serverPubB64 == "" {
+		fatal("You must specify either --server-pub or --server-pub-base64")
 	}
 
-	pubBytes, err := os.ReadFile(*serverPubPath)
-	if err != nil {
-		fatal("Failed to read server public key", err)
+	if *serverPubPath != "" && *serverPubB64 != "" {
+		fatal("Specify only one of --server-pub or --server-pub-base64")
 	}
 
-	// Allow base64 or raw
-	if decoded, err := base64.StdEncoding.DecodeString(string(pubBytes)); err == nil {
-		pubBytes = decoded
+	// ---- load server public key ----
+
+	var pubBytes []byte
+	var err error
+
+	if *serverPubB64 != "" {
+		// ✅ OPTION B: Base64 string (preferred)
+		pubBytes, err = base64.StdEncoding.DecodeString(*serverPubB64)
+		if err != nil {
+			fatal("Invalid base64 server public key", err)
+		}
 	}
+
+	/*
+		// ⛔ OPTION A (kept for rollback, currently disabled):
+		if *serverPubPath != "" {
+			pubBytes, err = os.ReadFile(*serverPubPath)
+			if err != nil {
+				fatal("Failed to read server public key file", err)
+			}
+		}
+	*/
+
+	// ---- generate pairing data ----
 
 	deviceID := pairing.GenerateDeviceID()
+
 	secret, err := pairing.GenerateDeviceSecret()
 	if err != nil {
 		fatal("Failed to generate device secret", err)
@@ -49,13 +72,16 @@ func main() {
 		fatal("Failed to build pairing payload", err)
 	}
 
-	// ✅ Write bytes directly (UTF-8, no BOM, no shell interference)
+	// ---- write output (binary, no BOM, no shell encoding nonsense) ----
+
 	if err := os.WriteFile(*outPath, payload, 0600); err != nil {
 		fatal("Failed to write pairing file", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "✅ Pairing file written to %s\n", *outPath)
 }
+
+// ------------------------------------------------------------
 
 func fatal(msg string, err ...error) {
 	fmt.Fprintln(os.Stderr, "❌", msg)

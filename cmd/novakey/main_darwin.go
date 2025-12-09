@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
 	"os"
@@ -13,11 +14,27 @@ import (
 func main() {
 	loadSettings()
 
-	priv, _, err := GenerateKeyPair()
+	priv, pub, err := GenerateKeyPair()
 	if err != nil {
 		LogError("Key generation failed", err)
 		return
 	}
+
+	// ===== OPTION B: Ephemeral server keypair =====
+	// Print server public key for pairing (valid for this run only)
+	pubBytes, err := pub.MarshalBinary()
+	if err != nil {
+		LogError("Failed to marshal server public key", err)
+		return
+	}
+	fmt.Println("=== NovaKey Server Public Key (session-only) ===")
+	fmt.Println(base64.StdEncoding.EncodeToString(pubBytes))
+	fmt.Println("================================================")
+
+	// ----- OPTION A (COMMENTED OUT FOR FUTURE) -----
+	// loadOrCreateServerKeyPair()
+	// priv, pub = loadedPriv, loadedPub
+	// ----------------------------------------------
 
 	var listeners []net.Listener
 
@@ -44,22 +61,22 @@ func main() {
 		LogInfo("Listening on IPv6 " + addrV6)
 
 	case "dual":
-		ln4, err4 := net.Listen("tcp4", addrV4)
-		if err4 == nil {
+		if ln4, err4 := net.Listen("tcp4", addrV4); err4 == nil {
 			listeners = append(listeners, ln4)
 			LogInfo("Listening on IPv4 " + addrV4)
 		}
-
-		ln6, err6 := net.Listen("tcp6", addrV6)
-		if err6 == nil {
+		if ln6, err6 := net.Listen("tcp6", addrV6); err6 == nil {
 			listeners = append(listeners, ln6)
 			LogInfo("Listening on IPv6 " + addrV6)
 		}
-
 		if len(listeners) == 0 {
 			LogError("Failed to start any listeners in dual mode", nil)
 			return
 		}
+
+	default:
+		LogError("Invalid network mode: "+settings.Network.Mode, nil)
+		return
 	}
 
 	for _, ln := range listeners {
@@ -74,6 +91,8 @@ func main() {
 			}
 		}(ln)
 	}
+
+	LogInfo("NovaKey server running")
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)

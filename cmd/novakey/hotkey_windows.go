@@ -1,25 +1,37 @@
 ﻿//go:build windows
-// +build windows
 
 package main
 
 import (
-	"syscall"
 	"unsafe"
 )
 
+var registerHotKey = user32.NewProc("RegisterHotKey")
+var unregisterHotKey = user32.NewProc("UnregisterHotKey")
+var getMessage = user32.NewProc("GetMessageW")
+
 const (
-	MOD_ALT     = 0x0001
-	MOD_CONTROL = 0x0002
-	MOD_SHIFT   = 0x0004
-	VK_N        = 0x4E
+	MOD_ALT   = 0x0001
+	MOD_CTRL  = 0x0002
+	MOD_SHIFT = 0x0004
+	MOD_WIN   = 0x0008
+
+	WM_HOTKEY = 0x0312
 )
 
-func registerHotkey() error {
-	var mod uint = 0
+type msg struct {
+	hwnd   uintptr
+	msg    uint32
+	wParam uintptr
+	lParam uintptr
+	time   uint32
+	pt     struct{ x, y int32 }
+}
 
+func startHotkeyListener() {
+	mod := uint(0)
 	if settings.Arming.Hotkey.Ctrl {
-		mod |= MOD_CONTROL
+		mod |= MOD_CTRL
 	}
 	if settings.Arming.Hotkey.Alt {
 		mod |= MOD_ALT
@@ -27,43 +39,46 @@ func registerHotkey() error {
 	if settings.Arming.Hotkey.Shift {
 		mod |= MOD_SHIFT
 	}
+	if settings.Arming.Hotkey.Win {
+		mod |= MOD_WIN
+	}
 
-	user32 := syscall.NewLazyDLL("user32.dll")
-	registerHotKey := user32.NewProc("RegisterHotKey")
+	if len(settings.Arming.Hotkey.Key) != 1 {
+		LogError("Hotkey must be a single character", nil)
+		return
+	}
 
-	_, _, err := registerHotKey.Call(
+	key := uintptr(settings.Arming.Hotkey.Key[0])
+
+	ok, _, err := registerHotKey.Call(
 		0,
 		1,
 		uintptr(mod),
-		uintptr(VK_N),
+		key,
 	)
-	return err
-}
-
-func hotkeyLoop() {
-	user32 := syscall.NewLazyDLL("user32.dll")
-	getMessage := user32.NewProc("GetMessageW")
-
-	var msg struct {
-		hwnd   uintptr
-		msg    uint32
-		wparam uintptr
-		lparam uintptr
-		time   uint32
-		ptx    int32
-		pty    int32
+	if ok == 0 {
+		LogError("Failed to register hotkey", err)
+		return
 	}
+	defer unregisterHotKey.Call(0, 1)
 
+	LogInfo("Hotkey listener started")
+
+	var m msg
 	for {
-		getMessage.Call(
-			uintptr(unsafe.Pointer(&msg)),
+		ret, _, _ := getMessage.Call(
+			uintptr(unsafe.Pointer(&m)),
 			0,
 			0,
 			0,
 		)
+		if ret == 0 {
+			return
+		}
 
-		if msg.msg == 0x0312 { // WM_HOTKEY
-			armOnce()
+		if m.msg == WM_HOTKEY {
+			LogInfo("Service armed via hotkey")
+			arm()
 		}
 	}
 }

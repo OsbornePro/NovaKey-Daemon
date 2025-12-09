@@ -1,43 +1,62 @@
 ﻿package main
 
 import (
-	"fmt"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
-const (
-	// DefaultArmingDuration controls how long the service remains armed
-	// after a successful ARM command. Adjust as desired.
-	DefaultArmingDuration = 15 * time.Second
+var (
+	armingMu   sync.Mutex
+	armedUntil time.Time
 )
 
-// armedUntil stores a Unix timestamp (seconds) until which the service
-// is considered "armed". 0 means "not armed".
-var armedUntil atomic.Int64
+// arm arms the service for the configured timeout window.
+// If already armed, it extends the window.
+func arm() {
+	armingMu.Lock()
+	defer armingMu.Unlock()
 
+	timeout := time.Duration(settings.Arming.TimeoutSeconds) * time.Second
+	if timeout <= 0 || timeout > 5*time.Minute {
+		timeout = 30 * time.Second
+	}
+
+	armedUntil = time.Now().Add(timeout)
+	LogInfo("Service armed for " + timeout.String())
+}
+
+// disarm immediately disarms the service.
+func disarm() {
+	armingMu.Lock()
+	defer armingMu.Unlock()
+
+	armedUntil = time.Time{}
+	LogInfo("Service disarmed")
+}
+
+// isArmed returns true if the service is currently armed.
 func isArmed() bool {
-	until := armedUntil.Load()
-	if until == 0 {
+	armingMu.Lock()
+	defer armingMu.Unlock()
+
+	if armedUntil.IsZero() {
 		return false
 	}
-	now := time.Now().Unix()
-	return now <= until
+
+	if time.Now().After(armedUntil) {
+		armedUntil = time.Time{}
+		LogInfo("Service auto-disarmed (timeout)")
+		return false
+	}
+
+	return true
 }
 
-// armOnce arms the service for the default duration.
-func armOnce() {
-	armFor(DefaultArmingDuration)
-}
+// ✅ NEW: centralized arming gate used immediately before typing
+func acquireTypingPermission() bool {
+	if !settings.Security.RequireArming {
+		return true
+	}
 
-// armFor arms the service for the given duration.
-func armFor(d time.Duration) {
-	expiry := time.Now().Add(d).Unix()
-	armedUntil.Store(expiry)
-	LogInfo(fmt.Sprintf("NovaKey armed for %s: next valid payload will be typed", d))
-}
-
-func disarm() {
-	armedUntil.Store(0)
-	LogInfo("NovaKey disarmed")
+	return isArmed()
 }
