@@ -1,13 +1,15 @@
-// cmd/novakey/crypto.go
 package main
 
 import (
 	"crypto/cipher"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -17,10 +19,14 @@ const (
 	msgTypePassword = 1
 
 	defaultDevicesFile = "devices.json"
+
+	maxClockSkewSec = 120  // allow up to ±120 seconds clock skew
+	maxMsgAgeSec    = 300  // reject messages older than 5 minutes
+	replayCacheTTL  = 600  // keep seen nonces for 10 minutes
 )
 
 type deviceConfig struct {
-	ID    string `json:"id"`
+	ID     string `json:"id"`
 	KeyHex string `json:"key_hex"`
 }
 
@@ -35,6 +41,12 @@ type deviceAEAD struct {
 }
 
 var deviceCiphers map[string]deviceAEAD
+
+// replayCache: deviceID -> nonceHex -> timestamp
+var (
+	replayMu    sync.Mutex
+	replayCache = make(map[string]map[string]int64)
+)
 
 // initCrypto loads per-device keys and builds AEADs.
 // Call this from main() before listening.
@@ -55,7 +67,7 @@ func initCrypto() error {
 	}
 
 	if len(cfg.Devices) == 0 {
-		return fmt.Errorf("devices file %q has no devices", path)
+		return fmt.Errorf("devices file %q has no devices", path, err)
 	}
 
 	m := make(map[string]deviceAEAD, len(cfg.Devices))
@@ -95,6 +107,10 @@ func initCrypto() error {
 //   [3 : 3+idLen]     = deviceID
 //   [3+idLen : 3+idLen+nonceLen] = nonce
 //   [rest]            = ciphertext
+//
+// Plaintext layout (after AEAD decrypt):
+//   [0:8]   = timestamp (uint64, unix seconds, big-endian)
+//   [8:...] = password (UTF-8)
 func decryptPasswordFrame(frame []byte) (string, string, error) {
 	if len(frame) < 3 {
 		return "", "", fmt.Errorf("frame too short: %d", len(frame))
@@ -138,7 +154,57 @@ func decryptPasswordFrame(frame []byte) (string, string, error) {
 	if err != nil {
 		return "", "", fmt.Errorf("AEAD.Open failed for device %q: %w", deviceID, err)
 	}
-	password := string(plaintext)
+	if len(plaintext) < 8 {
+		return "", "", fmt.Errorf("plaintext too short for timestamp: %d", len(plaintext))
+	}
+
+	ts := int64(binary.BigEndian.Uint64(plaintext[:8]))
+	password := string(plaintext[8:])
+
+	if err := validateFreshness(deviceID, nonce, ts); err != nil {
+		return "", "", err
+	}
+
 	return deviceID, password, nil
+}
+
+// validateFreshness enforces timestamp window and replay protection.
+func validateFreshness(deviceID string, nonce []byte, ts int64) error {
+	now := time.Now().Unix()
+
+	// Basic time window checks
+	if ts > now+maxClockSkewSec {
+		return fmt.Errorf("message timestamp is in the future (ts=%d, now=%d)", ts, now)
+	}
+	if now-ts > maxMsgAgeSec {
+		return fmt.Errorf("message too old (ts=%d, now=%d)", ts, now)
+	}
+
+	nonceHex := hex.EncodeToString(nonce)
+
+	replayMu.Lock()
+	defer replayMu.Unlock()
+
+	m, ok := replayCache[deviceID]
+	if !ok {
+		m = make(map[string]int64)
+		replayCache[deviceID] = m
+	}
+
+	// Replay check
+	if prevTs, exists := m[nonceHex]; exists {
+		return fmt.Errorf("replay detected for device %q (nonce seen at ts=%d)", deviceID, prevTs)
+	}
+
+	m[nonceHex] = ts
+
+	// Simple TTL cleanup
+	for k, v := range m {
+		if now-v > replayCacheTTL {
+			delete(m, k)
+		}
+	}
+
+	return nil
 }
 
