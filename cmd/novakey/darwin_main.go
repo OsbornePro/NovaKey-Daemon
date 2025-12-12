@@ -4,42 +4,43 @@
 package main
 
 import (
-    "encoding/binary"
-    "io"
-    "log"
-    "net"
-)
-
-const (
-    listenAddrDarwin = "127.0.0.1:60768"
-    maxTextLenDarwin = 4096
+	"encoding/binary"
+	"io"
+	"log"
+	"net"
 )
 
 func main() {
-    if err := initCrypto(); err != nil {
-        log.Fatalf("initCrypto failed: %v", err)
-    }
+	if err := loadConfig(); err != nil {
+		log.Fatalf("loadConfig failed: %v", err)
+	}
+	if err := initCrypto(); err != nil {
+		log.Fatalf("initCrypto failed: %v", err)
+	}
 
-    log.Printf("NovaKey (macOS) starting (listener=%s)", listenAddrDarwin)
+	listenAddr := cfg.ListenAddr
+	maxLen := cfg.MaxPayloadLen
 
-    ln, err := net.Listen("tcp4", listenAddrDarwin)
-    if err != nil {
-        log.Fatalf("listen on %s: %v", listenAddrDarwin, err)
-    }
-    log.Printf("NovaKey (macOS) listening on %s", listenAddrDarwin)
+	log.Printf("NovaKey (macOS) service starting (listener=%s)", listenAddr)
 
-    for {
-        conn, err := ln.Accept()
-        if err != nil {
-            log.Printf("[accept] error: %v", err)
-            continue
-        }
-        reqID := nextReqID()
-        go handleConnDarwin(reqID, conn)
-    }
+	ln, err := net.Listen("tcp4", listenAddr)
+	if err != nil {
+		log.Fatalf("listen on %s: %v", listenAddr, err)
+	}
+	log.Printf("NovaKey (macOS) listening on %s", listenAddr)
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Printf("[accept] error: %v", err)
+			continue
+		}
+		reqID := nextReqID()
+		go handleConnDarwin(reqID, conn, maxLen)
+	}
 }
 
-func handleConnDarwin(reqID uint64, conn net.Conn) {
+func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 	defer conn.Close()
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
@@ -55,8 +56,8 @@ func handleConnDarwin(reqID uint64, conn net.Conn) {
 	}
 	logReqf(reqID, "declared payload length=%d", length)
 
-	if length == 0 || int(length) > maxTextLen {
-		logReqf(reqID, "invalid length (%d), max=%d", length, maxTextLen)
+	if length == 0 || int(length) > maxLen {
+		logReqf(reqID, "invalid length (%d), max=%d", length, maxLen)
 		return
 	}
 

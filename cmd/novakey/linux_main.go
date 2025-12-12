@@ -1,4 +1,5 @@
-// linux_main.go
+// cmd/novakey/linux_main.go
+//go:build linux
 
 package main
 
@@ -9,23 +10,24 @@ import (
 	"net"
 )
 
-const (
-	listenAddr = "127.0.0.1:60768"
-	maxTextLen = 4096
-)
-
 func main() {
+	if err := loadConfig(); err != nil {
+		log.Fatalf("loadConfig failed: %v", err)
+	}
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
 
-	log.Printf("NovaKey service starting (listener=%s)", listenAddr)
+	listenAddr := cfg.ListenAddr
+	maxLen := cfg.MaxPayloadLen
+
+	log.Printf("NovaKey (Linux) service starting (listener=%s)", listenAddr)
 
 	ln, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
 		log.Fatalf("listen on %s: %v", listenAddr, err)
 	}
-	log.Printf("NovaKey service listening on %s", listenAddr)
+	log.Printf("NovaKey (Linux) service listening on %s", listenAddr)
 
 	for {
 		conn, err := ln.Accept()
@@ -34,11 +36,11 @@ func main() {
 			continue
 		}
 		reqID := nextReqID()
-		go handleConn(reqID, conn)
+		go handleConn(reqID, conn, maxLen)
 	}
 }
 
-func handleConn(reqID uint64, conn net.Conn) {
+func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 	defer conn.Close()
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
@@ -54,8 +56,8 @@ func handleConn(reqID uint64, conn net.Conn) {
 	}
 	logReqf(reqID, "declared payload length=%d", length)
 
-	if length == 0 || int(length) > maxTextLen {
-		logReqf(reqID, "invalid length (%d), max=%d", length, maxTextLen)
+	if length == 0 || int(length) > maxLen {
+		logReqf(reqID, "invalid length (%d), max=%d", length, maxLen)
 		return
 	}
 

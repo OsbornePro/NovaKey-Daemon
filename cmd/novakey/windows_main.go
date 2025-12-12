@@ -1,4 +1,4 @@
-// main_windows.go
+// cmd/novakey/windows_main.go
 //go:build windows
 
 package main
@@ -10,21 +10,24 @@ import (
 	"net"
 )
 
-const (
-	winListenAddr = "127.0.0.1:60768"
-	winMaxTextLen = 4096
-)
-
 func main() {
+	if err := loadConfig(); err != nil {
+		log.Fatalf("loadConfig failed: %v", err)
+	}
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
-	log.Printf("NovaKey (Windows) starting (listener=%s)", winListenAddr)
-	ln, err := net.Listen("tcp4", winListenAddr)
+
+	listenAddr := cfg.ListenAddr
+	maxLen := cfg.MaxPayloadLen
+
+	log.Printf("NovaKey (Windows) starting (listener=%s)", listenAddr)
+
+	ln, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
-		log.Fatalf("listen on %s: %v", winListenAddr, err)
+		log.Fatalf("listen on %s: %v", listenAddr, err)
 	}
-	log.Printf("NovaKey (Windows) listening on %s", winListenAddr)
+	log.Printf("NovaKey (Windows) listening on %s", listenAddr)
 
 	for {
 		conn, err := ln.Accept()
@@ -33,10 +36,11 @@ func main() {
 			continue
 		}
 		reqID := nextReqID()
-		go handleConnWin(reqID, conn)
+		go handleConnWin(reqID, conn, maxLen)
 	}
 }
-func handleConnWin(reqID uint64, conn net.Conn) {
+
+func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 	defer conn.Close()
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
@@ -52,8 +56,8 @@ func handleConnWin(reqID uint64, conn net.Conn) {
 	}
 	logReqf(reqID, "declared payload length=%d", length)
 
-	if length == 0 || int(length) > winMaxTextLen {
-		logReqf(reqID, "invalid length (%d), max=%d", length, winMaxTextLen)
+	if length == 0 || int(length) > maxLen {
+		logReqf(reqID, "invalid length (%d), max=%d", length, maxLen)
 		return
 	}
 

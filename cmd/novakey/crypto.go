@@ -60,7 +60,7 @@ type rateWindow struct {
 // initCrypto loads per-device keys and builds AEADs.
 // Call this from main() before listening.
 func initCrypto() error {
-	path := os.Getenv("NOVAKEY_DEVICES_FILE")
+	path := cfg.DevicesFile
 	if path == "" {
 		path = defaultDevicesFile
 	}
@@ -225,10 +225,14 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	rw.count++
 	rateState[deviceID] = rw
 
-	if rw.count > maxRequestsPerDevicePerMin {
-		return fmt.Errorf("rate limit exceeded for device %q: %d requests in current window",
-			deviceID, rw.count)
-	}
+    limit := maxRequestsPerDevicePerMin
+    if cfg.MaxRequestsPerMin > 0 {
+        limit = cfg.MaxRequestsPerMin
+    }
+    if rw.count > limit {
+        return fmt.Errorf("rate limit exceeded for device %q: %d requests in current window (limit=%d)",
+            deviceID, rw.count, limit)
+    }
 
 	return nil
 }
