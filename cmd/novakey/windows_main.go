@@ -11,13 +11,15 @@ import (
 )
 
 const (
-	winListenAddr = "0.0.0.0:60768"
+	winListenAddr = "127.0.0.1:60768"
 	winMaxTextLen = 4096
 )
 
 func main() {
+	if err := initCrypto(); err != nil {
+		log.Fatalf("initCrypto failed: %v", err)
+	}
 	log.Printf("NovaKey (Windows) starting (listener=%s)", winListenAddr)
-
 	ln, err := net.Listen("tcp4", winListenAddr)
 	if err != nil {
 		log.Fatalf("listen on %s: %v", winListenAddr, err)
@@ -56,20 +58,26 @@ func handleConnWin(reqID uint64, conn net.Conn) {
 		return
 	}
 
-	buf := make([]byte, length)
-	if _, err := io.ReadFull(conn, buf); err != nil {
-		logReqf(reqID, "read payload failed: %v", err)
-		return
-	}
-	text := string(buf)
-	logReqf(reqID, "payload received: %s", safePreview(text))
+    buf := make([]byte, length)
+    if _, err := io.ReadFull(conn, buf); err != nil {
+    	logReqf(reqID, "read payload failed: %v", err)
+    	return
+    }
+
+    password, err := decryptPasswordFrame(buf)
+    if err != nil {
+    	logReqf(reqID, "decryptPasswordFrame failed: %v", err)
+    	return
+    }
+    logReqf(reqID, "decrypted password payload: %s", safePreview(password))
 
     injectMu.Lock()
     defer injectMu.Unlock()
-	if err := InjectPasswordToFocusedControl(text); err != nil {
-		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
-		return
-	}
+
+    if err := InjectPasswordToFocusedControl(password); err != nil {
+    	logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
+    	return
+    }
 
 	logReqf(reqID, "injection complete")
 }
