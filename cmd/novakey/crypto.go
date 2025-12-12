@@ -1,8 +1,13 @@
+// cmd/novakey/crypto.go
 package main
 
 import (
-	"crypto/rand"
+	"crypto/cipher"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -10,95 +15,130 @@ import (
 const (
 	protocolVersion = 2
 	msgTypePassword = 1
+
+	defaultDevicesFile = "devices.json"
 )
 
-// TODO: later load this from config / pairing, not source code.
-// MUST be 32 bytes.
-var staticKey = []byte{
-	0x10, 0x21, 0x32, 0x43, 0x54, 0x65, 0x76, 0x87,
-	0x98, 0xa9, 0xba, 0xcb, 0xdc, 0xed, 0xfe, 0x0f,
-	0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87,
-	0x78, 0x69, 0x5a, 0x4b, 0x3c, 0x2d, 0x1e, 0x0f,
+type deviceConfig struct {
+	ID    string `json:"id"`
+	KeyHex string `json:"key_hex"`
 }
 
-var aead cipherAEAD
-
-type cipherAEAD interface {
-	NonceSize() int
-	Overhead() int
-	Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error)
-	Seal(dst, nonce, plaintext, additionalData []byte) []byte
+type devicesConfigFile struct {
+	Devices []deviceConfig `json:"devices"`
 }
 
-// initCrypto must be called from main() before accepting connections.
+// deviceAEAD holds the AEAD cipher for a device.
+type deviceAEAD struct {
+	id   string
+	aead cipher.AEAD
+}
+
+var deviceCiphers map[string]deviceAEAD
+
+// initCrypto loads per-device keys and builds AEADs.
+// Call this from main() before listening.
 func initCrypto() error {
-	if len(staticKey) != chacha20poly1305.KeySize {
-		return fmt.Errorf("staticKey must be %d bytes, have %d",
-			chacha20poly1305.KeySize, len(staticKey))
+	path := os.Getenv("NOVAKEY_DEVICES_FILE")
+	if path == "" {
+		path = defaultDevicesFile
 	}
-	a, err := chacha20poly1305.NewX(staticKey)
+
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("NewX: %w", err)
+		return fmt.Errorf("reading devices file %q: %w", path, err)
 	}
-	aead = a
+
+	var cfg devicesConfigFile
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("parsing devices file %q: %w", path, err)
+	}
+
+	if len(cfg.Devices) == 0 {
+		return fmt.Errorf("devices file %q has no devices", path)
+	}
+
+	m := make(map[string]deviceAEAD, len(cfg.Devices))
+	for _, d := range cfg.Devices {
+		if d.ID == "" {
+			return fmt.Errorf("device with empty id in %q", path)
+		}
+		keyBytes, err := hex.DecodeString(d.KeyHex)
+		if err != nil {
+			return fmt.Errorf("device %q: invalid key_hex: %w", d.ID, err)
+		}
+		if len(keyBytes) != chacha20poly1305.KeySize {
+			return fmt.Errorf("device %q: key must be %d bytes, got %d",
+				d.ID, chacha20poly1305.KeySize, len(keyBytes))
+		}
+
+		a, err := chacha20poly1305.NewX(keyBytes)
+		if err != nil {
+			return fmt.Errorf("device %q: NewX failed: %w", d.ID, err)
+		}
+		m[d.ID] = deviceAEAD{id: d.ID, aead: a}
+	}
+
+	deviceCiphers = m
+
+	absPath, _ := filepath.Abs(path)
+	fmt.Printf("Loaded %d device keys from %s\n", len(deviceCiphers), absPath)
 	return nil
 }
 
-// decryptPasswordFrame parses and decrypts a v2 frame payload and returns the password.
-// frame layout:
-//   [0]   = version
-//   [1]   = msgType
-//   [2:2+nonceLen] = nonce
-//   [2+nonceLen:]  = ciphertext
-func decryptPasswordFrame(frame []byte) (string, error) {
-	if len(frame) < 2 {
-		return "", fmt.Errorf("frame too short: %d", len(frame))
+// decryptPasswordFrame parses and decrypts a v2 frame payload and returns (deviceID, password).
+//
+// Frame layout:
+//   [0]               = version
+//   [1]               = msgType
+//   [2]               = idLen
+//   [3 : 3+idLen]     = deviceID
+//   [3+idLen : 3+idLen+nonceLen] = nonce
+//   [rest]            = ciphertext
+func decryptPasswordFrame(frame []byte) (string, string, error) {
+	if len(frame) < 3 {
+		return "", "", fmt.Errorf("frame too short: %d", len(frame))
 	}
 	if frame[0] != protocolVersion {
-		return "", fmt.Errorf("unsupported protocol version: %d", frame[0])
+		return "", "", fmt.Errorf("unsupported protocol version: %d", frame[0])
 	}
 	if frame[1] != msgTypePassword {
-		return "", fmt.Errorf("unexpected msgType: %d", frame[1])
-	}
-	if aead == nil {
-		return "", fmt.Errorf("crypto not initialized")
+		return "", "", fmt.Errorf("unexpected msgType: %d", frame[1])
 	}
 
-	header := frame[:2]
-	nonceLen := aead.NonceSize()
-	if len(frame) < 2+nonceLen+aead.Overhead() {
-		return "", fmt.Errorf("frame too short for nonce+ciphertext: %d", len(frame))
+	idLen := int(frame[2])
+	if idLen <= 0 {
+		return "", "", fmt.Errorf("invalid idLen: %d", idLen)
 	}
-	nonce := frame[2 : 2+nonceLen]
-	ciphertext := frame[2+nonceLen:]
+	if len(frame) < 3+idLen {
+		return "", "", fmt.Errorf("frame too short for idLen=%d", idLen)
+	}
+	deviceID := string(frame[3 : 3+idLen])
 
-	plaintext, err := aead.Open(nil, nonce, ciphertext, header)
+	if deviceCiphers == nil {
+		return "", "", fmt.Errorf("crypto not initialized")
+	}
+	dev, ok := deviceCiphers[deviceID]
+	if !ok {
+		return "", "", fmt.Errorf("unknown deviceID: %q", deviceID)
+	}
+
+	headerEnd := 3 + idLen
+	header := frame[:headerEnd]
+
+	nonceLen := dev.aead.NonceSize()
+	if len(frame) < headerEnd+nonceLen+dev.aead.Overhead() {
+		return "", "", fmt.Errorf("frame too short for nonce+ciphertext")
+	}
+
+	nonce := frame[headerEnd : headerEnd+nonceLen]
+	ciphertext := frame[headerEnd+nonceLen:]
+
+	plaintext, err := dev.aead.Open(nil, nonce, ciphertext, header)
 	if err != nil {
-		return "", fmt.Errorf("AEAD.Open failed: %w", err)
+		return "", "", fmt.Errorf("AEAD.Open failed for device %q: %w", deviceID, err)
 	}
-	return string(plaintext), nil
-}
-
-// encryptPasswordFrame is used only by the test client; you don't need it on the server,
-// but it's handy to keep symmetric. If you want, move this into a separate client package.
-func encryptPasswordFrame(password string) ([]byte, error) {
-	if aead == nil {
-		return nil, fmt.Errorf("crypto not initialized")
-	}
-	header := []byte{protocolVersion, msgTypePassword}
-
-	nonceLen := aead.NonceSize()
-	nonce := make([]byte, nonceLen)
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("rand.Read nonce: %w", err)
-	}
-
-	ct := aead.Seal(nil, nonce, []byte(password), header)
-
-	out := make([]byte, 0, len(header)+len(nonce)+len(ct))
-	out = append(out, header...)
-	out = append(out, nonce...)
-	out = append(out, ct...)
-	return out, nil
+	password := string(plaintext)
+	return deviceID, password, nil
 }
 

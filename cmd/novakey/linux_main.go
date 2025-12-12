@@ -43,7 +43,6 @@ func handleConn(reqID uint64, conn net.Conn) {
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
 
-	// 1) Read 2-byte length (big-endian)
 	var length uint16
 	if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
 		if err != io.EOF {
@@ -60,28 +59,27 @@ func handleConn(reqID uint64, conn net.Conn) {
 		return
 	}
 
-    buf := make([]byte, length)
-    if _, err := io.ReadFull(conn, buf); err != nil {
-        logReqf(reqID, "read payload failed: %v", err)
-        return
-    }
+	buf := make([]byte, length)
+	if _, err := io.ReadFull(conn, buf); err != nil {
+		logReqf(reqID, "read payload failed: %v", err)
+		return
+	}
 
-    password, err := decryptPasswordFrame(buf)
-    if err != nil {
-        logReqf(reqID, "decryptPasswordFrame failed: %v", err)
-        return
-    }
-    logReqf(reqID, "decrypted password payload: %s", safePreview(password))
+	deviceID, password, err := decryptPasswordFrame(buf)
+	if err != nil {
+		logReqf(reqID, "decryptPasswordFrame failed: %v", err)
+		return
+	}
+	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
-    injectMu.Lock()
-    defer injectMu.Unlock()
+	injectMu.Lock()
+	defer injectMu.Unlock()
 
-    if err := InjectPasswordToFocusedControl(password); err != nil {
-    	logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
-    	return
-    }
+	if err := InjectPasswordToFocusedControl(password); err != nil {
+		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
+		return
+	}
 
-    logReqf(reqID, "injection complete")
-
+	logReqf(reqID, "injection complete")
 }
 

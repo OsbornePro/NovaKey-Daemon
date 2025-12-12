@@ -4,6 +4,7 @@ package main
 import (
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -14,22 +15,25 @@ const (
 	msgTypePassword = 1
 )
 
-// IMPORTANT: this must match the staticKey in cmd/novakey/crypto.go
-var staticKey = []byte{
-	0x10, 0x21, 0x32, 0x43, 0x54, 0x65, 0x76, 0x87,
-	0x98, 0xa9, 0xba, 0xcb, 0xdc, 0xed, 0xfe, 0x0f,
-	0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87,
-	0x78, 0x69, 0x5a, 0x4b, 0x3c, 0x2d, 0x1e, 0x0f,
-}
-
 var aead cipher.AEAD
+var deviceID string
 
-func initCrypto() error {
-	if len(staticKey) != chacha20poly1305.KeySize {
-		return fmt.Errorf("staticKey must be %d bytes, have %d",
-			chacha20poly1305.KeySize, len(staticKey))
+// initCryptoClient initializes AEAD with the given hex key and device ID.
+func initCryptoClient(id string, keyHex string) error {
+	if id == "" {
+		return fmt.Errorf("device id must not be empty")
 	}
-	a, err := chacha20poly1305.NewX(staticKey)
+	deviceID = id
+
+	keyBytes, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return fmt.Errorf("invalid key_hex: %w", err)
+	}
+	if len(keyBytes) != chacha20poly1305.KeySize {
+		return fmt.Errorf("key must be %d bytes, got %d", chacha20poly1305.KeySize, len(keyBytes))
+	}
+
+	a, err := chacha20poly1305.NewX(keyBytes)
 	if err != nil {
 		return fmt.Errorf("NewX: %w", err)
 	}
@@ -38,16 +42,30 @@ func initCrypto() error {
 }
 
 // encryptPasswordFrame builds a v2 payload:
-//   [0]   = version
-//   [1]   = msgType
-//   [2:2+nonceLen] = nonce
-//   [2+nonceLen:]  = ciphertext
+//
+//   [0]               = version
+//   [1]               = msgType
+//   [2]               = idLen
+//   [3 : 3+idLen]     = deviceID
+//   [3+idLen : 3+idLen+nonceLen] = nonce
+//   [rest]            = ciphertext
+//
 func encryptPasswordFrame(password string) ([]byte, error) {
 	if aead == nil {
 		return nil, fmt.Errorf("crypto not initialized")
 	}
+	idBytes := []byte(deviceID)
+	if len(idBytes) > 255 {
+		return nil, fmt.Errorf("deviceID too long (%d bytes, max 255)", len(idBytes))
+	}
+	idLen := byte(len(idBytes))
 
-	header := []byte{protocolVersion, msgTypePassword}
+	// header used as AAD
+	header := make([]byte, 0, 3+len(idBytes))
+	header = append(header, protocolVersion)
+	header = append(header, msgTypePassword)
+	header = append(header, idLen)
+	header = append(header, idBytes...)
 
 	nonceLen := aead.NonceSize()
 	nonce := make([]byte, nonceLen)

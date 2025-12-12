@@ -1,0 +1,7 @@
+[ u8  version ]       // 2
+[ u8  msgType ]       // 1 = password
+[ u8  idLen ]         // length of deviceID in bytes (<= 255)
+[ idLen bytes ]       // deviceID (ASCII/UTF-8)
+[ nonce ]             // XChaCha20-Poly1305 nonce (24 bytes)
+[ ciphertext... ]     // AEAD(deviceKey, nonce, plaintext=password, AAD=header)
+

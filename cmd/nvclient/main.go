@@ -12,13 +12,20 @@ import (
 var (
 	addr     = flag.String("addr", "127.0.0.1:60768", "NovaKey server address")
 	password = flag.String("password", "hello", "password to send")
+
+	deviceIDFlag = flag.String("device-id", "roberts-phone", "device ID to use")
+	keyHexFlag   = flag.String("key-hex", "", "hex-encoded 32-byte key for this device")
 )
 
 func main() {
 	flag.Parse()
 
-	if err := initCrypto(); err != nil {
-		log.Fatalf("initCrypto failed: %v", err)
+	if *keyHexFlag == "" {
+		log.Fatal("must provide -key-hex (hex-encoded 32-byte key matching server devices.json)")
+	}
+
+	if err := initCryptoClient(*deviceIDFlag, *keyHexFlag); err != nil {
+		log.Fatalf("initCryptoClient failed: %v", err)
 	}
 
 	frame, err := encryptPasswordFrame(*password)
@@ -36,7 +43,6 @@ func main() {
 	}
 	defer conn.Close()
 
-	// Send 2-byte big-endian length + frame
 	var hdr [2]byte
 	binary.BigEndian.PutUint16(hdr[:], uint16(len(frame)))
 
