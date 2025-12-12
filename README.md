@@ -1,535 +1,505 @@
 # 🔐 NovaKey by OsbornePro
 
-**What is NovaKey?**  
-*NovaKey is a lightweight, cross‑platform Go agent that turns your computer into a secure, quantum‑resistant password‑delivery endpoint.*
+**What is NovaKey?**
+*NovaKey is a lightweight, cross-platform Go agent that turns your computer into a secure, authenticated password-injection endpoint.*
 
-**Why would I need this?**  
-*Even with a password manager you still need a master password to unlock the vault. That master password is often the weakest link—either memorised or stored insecurely. NovaKey eliminates that risk entirely:*
-* Your real master password lives only on your phone.
-* You never type it manually.
-* Delivery uses post‑quantum cryptography.
-* It works even when the computer is locked.
+**Why would I need this?**
+Even with a password manager you still need a master password (or other high-value secret). That secret is often the weakest link—either memorised, re-used, or stored in sketchy ways.
 
-When you need to log in—whether at the Windows login screen, BitLocker PIN, macOS lock screen, Linux display manager, or any password field—you press a button in the companion app. The app encrypts the secret with Kyber‑768 + XChaCha20‑Poly1305, sends it over TCP port 60768, and NovaKey decrypts and auto‑types it into the active field (including lock screens).  
+NovaKey aims to eliminate “manual typing” of those secrets:
 
-> **Key point:** No master password ever touches the keyboard, and no plaintext traverses the network.
+* Your real master password lives only on a trusted device (e.g. your phone).
+* You never type it manually on the keyboard.
+* Delivery is encrypted and authenticated with modern AEAD (XChaCha20-Poly1305) and per-device keys.
+* The NovaKey daemon injects the secret into the currently focused text field on your desktop.
+
+> **Key point:** The secret never passes through the keyboard, and never traverses the network in plaintext.
+
+> **Status note:** Current code targets *normal logged-in desktop sessions* (browser fields, terminals, editors, etc.). Lock screens / pre-boot PINs / login screens are future/experimental work, not guaranteed or supported yet.
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Features](#features)
-- [Crypto Stack](#crypto-stack)
-- [Architecture Diagram](#architecture-diagram)
-- [Auto-Type Support Matrix](#auto-type-support-matrix)
-- [Roadmap](#roadmap)
-- [Security Notes](#security-notes)
-- [Build from Source](#build-from-source)
-- [How to Install](#how-to-install)
-- [Logging](#logging)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact & Support](#contact--support)
+* [Overview](#overview)
+* [Current Capabilities](#current-capabilities)
+* [Command-line Tools](#command-line-tools)
+* [Configuration Files](#configuration-files)
+* [Protocol & Crypto Stack](#protocol--crypto-stack)
+* [Auto-Type Support Notes](#auto-type-support-notes)
+* [Roadmap](#roadmap)
+* [Security Notes (Current Implementation)](#security-notes-current-implementation)
+* [Build from Source](#build-from-source)
+* [Running NovaKey](#running-novakey)
+* [Logging](#logging)
+* [Contributing](#contributing)
+* [License](#license)
+* [Contact & Support](#contact--support)
 
 ---
 
 ## Overview
-The NovaKey service runs on a workstation (*Windows, macOS, or Linux*). It creates a TCP listener on `<your‑pc‑ip>:60768`. The companion mobile app connects to this listener, sends an encrypted payload, and NovaKey:
 
-1. **Decapsulates** the Kyber‑768 ciphertext to obtain a 32‑byte session key.
-2. **Decrypts** the payload with XChaCha20‑Poly1305.
-3. **Auto‑types** the resulting password (or MFA code) into the currently focused window.
-All cryptographic operations are performed in constant‑time, using the audited Cloudflare circl library.
+The NovaKey service (`novakey`) runs on a workstation (*Windows, macOS, or Linux*). It creates a TCP listener (default `127.0.0.1:60768`). One or more clients (e.g. a future mobile app, or the included `nvclient` test tool) connect to this listener, send an encrypted payload, and NovaKey:
 
----
+1. **Authenticates** the device using a per-device symmetric key.
+2. **Decrypts & validates** the request using XChaCha20-Poly1305 with:
 
-## Features
-| ✅ | Feature |
-|---|---------|
-| ✅ | **True post‑quantum security** – Kyber‑768 + XChaCha20‑Poly1305 |
-| ✅ | **Auto‑type into any focused field** – including lock screens |
-| ✅ | **Cross‑platform** – Windows, macOS (universal), Linux (amd64 + arm64) |
-| ✅ | **Single static binary** – no CGO, no external dependencies |
-| ✅ | **Zero‑configuration** – just run it |
-| ✅ | **Works over Wi‑Fi, USB tethering, VPN, Tailscale, etc.** |
-| ✅ | **No internet access required** |
-| ✅ | **Open‑source agent** – build and audit everything |
+   * Per-device keys,
+   * Timestamps,
+   * Nonce-based replay protection,
+   * Per-device rate limiting.
+3. **Injects** the resulting password into the currently focused control on the desktop.
+
+All cryptographic operations are done locally; there is no cloud service or third-party relay.
+
+> **Post-quantum note:** Future versions are planned to add a Kyber-based KEM on top of the existing symmetric layer. The current code uses per-device symmetric keys only.
 
 ---
 
-## Crypto Stack
+## Current Capabilities
 
-* **Key Exchange**: Kyber‑768 (*NIST‑selected KEM*)
-* **Symmetric Encryption**: XChaCha20‑Poly1305 (*libsodium standard*)
-* **Key Management**: Ephemeral keys generated at startup; private key lives only in memory and is never persisted.
+| ✅ | Capability                                                                     |
+| - | ------------------------------------------------------------------------------ |
+| ✅ | Cross-platform daemon (`novakey`) for Linux, macOS, and Windows                |
+| ✅ | Encrypted & authenticated password delivery using XChaCha20-Poly1305           |
+| ✅ | Per-device keys and device IDs stored in `devices.json`                        |
+| ✅ | Message freshness (timestamp) validation                                       |
+| ✅ | Nonce-based replay protection per device                                       |
+| ✅ | Per-device rate limiting (requests/min)                                        |
+| ✅ | Configurable listen address, payload size, and limits via `server_config.json` |
+| ✅ | Simple CLI test client (`nvclient`)                                            |
+| ✅ | CLI device pairing / key management tool (`nvpair`)                            |
 
 ---
 
-## Architecture Diagram
+## Command-line Tools
 
-```mermaid
-flowchart LR
-    A["Phone / App
-(Trusted Device)"] -- "TCP 60768
-[Kyber-768 ct || XChaCha20-Poly1305]" --> B["NovaKey Agent
-(this binary)"]
-    
-    B -->|"1. Listen :60768
-2. Decapsulate
-3. Decrypt
-4. Auto-type →"| C["Active password field
-(Windows login, BitLocker,
-macOS lock, Linux DM, etc.)"]
+All commands live under `cmd/` and are built into binaries under `dist/` by `build.sh` / `build.ps1`.
+
+### `novakey` – the daemon
+
+The main service process:
+
+* Loads configuration from `server_config.json`.
+* Loads per-device keys from `devices.json`.
+* Listens on the configured TCP address (default `127.0.0.1:60768`).
+* For each incoming connection:
+
+  * Reads a single encrypted frame.
+  * Decrypts and validates it.
+  * Injects the password into the focused control.
+  * Closes the connection.
+
+Typical usage (Linux/macOS):
+
+```bash
+./dist/novakey-linux-amd64
+# or on macOS
+./dist/NovaKey-darwin-arm64
 ```
 
+Typical usage (Windows, PowerShell):
+
+```powershell
+.\dist\NovaKey.exe
+```
+
+By default it logs to stdout/stderr; you can wrap it in systemd / launchd / Windows Service yourself if you want it to run as a background service.
+
 ---
 
-## Auto Type Support Matrix
+### `nvclient` – reference/test client
 
-| OS                     | Lock Screen | Login Screen | BitLocker | FileVault | SDDM/GDM/LightDM |
-|------------------------|------------|--------------|-----------|-----------|-------------------|
-| **Windows 10/11**      | ✅ | ✅ | ✅ | N/A | N/A |
-| **macOS 13+**          | ✅ | ✅ | N/A | ✅ | N/A |
-| **Linux (xdotool)**    | ✅ | ✅ | N/A | N/A | ✅* |
+A simple CLI client that speaks the NovaKey protocol. It’s useful for:
 
-*Linux requires `xdotool` (`sudo apt install xdotool` or the equivalent for your distro). If `xdotool` is missing, NovaKey prints a warning at startup and auto‑type will not function.*
+* Testing the daemon.
+* Experimenting with passwords and device IDs.
+* Serving as a reference implementation for other clients (e.g. mobile apps).
+
+Usage:
+
+```bash
+./dist/nvclient \
+  -addr 127.0.0.1:60768 \
+  -device-id roberts-phone \
+  -key-hex 7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234 \
+  -password "SuperStrongPassword123!"
+```
+
+Flags:
+
+* `-addr` – address of the NovaKey daemon (e.g. `127.0.0.1:60768` or `192.168.x.x:60768`)
+* `-device-id` – device ID that must exist in `devices.json`
+* `-key-hex` – 32-byte per-device key in hex (matches `key_hex` in `devices.json`)
+* `-password` – password/secret string to send and inject
+
+---
+
+### `nvpair` – device pairing & key management
+
+A tiny helper that edits `devices.json` for you:
+
+* Generates a random 32-byte key.
+* Adds a new device entry, or updates an existing one (with `-force`).
+* Prints out the device ID and key, ready to be used by `nvclient` or a real client.
+
+Example:
+
+```bash
+./dist/nvpair -id roberts-phone
+```
+
+Output (example):
+
+```text
+Added new device "roberts-phone" to /path/to/devices.json
+------------------------------------------------------------
+ Pairing info
+------------------------------------------------------------
+Device ID : roberts-phone
+Key (hex) : 7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234
+
+Use these values with nvclient or your real client, e.g.:
+  nvclient -addr 127.0.0.1:60768 -device-id "roberts-phone" -key-hex 7f0c9e... -password "..."
+```
+
+Flags:
+
+* `-devices-file` – path to `devices.json` (default: `devices.json` in CWD)
+* `-id` – device ID to add or update (required)
+* `-force` – overwrite existing device with the same ID
+
+---
+
+## Configuration Files
+
+### `server_config.json`
+
+Controls how the daemon listens and enforces limits.
+
+Example:
+
+```json
+{
+  "listen_addr": "127.0.0.1:60768",
+  "max_payload_len": 4096,
+  "max_requests_per_min": 60,
+  "devices_file": "devices.json"
+}
+```
+
+* `listen_addr` – TCP address to bind to.
+
+  * `127.0.0.1:60768` – **local only** (default, safest).
+  * `0.0.0.0:60768` – listen on all interfaces (for LAN usage).
+* `max_payload_len` – max allowed payload bytes (before decryption).
+* `max_requests_per_min` – per-device rate limit.
+* `devices_file` – path to the `devices.json` file.
+
+> **Important:** If you expose `0.0.0.0:60768`, ensure your firewall is configured appropriately. NovaKey uses per-device keys and replay protection, but the port is still a high-value interface.
+
+---
+
+### `devices.json`
+
+Defines which devices are allowed to talk to NovaKey and what keys they use.
+
+Example:
+
+```json
+{
+  "devices": [
+    {
+      "id": "roberts-phone",
+      "key_hex": "7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234"
+    },
+    {
+      "id": "roberts-tablet",
+      "key_hex": "b8e167a0c4f1d2a3f5e4c3b2a19087654321ffeeddccbbaa9988776655443322"
+    }
+  ]
+}
+```
+
+You normally won’t edit this by hand; use `nvpair` instead.
+
+---
+
+## Protocol & Crypto Stack
+
+**Symmetric encryption & auth (current):**
+
+* **Cipher:** XChaCha20-Poly1305 (via `golang.org/x/crypto/chacha20poly1305.NewX`)
+* **Per-device keys:** 32-byte symmetric keys stored in `devices.json`
+* **Header (AAD):**
+
+  * `version` (currently 2)
+  * `msgType` (1 = password frame)
+  * `deviceID` length + bytes
+* **Plaintext:**
+
+  * 8-byte timestamp (Unix seconds, big-endian)
+  * UTF-8 password bytes
+
+**On-wire framing:**
+
+* Outer frame: `[ u16 length ][ length bytes payload ]`
+* Payload:
+
+  * `[version][msgType][idLen][deviceID][nonce][ciphertext]`
+  * `nonce` is 24 random bytes (XChaCha20)
+  * `ciphertext` is AEAD-encrypted plaintext
+
+**Validation on the server:**
+
+* Version and message type check.
+* Device ID lookup (`devices.json`).
+* Timestamp window enforcement (freshness / clock-skew checks).
+* Nonce-based replay cache per device.
+* Per-device rate limiting (requests/min).
+
+**Planned / Roadmap crypto (not yet implemented):**
+
+* Add a Kyber-based KEM for post-quantum key exchange on top of the per-device identity.
+* Optionally derive per-session keys and rotate them.
+
+For more detail, see the protocol document (`PROTOCOL.md`) once added.
+
+---
+
+## Auto-Type Support Notes
+
+NovaKey’s goal is:
+
+> “NovaKey works on most normal apps/fields, but some weird or high-security ones just aren’t supported.”
+
+Current behavior:
+
+* **Linux**
+
+  * Uses clipboard + `xdotool` (and related utilities) to type/paste into the active control.
+  * Works well in:
+
+    * Browser address bars and text inputs
+    * Terminal emulators
+    * Text editors
+  * Wayland/desktop specifics may affect behavior; some environments restrict global key injection.
+
+* **macOS**
+
+  * Uses macOS automation/accessibility APIs to simulate paste/typing in the focused control.
+  * Requires the user to grant Accessibility / Input permissions in System Settings.
+
+* **Windows**
+
+  * Uses the standard Windows input APIs and clipboard on the logged-in desktop session.
+  * Works in:
+
+    * Notepad and typical desktop apps
+    * PowerShell ISE
+    * Browser address bars / text fields
+  * Some elevated / secure desktops may not accept synthetic input.
+
+> **Lock screens, pre-boot PINs, BitLocker, login screens, DMs, etc.**
+> These are *future targets* and may require OS-specific hacks or may be impossible in secure configurations. They are not advertised as working today.
 
 ---
 
 ## Roadmap
 
-Features that are planned for the future:
+Features planned or on deck:
 
-| Feature                            | Status |
-|------------------------------------|--------|
-| Companion mobile app (iOS/Android) | In development |
-| Auto‑start as system service       | Next |
-| One‑time‑use unlock tokens         | Planned |
-| BLE fallback (optional)            | Future |
-| GUI tray icon & config UI          | Planned |
-| TOTP / MFA code support            | Planned |
-| Add option to approve before auto-typing | Planned |
+| Feature                                         | Status       |
+| ----------------------------------------------- | ------------ |
+| Companion mobile app (iOS/Android)              | Planned      |
+| QR-based pairing flow                           | Planned      |
+| Post-quantum KEM (Kyber) on top of current AEAD | Planned      |
+| Installer / service packaging per OS            | Planned      |
+| GUI tray icon & config UI                       | Planned      |
+| TOTP / MFA code support                         | Planned      |
+| Optional “approve before typing” prompts        | Planned      |
+| Better lock/login-screen integration            | Experimental |
 
 ---
 
-## Security Notes
+## Security Notes (Current Implementation)
 
-### Security Design Principles
+### Design Principles
 
-- **Local-first by design** – no cloud storage, no relays, no third-party dependencies at runtime  
-- **Cryptographically authenticated input** – keystrokes are only accepted after successful cryptographic verification  
-- **Minimized trust and privilege** – the service operates with the least permissions required by the host OS  
-- **Defense-in-depth** – multiple independent protections against compromise, misuse, and abuse  
+* **Local-first by design** – no cloud service, no external relays.
+* **Per-device authentication** – every message is bound to a device ID with its own key.
+* **Encrypted & authenticated transport** – all traffic is AEAD-protected.
+* **Defense-in-depth** – timestamps, nonces, replay cache, rate limiting, and strict framing.
 
-### Cryptography & Secure Transport
+### Cryptography & Transport
 
-- **Ephemeral post-quantum key material.**  
-  On startup, each service instance generates an in-memory Kyber768 private key which is never persisted to disk. Restarting the service automatically rotates all cryptographic material.
+* **Per-device symmetric keys** in `devices.json`.
+* **XChaCha20-Poly1305 AEAD** for confidentiality and integrity.
+* **Header authenticated via AAD** to bind device ID and message type to the ciphertext.
+* **No plaintext acceptance** – frames must decrypt and pass all checks or they are discarded.
 
-- **Post-quantum authenticated encryption.**  
-  NovaKey uses Cloudflare’s official `circl` Kyber768 KEM (constant-time) to establish a shared secret, followed by XChaCha20-Poly1305 authenticated encryption to ensure payload confidentiality and integrity.
+### Freshness, Replay & Abuse Prevention
 
-- **No plaintext acceptance.**  
-  All inbound messages must pass cryptographic verification before any data is processed. Plaintext inputs are never accepted.
+* **Timestamp validation**
+  Messages are only accepted within a limited time window and with a reasonable clock skew.
 
-### Replay & Abuse Prevention
+* **Nonce-based replay protection**
+  Each `(deviceID, nonce)` pair is tracked; reuse is rejected.
 
-- **Replay-attack protection.**  
-  Each encrypted payload includes a UNIX timestamp and a cryptographically secure random nonce. The service maintains a bounded replay cache and rejects duplicate or stale messages outside a strict validity window.
+* **Per-device rate limiting**
+  Each device gets a capped number of requests per minute (configurable) to prevent abuse.
 
-- **Denial-of-Service (DoS) protection.**  
-  Incoming connections are rate-limited per IPv4 address prior to performing expensive cryptographic operations. Strict payload size limits prevent memory exhaustion and computational abuse.
+### Secret Handling
 
-- **IPv4-only listener with explicit validation.**  
-  The service listens exclusively on IPv4 and performs full validation and authentication on every connection.
-
-### Secret Handling & Memory Safety
-
-- **No secrets stored on disk.**  
-  Passwords, session keys, and decrypted payloads exist only in memory during active processing.
-
-- **No secret leakage via logs or process metadata.**  
-  Decrypted secrets, password contents, and derived metadata are never logged. Passwords are never passed via command-line arguments, preventing leakage through system process inspection tools.
-
-- **Byte-buffer based secret handling.**  
-  Sensitive data is handled as mutable byte slices rather than immutable language-level strings, reducing unintended memory persistence.
-
-- **Best-effort memory wiping.**  
-  Shared secrets, decrypted payloads, and password buffers are explicitly overwritten immediately after use to minimize their lifetime in memory.
-
-### Keystroke Injection Security
-
-- **Isolated secure typing abstraction.**  
-  All OS-specific keystroke injection is encapsulated behind a `SecureType` interface. This prevents cryptographic or networking logic from interacting directly with platform APIs.
-
-- **Forward-compatible with OS secure input APIs.**  
-  The abstraction layer allows future migration to native secure input mechanisms (where available) without redesigning transport or cryptography.
-
-### Least-Privilege Execution Environment
-
-- **Dedicated service account.**  
-  The NovaKey service runs under a non-interactive, dedicated system account with no login shell and minimal filesystem access.
-
-- **Linux sandboxing and hardening.**  
-  When installed on Linux, NovaKey runs under a hardened systemd service configuration that disables privilege escalation, restricts filesystem access, and limits writable paths to explicitly required directories.
-
-- **No elevated privileges during runtime.**  
-  Administrative privileges are required only during installation; normal operation does not require root or administrator access.
-
-### Build & Dependency Integrity
-
-- **Single-package build model.**  
-  Core functionality is compiled into a single Go package, ensuring consistent application of security helpers such as memory zeroing and payload validation.
-
-- **Auditable, well-maintained dependencies.**  
-  All cryptographic operations rely exclusively on widely used, peer-reviewed libraries maintained by reputable organizations.
+* Secrets are decrypted in memory and only exist for the duration of handling a single request.
+* Password previews in logs are truncated (`"Sup..." (len=23)`), not fully printed.
+* No secrets are logged or passed via command-line arguments on the server side.
 
 ### Network Trust Model
 
-- **User-controlled trust boundary.**  
-  NovaKey is designed to operate on a trusted local network or user-managed VPN such as Tailscale or Zerotier. No external servers or cloud infrastructure are required or contacted.
+* Default listen address is `127.0.0.1:60768` (local only).
+* You may opt-in to `0.0.0.0:60768` to allow LAN access (e.g. from a phone).
+* It is assumed that:
 
-## Threat Model Appendix
-
-### In-Scope Threats
-
-| Threat | Mitigation |
-|------|----------|
-| Network eavesdropping | Post-quantum authenticated encryption |
-| Replay attacks | Timestamp + nonce validation with replay cache |
-| Packet injection | Mandatory cryptographic verification |
-| Memory scraping | Byte-buffer handling and immediate wiping |
-| Privilege escalation | Dedicated service accounts and OS sandboxing |
-| DoS via expensive crypto | Rate limiting before decapsulation |
-| Process inspection | No secrets in argv or logs |
-
-### Out-of-Scope / Assumed Trust
-
-- Compromised host operating system
-- Malicious kernel-level malware
-- User-approved accessibility misuse on macOS
-- Physical access to an unlocked system
-- Malicious applications with equivalent keystroke injection privileges
-
-### Security Posture Summary
-
-NovaKey assumes a **zero-trust network** and **honest-but-curious local environment** while defending aggressively against remote attacks, replay abuse, cryptographic compromise, and accidental leakage of sensitive data. The system favors transparency, simplicity, and minimal privilege over opaque or cloud-dependent approaches.
-
-### Disclosure & Review
-
-NovaKey’s security architecture is designed to be auditable and reviewable. All cryptographic choices, memory handling practices, and runtime permissions are explicitly documented and enforced at build and install time.
+  * The host OS is not fully compromised.
+  * Local network is at least semi-trusted or protected (e.g. via WPA2, VPN, etc.).
 
 ---
 
 ## Build from Source
 
-**PowerShell build commands**
-```powershell
-# Download the source archive
-Invoke-WebRequest -Uri "https://github.com/OsbornePro/NovaKey/archive/refs/heads/main.zip" -OutFile "$env:TEMP\NovaKey-main.zip"
+You’ll need:
 
-# Extract
-Expand-Archive -Path "$env:TEMP\NovaKey-main.zip" -DestinationPath "$env:ProgramFiles" -Force
+* Go (1.21+ recommended)
+* Git (if cloning)
+* Standard Go build toolchain
 
-# Rename for simplicity
-Rename-Item -Path "$env:ProgramFiles\NovaKey-main" -NewName "NovaKey"
+### Clone
 
-# Build
-Set-Location -Path "$env:ProgramFiles\NovaKey"
-.\Build-Scripts\build.ps1 -Clean -Target windows -FileName NovaKey.exe
-```
-
-**Linux / OpenBSD / Unix (Bash) build commands**
 ```bash
-# Clone the repo
-git clone https://github.com/OsbournePro/NovaKey.git
+git clone https://github.com/OsbornePro/NovaKey.git
 cd NovaKey
+```
 
-# Build for Linux (or macOS – the same script detects GOOS)
-./Build-Scripts/build.sh -t linux   # replace "linux" with "darwin" for macOS
+### Build (Linux/macOS, Bash)
+
+From repo root:
+
+```bash
+# Build for Linux
+./build.sh -t linux
+
+# Build for macOS (run this on a Mac)
+./build.sh -t darwin
+
+# Build for Windows (cross-compile, or run on Windows with bash)
+./build.sh -t windows
+```
+
+Artifacts are written to `./dist/`, for example:
+
+* `dist/novakey-linux-amd64`
+* `dist/NovaKey-darwin-amd64`, `dist/NovaKey-darwin-arm64`
+* `dist/NovaKey.exe`
+* `dist/nvclient` (when built separately with `go build -o dist/nvclient ./cmd/nvclient`)
+* `dist/nvpair` (when built with `go build -o dist/nvpair ./cmd/nvpair`)
+
+### Build (Windows, PowerShell)
+
+A simple example (you can adjust as needed):
+
+```powershell
+Set-Location C:\Path\To\NovaKey
+.\build.ps1 -Target windows -FileName NovaKey.exe
 ```
 
 ---
 
-## How to Install
+## Running NovaKey
 
-NovaKey is distributed as a **precompiled system service**.
-You do **not** need to compile anything from source.
+1. Ensure `server_config.json` and `devices.json` exist in the working directory.
 
-> **Administrator privileges are required during installation only.**
-> After installation, NovaKey runs as a restricted system service.
+2. Start the daemon:
 
-## Windows Installation
+   ```bash
+   ./dist/novakey-linux-amd64
+   ```
 
-NovaKey for Windows is distributed as a **precompiled Windows service**.
-No build tools or source compilation are required.
+   Example log:
 
-> **Administrator privileges are required during installation only.**
-> After installation, NovaKey runs as a restricted Windows service using a virtual service account.
+   ```text
+   Loaded server config from /.../server_config.json
+   Loaded 2 device keys from /.../devices.json
+   2025/12/12 15:19:50 NovaKey (Linux) service starting (listener=127.0.0.1:60768)
+   2025/12/12 15:19:50 NovaKey (Linux) service listening on 127.0.0.1:60768
+   ```
 
-### Requirements
+3. Use `nvpair` to create a device, and `nvclient` to send a test password.
 
-* Windows 10 or newer
-* PowerShell 5.1 or newer
-* Administrator access
+4. Focus a text field and watch NovaKey type it for you.
 
-### Install
-
-1. Download and extract the Windows archive:
-
-```powershell
-Expand-Archive -Path NovaKey-Windows.zip
-Set-Location -Path NovaKey-Windows
-```
-
-2. Run the installer **as Administrator**:
-
-* Right-click `install-windows.ps1`
-* Select **Run with PowerShell**
-
-If script execution is restricted, you may temporarily allow it:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\install-windows.ps1
-```
-
-### What the Installer Does
-
-The Windows installer performs the following actions:
-
-* Installs NovaKey to `C:\Program Files\NovaKey`
-* Registers a Windows service that starts automatically at boot
-* Runs the service under a dedicated virtual service account (`NT SERVICE\NovaKey`)
-* Applies restricted filesystem permissions
-* Adds a Windows Firewall rule for the NovaKey listening port
-* Starts the service immediately after installation
-
-### Verify Installation
-
-Check that the service is running:
-
-```powershell
-Get-Service NovaKey
-```
-
-View recent service events:
-
-```powershell
-Get-WinEvent -LogName Application | Where-Object { $_.ProviderName -like "*NovaKey*" }
-```
-
-### Logs
-
-Runtime logs (if enabled) are stored in:
-
-```
-C:\Program Files\NovaKey\logs\
-```
-
-### Updating
-
-To update NovaKey:
-
-1. Stop the running service:
-
-```powershell
-Stop-Service -Name NovaKey
-```
-
-2. Replace `novakey-service.exe` with the new version
-3. Re-run the installer script:
-
-```powershell
-.\install-windows.ps1
-```
-
-### Uninstalling
-
-An automated uninstaller is not yet included.  
-To remove NovaKey manually:
-
-```powershell
-Stop-Service -Name NovaKey -Force
-sc.exe delete NovaKey
-Remove-Item -Recurse -Force -Path "C:\Program Files\NovaKey"
-Remove-NetFirewallRule -DisplayName "NovaKey TCP Listener"
-```
-
-If installation fails, ensure that you are running PowerShell as Administrator and that no existing NovaKey service is already active.
-
-### Linux Installation (systemd-based distributions)
-
-#### Requirements
-
-* systemd-based Linux distribution
-* `sudo` access
-* `xdotool` installed (required for auto-typing)
-
-#### Install
-
-Run the following commands:
-
-```bash
-tar -xzf novakey-linux.tar.gz
-cd novakey-linux
-sudo ./install-linux.sh
-```
-
-The installer will:
-
-* Create a dedicated `novakey` system user with no login shell
-* Install the service binary to `/usr/local/bin`
-* Create configuration, data, and log directories with restricted permissions
-* Register and start the NovaKey service at boot
-
-#### Verify Installation
-
-```bash
-systemctl status novakey
-```
-
-#### View Logs
-
-```bash
-journalctl -u novakey
-```
-
-> **Note:** The service listens on IPv4 only.
-> Make sure your firewall allows inbound connections on the configured port if required.
-
----
-
-### macOS Installation
-
-#### Requirements
-
-* macOS 12 or newer
-* `sudo` access
-* User approval for Accessibility and Input Monitoring permissions
-
-#### Install
-
-```bash
-tar -xzf novakey-macos.tar.gz
-cd novakey-macos
-sudo ./install-macos.sh
-```
-
-The installer will:
-
-* Install the NovaKey service binary to `/usr/local/bin`
-* Create required directories under `/Library/Application Support/NovaKey`
-* Register and start a persistent LaunchDaemon at system boot
-
----
-
-#### Required Permissions (macOS)
-
-macOS requires user approval for applications that inject keystrokes.
-
-After installation, grant NovaKey permission in:
-
-* **System Settings → Privacy & Security → Accessibility**
-* **System Settings → Privacy & Security → Input Monitoring**
-
-After granting permissions, restart the service:
-
-```bash
-sudo launchctl unload /Library/LaunchDaemons/com.osbornepro.novakey.plist
-sudo launchctl load /Library/LaunchDaemons/com.osbornepro.novakey.plist
-```
-
----
-
-### Updating
-
-To update NovaKey, stop the service and re-run the installer.
-
-**Linux**
-
-```bash
-sudo systemctl stop novakey
-sudo ./install-linux.sh
-```
-
-**macOS**
-
-```bash
-sudo ./install-macos.sh
-```
-
----
-
-### Uninstalling
-
-Uninstall scripts are not yet included.
-NovaKey can be removed manually as follows.
-
-#### Linux
-
-```bash
-sudo systemctl disable --now novakey
-sudo rm /etc/systemd/system/novakey.service
-sudo rm /usr/local/bin/novakey-service
-sudo rm -rf /etc/novakey /var/lib/novakey /var/log/novakey
-sudo userdel novakey
-```
-
-#### macOS
-
-```bash
-sudo launchctl unload /Library/LaunchDaemons/com.osbornepro.novakey.plist
-sudo rm /Library/LaunchDaemons/com.osbornepro.novakey.plist
-sudo rm /usr/local/bin/novakey-service
-sudo rm -rf "/Library/Application Support/NovaKey"
-```
-
-If installation fails, verify that you downloaded the correct archive for your operating system and that you have administrator privileges.
+You can wrap `novakey` in systemd, launchd, or a Windows Service as you prefer.
 
 ---
 
 ## Logging
 
-| OS      | Log location |
-|---------|--------------|
-| **Windows** | Event Viewer → Applications and Services Logs → NovaKey |
-| **macOS**   | `/var/log/novakey.out` and `/var/log/novakey.err` (defined in the launchd plist) |
-| **Linux**   | `journalctl -u novakey.service` |
+Currently, logs are written to stdout/stderr by default.
 
-*Tip (Linux):* view logs in real‑time  
+Typical patterns:
 
-```bash
-journalctl -fu novakey.service
-```
+* **Linux (manual run):**
 
----  
+  ```bash
+  ./dist/novakey-linux-amd64 2>&1 | tee novakey.log
+  ```
+
+* **Linux (with systemd):**
+
+  ```bash
+  journalctl -u novakey.service
+  ```
+
+* **macOS (with launchd):**
+
+  * Configure `StandardOutPath` / `StandardErrorPath` in your plist.
+  * Or inspect via `log show` for your service label.
+
+* **Windows:**
+
+  * If run as a console app: logs appear in the console.
+  * If wrapped as a service, configure your service wrapper to redirect stdout/stderr or log to the Event Log.
+
+---
 
 ## Contributing
-We welcome contributions! Please follow these steps:
 
-1. Fork the repository and create a feature branch (`git checkout -b feat/your‑feature`).
-2. Write tests – the project uses Go’s standard testing package. Run `go test ./...` locally.**
-3. Run linters – we use `golangci-lint`. Install with `go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest` and run `golangci-lint run`.
-4. Update documentation – if you add a new flag or change behaviour, update the README.md and/or the EULA.md.
-5. Submit a Pull Request – link any related issue, and ensure CI passes.
+We welcome contributions! Please:
 
-> **NOTE**: All contributions are accepted under the same commercial licence (*the contributor assigns the rights to OsbornePro, LLC.*). By submitting a PR you agree to this arrangement.*
+1. Fork the repository and create a feature branch (`git checkout -b feat/your-feature`).
+2. Write tests (`go test ./...`).
+3. Run linters (e.g. `golangci-lint run`) if you use them.
+4. Update documentation if you change flags, behavior, or protocol details.
+5. Submit a Pull Request and link any relevant issue.
+
+> **NOTE:** All contributions are accepted under the same commercial licence (*the contributor assigns the rights to OsbornePro, LLC.*). By submitting a PR you agree to this arrangement.
 
 ---
 
 ## License
 
 NovaKey is **proprietary commercial software**. See `EULA.md` for the full terms.
-The source code in this repository is provided **as‑is** solely for the purpose of building the binary; redistribution of the source or compiled binaries is prohibited without a separate written licence from OsbornePro LLC.
+
+The source code in this repository is provided **as-is** solely for the purpose of building the binary; redistribution of the source or compiled binaries is prohibited without a separate written licence from OsbornePro LLC.
 
 ---
 
 ## Contact & Support
 
-- **Product website / purchase:** https://novakey.app
-- **Technical support:** support@novakey.app
-- **PGP key (for encrypted email):** https://downloads.osbornepro.com/publickey.asc
-- **Security disclosures:** Review the policy **[HERE](https://github.com/OsbornePro/NovaKey/blob/main/SECURITY.md)** (do **not** open vulnerabilities via GitHub Issues).
-- **GitHub issues:** Use the Issues tab for bugs, feature requests, or installation help. Please do not submit security findings as "*Issues*".
+* **Product website / purchase:** [https://novakey.app](https://novakey.app)
+* **Technical support:** [support@novakey.app](mailto:support@novakey.app)
+* **PGP key (for encrypted email):** [https://downloads.osbornepro.com/publickey.asc](https://downloads.osbornepro.com/publickey.asc)
+* **Security disclosures:** Review the policy **[HERE](https://github.com/OsbornePro/NovaKey/blob/main/SECURITY.md)** (do **not** open vulnerabilities via GitHub Issues).
+* **GitHub issues:** Use the Issues tab for bugs, feature requests, or installation help. Please do not submit security findings as GitHub Issues.
+
