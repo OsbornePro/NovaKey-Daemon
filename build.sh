@@ -1,11 +1,11 @@
-﻿#!/bin/bash
+#!/bin/bash
 # =============================================================================
-# NovaKey - Unified cross-platform build script (Linux & macOS)
+# NovaKey - Unified cross-platform build script (Linux host)
 # Contact: security@novakey.app
 # Author: Robert H. Osborne (OsbornePro)
 # Date: December 2025
 # =============================================================================
-
+#dnf install -y xdotool xclip
 set -Eeo pipefail
 shopt -s nocasematch
 
@@ -24,6 +24,7 @@ error()  { printf "${RED}[x] %s${NC}\n" "$1" >&2; exit 1; }
 # ----------------------------- Host OS -----------------------------
 HOST_OS="$(uname | tr '[:upper:]' '[:lower:]')"
 case "$HOST_OS" in
+    windows*)  HOST_OS="windows" ;;
     linux*)  HOST_OS="linux" ;;
     darwin*) HOST_OS="darwin" ;;
     *) error "Unsupported host OS: $HOST_OS" ;;
@@ -40,7 +41,7 @@ while [[ $# -gt 0 ]]; do
         -c|--clean)  CLEAN=true; shift ;;
         -f|--file)   FILENAME="$2"; shift 2 ;;
         -h|--help)
-            echo "Usage: ./build.sh -t windows|linux|darwin [-c]"
+            echo "Usage: ./build.sh -t windows|linux|darwin [-c] [-f filename]"
             exit 0
             ;;
         *) error "Unknown option: $1" ;;
@@ -49,11 +50,15 @@ done
 
 # ----------------------------- Project Root -----------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.."
+cd "$SCRIPT_DIR"   # <--- assume script is in repo root
 
 # ----------------------------- Version -----------------------------
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# NOTE: this assumes you have in your Go code:
+#   var version = "dev"
+#   var buildDate = ""
 LDFLAGS="-s -w -X main.version=${VERSION} -X main.buildDate=${BUILD_DATE}"
 
 log "Building NovaKey $VERSION for target=$TARGET (host=$HOST_OS)"
@@ -64,34 +69,38 @@ mkdir -p dist
 
 # ----------------------------- Build -----------------------------
 case "$TARGET" in
-
     windows)
+        log "Building for windows/amd64"
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-            go build -trimpath -ldflags="$LDFLAGS" -o "dist/${FILENAME:-NovaKey.exe}" ./cmd/novakey
+            go build -trimpath -ldflags="$LDFLAGS" \
+                -o "dist/${FILENAME:-NovaKey.exe}" .
         ;;
 
     linux)
+        log "Building for linux/amd64"
         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-            go build -trimpath -ldflags="$LDFLAGS" -o "dist/${FILENAME:-NovaKey}" ./cmd/novakey
+            go build -trimpath -ldflags="$LDFLAGS" \
+                -o "dist/${FILENAME:-novakey-linux-amd64}" .
         ;;
 
     darwin)
         if [[ "$HOST_OS" != "darwin" ]]; then
-            warn "macOS builds must be performed on macOS."
-            warn "Reason: CGO + Cocoa APIs cannot be cross-compiled from $HOST_OS."
-            warn "Run this script on a Mac with Xcode installed."
+            warn "macOS builds should be performed on macOS."
+            warn "Reason: future CGO + Cocoa APIs may not cross-compile cleanly."
             exit 0
         fi
 
         for ARCH in amd64 arm64; do
             log "Building darwin/$ARCH"
-            CGO_ENABLED=1 GOOS=darwin GOARCH="$ARCH" \
-                go build -trimpath -ldflags="$LDFLAGS" -o "dist/NovaKey-darwin-$ARCH" ./cmd/novakey
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
+                go build -trimpath -ldflags="$LDFLAGS" \
+                    -o "dist/${FILENAME:-NovaKey-darwin-$ARCH}" .
         done
 
         log "To create universal binary:"
         log "lipo -create -output NovaKey NovaKey-darwin-amd64 NovaKey-darwin-arm64"
         ;;
+
     *)
         error "Invalid target: $TARGET"
         ;;
