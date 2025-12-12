@@ -59,7 +59,7 @@ https://osbornepro.com/
 
 $ErrorActionPreference = "Stop"
 $InformationPreference = "Continue"
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ProjectRoot = $PSScriptRoot
 Set-Location -Path $ProjectRoot
 
 Write-Verbose -Message "Verify required tools can be used"
@@ -72,7 +72,7 @@ ForEach ($Tool in "git", "go") {
 }  # End ForEach
 
 # Get version tag
-Try { $Version = (git describe --tags --abbrev=0 2>$null).Trim() } Catch { }
+Try { $Version = (git describe --tags --abbrev=0 2>$Null).Trim() } Catch { }
 If (-not $Version) { $Version = "dev" }
 
 $LdFlags = "-s -w -X main.version=$Version -X main.buildDate=$(Get-Date -Format o)"
@@ -122,12 +122,12 @@ macOS builds must be performed on macOS.
 
 Reason:
   NovaKey uses CGO + Apple Cocoa / Accessibility APIs,
-  which cannot be cross-compiled from $Target.
+  which may not cross-compile cleanly from this host. 
 
 What to do:
   Run this command on a Mac with Xcode installed:
-      ./Build-Scripts/build.sh -t darwin
-      ./Build-Scripts/build.ps1 -Target darwin
+      ./build.sh -t darwin
+      ./build.ps1 -Target darwin
 "@
         Return
 <#
