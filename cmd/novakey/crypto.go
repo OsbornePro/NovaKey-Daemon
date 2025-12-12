@@ -23,6 +23,8 @@ const (
 	maxClockSkewSec = 120  // allow up to ±120 seconds clock skew
 	maxMsgAgeSec    = 300  // reject messages older than 5 minutes
 	replayCacheTTL  = 600  // keep seen nonces for 10 minutes
+
+	maxRequestsPerDevicePerMin = 60 // per-device rate limit
 )
 
 type deviceConfig struct {
@@ -43,10 +45,17 @@ type deviceAEAD struct {
 var deviceCiphers map[string]deviceAEAD
 
 // replayCache: deviceID -> nonceHex -> timestamp
+// rateState:  deviceID -> rateWindow
 var (
 	replayMu    sync.Mutex
 	replayCache = make(map[string]map[string]int64)
+	rateState   = make(map[string]rateWindow)
 )
+
+type rateWindow struct {
+	windowStart int64
+	count       int
+}
 
 // initCrypto loads per-device keys and builds AEADs.
 // Call this from main() before listening.
@@ -67,7 +76,7 @@ func initCrypto() error {
 	}
 
 	if len(cfg.Devices) == 0 {
-		return fmt.Errorf("devices file %q has no devices", path, err)
+		return fmt.Errorf("devices file %q has no devices", path)
 	}
 
 	m := make(map[string]deviceAEAD, len(cfg.Devices))
@@ -161,15 +170,15 @@ func decryptPasswordFrame(frame []byte) (string, string, error) {
 	ts := int64(binary.BigEndian.Uint64(plaintext[:8]))
 	password := string(plaintext[8:])
 
-	if err := validateFreshness(deviceID, nonce, ts); err != nil {
+	if err := validateFreshnessAndRate(deviceID, nonce, ts); err != nil {
 		return "", "", err
 	}
 
 	return deviceID, password, nil
 }
 
-// validateFreshness enforces timestamp window and replay protection.
-func validateFreshness(deviceID string, nonce []byte, ts int64) error {
+// validateFreshnessAndRate enforces timestamp window, replay protection, and rate limiting.
+func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	now := time.Now().Unix()
 
 	// Basic time window checks
@@ -185,24 +194,40 @@ func validateFreshness(deviceID string, nonce []byte, ts int64) error {
 	replayMu.Lock()
 	defer replayMu.Unlock()
 
+	// ----- Replay protection -----
 	m, ok := replayCache[deviceID]
 	if !ok {
 		m = make(map[string]int64)
 		replayCache[deviceID] = m
 	}
 
-	// Replay check
 	if prevTs, exists := m[nonceHex]; exists {
 		return fmt.Errorf("replay detected for device %q (nonce seen at ts=%d)", deviceID, prevTs)
 	}
-
 	m[nonceHex] = ts
 
-	// Simple TTL cleanup
+	// Cleanup stale nonces
 	for k, v := range m {
 		if now-v > replayCacheTTL {
 			delete(m, k)
 		}
+	}
+
+	// ----- Rate limiting -----
+	rw := rateState[deviceID]
+
+	if now-rw.windowStart >= 60 || rw.windowStart == 0 {
+		// Reset window
+		rw.windowStart = now
+		rw.count = 0
+	}
+
+	rw.count++
+	rateState[deviceID] = rw
+
+	if rw.count > maxRequestsPerDevicePerMin {
+		return fmt.Errorf("rate limit exceeded for device %q: %d requests in current window",
+			deviceID, rw.count)
 	}
 
 	return nil
