@@ -1,10 +1,10 @@
-# PASSLINK COMMERCIAL LICENSE AGREEMENT
+# NOVAKEY COMMERCIAL LICENSE AGREEMENT
 **Version 1.0 – Effective [December 1, 2025]**
 
 ---
 
 ## IMPORTANT – READ CAREFULLY
-By downloading, installing, or using the PassLink software (the **“Software”**) you agree to be bound by the terms of this Commercial License Agreement (the **“Agreement”**). If you do not agree, do **not** install or use the Software.
+By downloading, installing, or using the NovaLink software (the **“Software”**) you agree to be bound by the terms of this Commercial License Agreement (the **“Agreement”**). If you do not agree, do **not** install or use the Software.
 
 ---
 
@@ -15,7 +15,7 @@ By downloading, installing, or using the PassLink software (the **“Software”
 ### 2. Grant of License
 Subject to the terms of this Agreement, Licensor hereby grants You a **non‑exclusive, non‑transferable, worldwide, perpetual** right to:
 
-1. **Install and run** the compiled binaries of **PassLink** on any number of devices owned or controlled by You.  
+1. **Install and run** the compiled binaries of **NovaLink** on any number of devices owned or controlled by You.  
 2. **Use** the Software solely for the purpose of managing your own password‑manager credentials as described in the product documentation.
 
 All other rights (*copying, modifying, distributing, sublicensing, renting, leasing, or creating derivative works*) are **strictly prohibited** unless expressly authorized in writing by Licensor.
