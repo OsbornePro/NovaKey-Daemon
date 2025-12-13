@@ -4,8 +4,8 @@
 # Contact: security@novakey.app
 # Author: Robert H. Osborne (OsbornePro)
 # Date: December 2025
+# Requirements: dnf install -y xdotool xclip
 # =============================================================================
-#dnf install -y xdotool xclip
 set -Eeo pipefail
 shopt -s nocasematch
 
@@ -73,14 +73,16 @@ case "$TARGET" in
         log "Building for windows/amd64"
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
             go build -trimpath -ldflags="$LDFLAGS" \
-                -o "dist/${FILENAME:-NovaKey.exe}" .
+                -o "dist/${FILENAME:-NovaKey.exe}" ./cmd/novakey
         ;;
 
     linux)
-        log "Building for linux/amd64"
-        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-            go build -trimpath -ldflags="$LDFLAGS" \
-                -o "dist/${FILENAME:-novakey-linux-amd64}" .
+        for ARCH in amd64 arm64; do
+            log "Building for linux/$ARCH"
+            CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH \
+                go build -trimpath -ldflags="$LDFLAGS" \
+                    -o "dist/${FILENAME:-novakey-linux-$ARCH}" ./cmd/novakey
+        done
         ;;
 
     darwin)
@@ -94,7 +96,7 @@ case "$TARGET" in
             log "Building darwin/$ARCH"
             CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
                 go build -trimpath -ldflags="$LDFLAGS" \
-                    -o "dist/${FILENAME:-NovaKey-darwin-$ARCH}" .
+                    -o "dist/${FILENAME:-NovaKey-darwin-$ARCH}" ./cmd/novakey
         done
 
         log "To create universal binary:"

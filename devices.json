@@ -3,14 +3,6 @@
     {
       "id": "roberts-phone",
       "key_hex": "7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234"
-    },
-    {
-      "id": "roberts-tablet",
-      "key_hex": "b8e167a0c4f1d2a3f5e4c3b2a19087654321ffeeddccbbaa9988776655443322"
-    },
-    {
-      "id": "roberts-phone-2",
-      "key_hex": "a9230fb4fb086fe41fc1d24b32c7aa47000dd7bfb7fdb51e83100610be37feee"
     }
   ]
 }

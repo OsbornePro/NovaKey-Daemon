@@ -58,68 +58,60 @@ type rateWindow struct {
 }
 
 // initCrypto loads per-device keys and builds AEADs.
-// Call this from main() before listening.
 func initCrypto() error {
-	path := cfg.DevicesFile
-	if path == "" {
-		path = defaultDevicesFile
-	}
+    // 1. Load or create server Kyber keys
+    if err := loadOrCreateServerKeys(cfg.ServerKeysFile); err != nil {
+        return fmt.Errorf("loading server kyber keys: %w", err)
+    }
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("reading devices file %q: %w", path, err)
-	}
+    // 2. Load per-device keys and build AEADs (existing logic)
+    path := cfg.DevicesFile
+    if path == "" {
+        path = defaultDevicesFile
+    }
 
-	var cfg devicesConfigFile
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return fmt.Errorf("parsing devices file %q: %w", path, err)
-	}
+    data, err := os.ReadFile(path)
+    if err != nil {
+        return fmt.Errorf("reading devices file %q: %w", path, err)
+    }
 
-	if len(cfg.Devices) == 0 {
-		return fmt.Errorf("devices file %q has no devices", path)
-	}
+    var dc devicesConfigFile
+    if err := json.Unmarshal(data, &dc); err != nil {
+        return fmt.Errorf("parsing devices file %q: %w", path, err)
+    }
 
-	m := make(map[string]deviceAEAD, len(cfg.Devices))
-	for _, d := range cfg.Devices {
-		if d.ID == "" {
-			return fmt.Errorf("device with empty id in %q", path)
-		}
-		keyBytes, err := hex.DecodeString(d.KeyHex)
-		if err != nil {
-			return fmt.Errorf("device %q: invalid key_hex: %w", d.ID, err)
-		}
-		if len(keyBytes) != chacha20poly1305.KeySize {
-			return fmt.Errorf("device %q: key must be %d bytes, got %d",
-				d.ID, chacha20poly1305.KeySize, len(keyBytes))
-		}
+    if len(dc.Devices) == 0 {
+        return fmt.Errorf("devices file %q has no devices", path)
+    }
 
-		a, err := chacha20poly1305.NewX(keyBytes)
-		if err != nil {
-			return fmt.Errorf("device %q: NewX failed: %w", d.ID, err)
-		}
-		m[d.ID] = deviceAEAD{id: d.ID, aead: a}
-	}
+    m := make(map[string]deviceAEAD, len(dc.Devices))
+    for _, d := range dc.Devices {
+        if d.ID == "" {
+            return fmt.Errorf("device with empty id in %q", path)
+        }
+        keyBytes, err := hex.DecodeString(d.KeyHex)
+        if err != nil {
+            return fmt.Errorf("device %q: invalid key_hex: %w", d.ID, err)
+        }
+        if len(keyBytes) != chacha20poly1305.KeySize {
+            return fmt.Errorf("device %q: key must be %d bytes, got %d",
+                d.ID, chacha20poly1305.KeySize, len(keyBytes))
+        }
 
-	deviceCiphers = m
+        a, err := chacha20poly1305.NewX(keyBytes)
+        if err != nil {
+            return fmt.Errorf("device %q: NewX failed: %w", d.ID, err)
+        }
+        m[d.ID] = deviceAEAD{id: d.ID, aead: a}
+    }
 
-	absPath, _ := filepath.Abs(path)
-	fmt.Printf("Loaded %d device keys from %s\n", len(deviceCiphers), absPath)
-	return nil
+    deviceCiphers = m
+
+    absPath, _ := filepath.Abs(path)
+    fmt.Printf("Loaded %d device keys from %s\n", len(deviceCiphers), absPath)
+    return nil
 }
 
-// decryptPasswordFrame parses and decrypts a v2 frame payload and returns (deviceID, password).
-//
-// Frame layout:
-//   [0]               = version
-//   [1]               = msgType
-//   [2]               = idLen
-//   [3 : 3+idLen]     = deviceID
-//   [3+idLen : 3+idLen+nonceLen] = nonce
-//   [rest]            = ciphertext
-//
-// Plaintext layout (after AEAD decrypt):
-//   [0:8]   = timestamp (uint64, unix seconds, big-endian)
-//   [8:...] = password (UTF-8)
 func decryptPasswordFrame(frame []byte) (string, string, error) {
 	if len(frame) < 3 {
 		return "", "", fmt.Errorf("frame too short: %d", len(frame))

@@ -33,6 +33,7 @@ NovaKey aims to eliminate “manual typing” of those secrets:
 * [Running NovaKey](#running-novakey)
 * [Logging](#logging)
 * [Contributing](#contributing)
+* [Known Issues](#known-issues)
 * [License](#license)
 * [Contact & Support](#contact--support)
 
@@ -470,6 +471,30 @@ Typical patterns:
 
   * If run as a console app: logs appear in the console.
   * If wrapped as a service, configure your service wrapper to redirect stdout/stderr or log to the Event Log.
+
+---
+
+## Known Issues
+
+### Linux Wayland sessions
+
+On Linux **Wayland** sessions (`XDG_SESSION_TYPE=wayland`), NovaKey:
+
+- **Does copy** the decrypted secret to the clipboard, but  
+- **Does *not*** currently perform keystroke injection into the focused window.
+
+This is an intentional limitation: the current injector uses X11/Xwayland tools (`xdotool`, `xclip`), which do not work reliably against native Wayland windows. Rather than silently failing, NovaKey:
+
+- Populates the clipboard (best effort), and
+- Logs that Wayland keystroke injection is not implemented yet.
+
+**Workarounds:**
+
+- Log in using an **Xorg/X11 session** instead of Wayland, or  
+- Run target apps under **Xwayland** where possible (for example: `MOZ_ENABLE_WAYLAND=0 firefox`), or  
+- Use NovaKey in **clipboard-only** mode and paste manually (`Ctrl+V`).
+
+For more detail and ideas for contributors, see **[KNOWN_ISSUES.md](KNOWN_ISSUES.md)**.
 
 ---
 
