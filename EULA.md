@@ -65,7 +65,7 @@ Any dispute arising under this Agreement shall be resolved exclusively in the st
 
 ---
 
-**By clicking "I Agree", installing, or otherwise using PassLink, you acknowledge that you have read, understood, and accepted all terms of this Commercial License Agreement.**
+**By clicking "I Agree", installing, or otherwise using NovaKey, you acknowledge that you have read, understood, and accepted all terms of this Commercial License Agreement.**
 
 ---
 
