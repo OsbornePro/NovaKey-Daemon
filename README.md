@@ -597,8 +597,6 @@ They **can**:
 * **Injection scope is “focused control”.**
   NovaKey injects into whichever control currently has focus. There is no built-in allow-list of applications yet. Mis-clicks or social engineering could still cause secrets to be typed into the wrong window.
 
-````
-
 ---
 
 ## Reporting a Vulnerability
