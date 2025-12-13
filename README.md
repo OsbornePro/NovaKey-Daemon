@@ -34,6 +34,7 @@ NovaKey aims to eliminate “manual typing” of those secrets:
 * [Security Notes (Current Implementation)](#security-notes-current-implementation)
 * [Build from Source](#build-from-source)
 * [Running NovaKey](#running-novakey)
+* [Security Model](#security-model)
 * [Logging](#logging)
 * [Contributing](#contributing)
 * [Known Issues](#known-issues)
@@ -711,16 +712,6 @@ These are possibilities under consideration and **not guaranteed**:
 - Additional transports (e.g. BLE, USB) when they can be implemented safely and portably.
 
 The README and protocol documentation in the repository describe the exact on-wire format and cryptographic choices implemented in each release.
-
----
-
-Thank you for helping keep NovaKey secure.
-
-— Robert H. Osborne (OsbornePro)  
-Maintainer, NovaKey
-````
-
-
 
 ---
 
