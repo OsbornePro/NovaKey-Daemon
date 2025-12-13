@@ -799,56 +799,6 @@ You can wrap `novakey` in systemd, launchd, or a Windows Service as you prefer.
 
 ---
 
-## Security Model
-
-This section describes what NovaKey’s v3 protocol is trying to protect, what it assumes, and what guarantees it does (and does not) provide.
-
-### Goals
-
-NovaKey v3 is designed to:
-
-1. **Keep secrets off the keyboard.**  
-   The high-value secret (e.g., password manager master password) should never be manually typed. It is sent from a trusted device to NovaKey and injected directly into the focused field.
-
-2. **Provide confidential, authenticated transport over an untrusted LAN.**  
-   An attacker on the same network is assumed able to sniff and inject arbitrary packets. The v3 protocol aims to ensure that:
-   - Only devices that hold valid pairing secrets can send frames that NovaKey accepts.
-   - Captured traffic does not reveal the plaintext password or shared session keys.
-   - Captured traffic cannot be replayed indefinitely.
-
-3. **Limit abuse even from a compromised, but authorized, device.**  
-   A compromised phone (or client) should not be able to hammer the daemon indefinitely or replay old frames without detection.
-
-### Non-Goals
-
-NovaKey v3 does **not** attempt to:
-
-- Protect against a fully compromised host OS or hypervisor.
-- Hide secrets from local malware with the same privileges as the NovaKey daemon (e.g., user-space keyloggers, clipboard stealers).
-- Secure lock screens, pre-boot PINs, or login prompts. v3 targets **normal logged-in desktop sessions** only.
-- Provide anonymity or strong unlinkability between frames from the same device.
-
-### Identities, Keys, and Files
-
-NovaKey v3 uses the following long-term and short-term secrets:
-
-#### Device identity / secrets (`devices.json`)
-
-Each allowed client device has an entry in `devices.json`:
-
-```json
-{
-  "devices": [
-    {
-      "id": "roberts-phone",
-      "key_hex": "32-byte-hex-string"
-    }
-  ]
-}
-```
-
----
-
 ## Logging
 
 Currently, logs are written to stdout/stderr by default.
