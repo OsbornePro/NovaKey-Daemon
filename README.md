@@ -264,7 +264,7 @@ You normally won’t edit this by hand; use `nvpair` instead.
 * Add a Kyber-based KEM for post-quantum key exchange on top of the per-device identity.
 * Optionally derive per-session keys and rotate them.
 
-For more detail, see the protocol document (`PROTOCOL.md`) once added.
+For more detail, see the protocol document (`PROTOCOL.md`).
 
 ---
 
