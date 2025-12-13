@@ -136,7 +136,7 @@ Usage (example):
   -addr 192.168.8.244:60768 \
   -device-id roberts-phone \
   -key-hex 7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234 \
-  -server-pub-base64 "<base64-encoded server Kyber public key>" \
+  -server-kyber-pub-b64 "<base64-encoded server Kyber public key>" \
   -password "SuperStrongPassword123!"
 ```
 
@@ -145,7 +145,7 @@ Flags (current implementation):
 * `-addr` – address of the NovaKey daemon (e.g. `127.0.0.1:60768` or `192.168.x.x:60768`)
 * `-device-id` – device ID that must exist in `devices.json`
 * `-key-hex` – 32-byte per-device key in hex (matches `key_hex` in `devices.json`)
-* `-server-pub-base64` – base64-encoded ML-KEM-768 public key from `server_keys.json`
+* `-server-kyber-pub-b64` – base64-encoded ML-KEM-768 public key from `server_keys.json`
 * `-password` – password/secret string to send and inject
 
 Internally, `nvclient`:
