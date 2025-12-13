@@ -40,7 +40,7 @@ NovaKey aims to eliminate “manual typing” of those secrets:
 
 ## Overview
 
-The NovaKey service (`novakey`) runs on a workstation (*Windows, macOS, or Linux*). It creates a TCP listener (default `127.0.0.1:60768`). One or more clients (e.g. a future mobile app, or the included `nvclient` test tool) connect to this listener, send an encrypted payload, and NovaKey:
+The NovaKey service (`novakey`) runs on a workstation (*Windows, macOS, or Linux*). It creates a TCP listener (default `0.0.0.0:60768`). One or more clients (e.g. a future mobile app, or the included `nvclient` test tool) connect to this listener, send an encrypted payload, and NovaKey:
 
 1. **Authenticates** the device using a per-device symmetric key.
 2. **Decrypts & validates** the request using XChaCha20-Poly1305 with:
@@ -83,7 +83,7 @@ The main service process:
 
 * Loads configuration from `server_config.json`.
 * Loads per-device keys from `devices.json`.
-* Listens on the configured TCP address (default `127.0.0.1:60768`).
+* Listens on the configured TCP address (default `0.0.0.0:60768`).
 * For each incoming connection:
 
   * Reads a single encrypted frame.
@@ -121,7 +121,7 @@ Usage:
 
 ```bash
 ./dist/nvclient \
-  -addr 127.0.0.1:60768 \
+  -addr 0.0.0.0:60768 \
   -device-id roberts-phone \
   -key-hex 7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234 \
   -password "SuperStrongPassword123!"
@@ -129,7 +129,7 @@ Usage:
 
 Flags:
 
-* `-addr` – address of the NovaKey daemon (e.g. `127.0.0.1:60768` or `192.168.x.x:60768`)
+* `-addr` – address of the NovaKey daemon (e.g. `0.0.0.0:60768` or `192.168.x.x:60768`)
 * `-device-id` – device ID that must exist in `devices.json`
 * `-key-hex` – 32-byte per-device key in hex (matches `key_hex` in `devices.json`)
 * `-password` – password/secret string to send and inject
@@ -161,7 +161,7 @@ Device ID : roberts-phone
 Key (hex) : 7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234
 
 Use these values with nvclient or your real client, e.g.:
-  nvclient -addr 127.0.0.1:60768 -device-id "roberts-phone" -key-hex 7f0c9e... -password "..."
+  nvclient -addr 0.0.0.0:60768 -device-id "roberts-phone" -key-hex 7f0c9e... -password "..."
 ```
 
 Flags:
@@ -182,7 +182,7 @@ Example:
 
 ```json
 {
-  "listen_addr": "127.0.0.1:60768",
+  "listen_addr": "0.0.0.0:60768",
   "max_payload_len": 4096,
   "max_requests_per_min": 60,
   "devices_file": "devices.json"
@@ -191,7 +191,7 @@ Example:
 
 * `listen_addr` – TCP address to bind to.
 
-  * `127.0.0.1:60768` – **local only** (default, safest).
+  * `127.0.0.1:60768` – **local only** 
   * `0.0.0.0:60768` – listen on all interfaces (for LAN usage).
 * `max_payload_len` – max allowed payload bytes (before decryption).
 * `max_requests_per_min` – per-device rate limit.
@@ -431,8 +431,8 @@ Set-Location C:\Path\To\NovaKey
    ```text
    Loaded server config from /.../server_config.json
    Loaded 2 device keys from /.../devices.json
-   2025/12/12 15:19:50 NovaKey (Linux) service starting (listener=127.0.0.1:60768)
-   2025/12/12 15:19:50 NovaKey (Linux) service listening on 127.0.0.1:60768
+   2025/12/12 15:19:50 NovaKey (Linux) service starting (listener=0.0.0.0:60768)
+   2025/12/12 15:19:50 NovaKey (Linux) service listening on 0.0.0.0:60768
    ```
 
 3. Use `nvpair` to create a device, and `nvclient` to send a test password.
