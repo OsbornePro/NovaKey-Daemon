@@ -419,49 +419,310 @@ Features planned or on deck:
 
 ---
 
-## Security Notes (Current Implementation)
+## Security Model
 
-### Design Principles
+This section describes what NovaKey’s v3 protocol is trying to protect, what it assumes, and what guarantees it does (and does not) provide.
 
-* **Local-first by design** – no cloud service, no external relays.
-* **Per-device authentication** – every message is bound to a device ID with its own key.
-* **Post-quantum aware transport** – KEM-based key establishment (ML-KEM-768) plus modern AEAD.
-* **Defense-in-depth** – timestamps, nonces, replay cache, rate limiting, and strict framing.
+### Goals
 
-### Cryptography & Transport
+NovaKey v3 is designed to:
 
-* **Per-device symmetric keys** in `devices.json`.
-* **ML-KEM-768** to derive a per-message secret.
-* **HKDF-SHA-256** to derive the AEAD session key from `(kemShared, deviceKey)`.
-* **XChaCha20-Poly1305 AEAD** for confidentiality and integrity.
-* **Header authenticated via AAD** to bind version, message type, and device ID to the ciphertext.
-* **No plaintext acceptance** – frames must decrypt and pass all checks or they are discarded.
+1. **Keep secrets off the keyboard.**  
+   The high-value secret (e.g., password manager master password) should never be manually typed. It is sent from a trusted device to NovaKey and injected directly into the focused field.
 
-### Freshness, Replay & Abuse Prevention
+2. **Provide confidential, authenticated transport over an untrusted LAN.**  
+   An attacker on the same network is assumed able to sniff and inject arbitrary packets. The v3 protocol aims to ensure that:
+   - Only devices that hold valid pairing secrets can send frames that NovaKey accepts.
+   - Captured traffic does not reveal the plaintext password or shared session keys.
+   - Captured traffic cannot be replayed indefinitely.
 
-* **Timestamp validation**
-  Messages are accepted only within a limited time window and a small clock skew.
+3. **Limit abuse even from a compromised, but authorized, device.**  
+   A compromised phone (or client) should not be able to hammer the daemon indefinitely or replay old frames without detection.
 
-* **Nonce-based replay protection**
-  Each `(deviceID, nonce)` pair is tracked; reuse is rejected.
+### Non-Goals
 
-* **Per-device rate limiting**
-  Each device gets a capped number of requests per minute (configurable) to prevent abuse.
+NovaKey v3 does **not** attempt to:
 
-### Secret Handling
+- Protect against a fully compromised host OS or hypervisor.
+- Hide secrets from local malware with the same privileges as the NovaKey daemon (e.g., user-space keyloggers, clipboard stealers).
+- Secure lock screens, pre-boot PINs, or login prompts. v3 targets **normal logged-in desktop sessions** only.
+- Provide anonymity or strong unlinkability between frames from the same device.
 
-* Secrets are decrypted in memory and only exist for the duration of handling a single request.
-* Password previews in logs are truncated (`"Sup..." (len=23)`), not fully printed.
-* No secrets are logged or stored on disk by the daemon.
+### Identities, Keys, and Files
 
-### Network Trust Model
+NovaKey v3 uses the following long-term and short-term secrets:
 
-* Default listen address is `127.0.0.1:60768` (local only).
-* You may opt-in to `0.0.0.0:60768` to allow LAN access (e.g. from a phone).
-* It is assumed that:
+#### Device identity / secrets (`devices.json`)
 
-  * The host OS is not fully compromised.
-  * The local network is at least semi-trusted or protected (e.g. via WPA2, VPN, etc.).
+Each allowed client device has an entry in `devices.json`:
+
+```json
+{
+  "devices": [
+    {
+      "id": "roberts-phone",
+      "key_hex": "32-byte-hex-string"
+    }
+  ]
+}
+````
+
+* `id` is the **device identifier**, used on the wire and in logs.
+* `key_hex` is a 32-byte per-device secret used for:
+
+  * Identifying and authenticating that device.
+  * Feeding into key derivation (HKDF) in combination with the post-quantum KEM secret.
+
+This file must be kept private and is intended to be local to the NovaKey host.
+
+#### Server post-quantum KEM keys (`server_keys.json`)
+
+The server maintains a Kyber-class (ML-KEM-768) KEM keypair in `server_keys.json`:
+
+```json
+{
+  "kyber768_public": "base64-encoded-public-key",
+  "kyber768_secret": "base64-encoded-secret-key"
+}
+```
+
+* `kyber768_public` is shared with clients during pairing (e.g. via QR code).
+* `kyber768_secret` stays on the server and is used to **decapsulate** the KEM ciphertext from the client.
+
+These keys are generated automatically on startup if missing and should be stored with restrictive permissions (`0600` where applicable).
+
+#### Per-message session keys
+
+For each request, the client:
+
+1. Uses the server’s ML-KEM-768 public key to produce:
+
+   * A KEM ciphertext `kem_ct`.
+   * A shared KEM secret `kem_shared`.
+
+2. Derives an **AEAD session key** using HKDF over:
+
+   * The KEM shared secret.
+   * The per-device secret key (`key_hex`) and contextual info (e.g., device ID, protocol version).
+
+Conceptually:
+
+```text
+session_key = HKDF-SHA256(
+    ikm = kem_shared || device_secret,
+    info = "novakey-v3" || device_id
+)
+```
+
+The resulting `session_key` is 32 bytes and used with XChaCha20-Poly1305 for that single frame.
+
+Neither `kem_shared` nor `session_key` are stored long-term; they live only in process memory for the duration of one request.
+
+### On-Wire Guarantees
+
+Given the above, the protocol aims to provide:
+
+1. **Confidentiality**
+
+   * The password and timestamp are encrypted with XChaCha20-Poly1305 using a key derived from a post-quantum KEM secret and a per-device secret.
+   * A passive LAN attacker who records traffic should not be able to recover the password, even with future access to `server_keys.json` alone (they would still need device secrets).
+
+2. **Source authenticity (per device)**
+
+   * To produce a valid frame, an attacker must know:
+
+     * The device’s secret key (`key_hex`), and
+     * The server’s current public key (easy to obtain, but not sufficient alone).
+   * Frames are bound to:
+
+     * `version`,
+     * `msgType`,
+     * `deviceID`,
+       as AEAD additional data (AAD), so header tampering is detected.
+
+3. **Freshness and replay protection**
+
+   Inside the AEAD plaintext:
+
+   * `timestamp` (Unix seconds) is checked against:
+
+     * `maxClockSkewSec` (future skew limit),
+     * `maxMsgAgeSec` (maximum message age).
+   * `nonce` (from XChaCha) is tracked per device in an in-memory `replayCache` for `replayCacheTTL` seconds.
+
+   Effective guarantees:
+
+   * Old recorded frames outside the configured time window are rejected.
+   * Reusing the same `(deviceID, nonce)` within the cache window is rejected as a replay.
+
+4. **Abuse limitation**
+
+   * Per-device rate limiting enforces a maximum number of accepted frames per minute (`max_requests_per_min` in `server_config.json`).
+   * A compromised but valid device cannot spam arbitrary numbers of successful injections per minute without hitting rate limits.
+
+### What an Attacker on the LAN Can and Cannot Do
+
+**Assuming the attacker:**
+
+* Can see and inject packets on the local network.
+* Does **not** have the server’s `server_keys.json` and does **not** have any device’s `key_hex`.
+
+They **cannot**:
+
+* Decrypt captured v3 frames to recover passwords.
+* Forge new valid frames, because they cannot derive correct AEAD keys.
+* Indefinitely replay old frames, because:
+
+  * Timestamp freshness checks,
+  * Nonce replay cache,
+    will eventually reject them.
+
+They **can**:
+
+* Deny service by flooding the TCP port or exhausting system resources.
+* Observe **when** NovaKey is used (traffic patterns, timing).
+* If they later compromise the NovaKey host or obtain `devices.json` + `server_keys.json`, they may attempt more powerful attacks (out of scope for the protocol itself).
+
+### Remaining Limitations
+
+* **Daemon restart resets the replay cache.**
+  Replays across restarts may be possible within the timestamp acceptance window. This is acceptable for typical desktop use, but could be hardened by persisting minimal per-device replay state.
+
+* **Host compromise remains game-over.**
+  If the OS, window system, or user account is compromised, an attacker can:
+
+  * Read secrets from process memory, clipboard, or key events.
+  * Instrument NovaKey itself.
+
+* **Injection scope is “focused control”.**
+  NovaKey injects into whichever control currently has focus. There is no built-in allow-list of applications yet. Mis-clicks or social engineering could still cause secrets to be typed into the wrong window.
+
+````
+
+---
+
+## Reporting a Vulnerability
+
+We strongly encourage responsible disclosure of security vulnerabilities.
+
+### How to report
+
+Please **do not** open public GitHub issues for security problems.
+
+Instead, send reports to:  
+**[security@novakey.app](mailto:security@novakey.app)**  
+(*or directly to **[robert@osbornepro.com](mailto:robert@osbornepro.com)** if email is unavailable*)
+
+You can use this PGP key for encrypted reports:  
+**[PGP key](https://downloads.osbornepro.com/publickey.asc)** for `rosborne@osbornepro.com` (*recommended for sensitive reports*).
+
+### What to include
+
+- Detailed steps to reproduce
+- Affected version(s) and OS(es)
+- Potential impact (e.g., credential leakage, privilege escalation, replay abuse)
+- Proof-of-concept if available
+- Any relevant logs, config snippets, or screenshots (with secrets redacted)
+
+### What to expect
+
+- You will receive an acknowledgment **within 24 hours** (usually much faster).
+- We will validate the report and respond with next steps **within 3 business days**.
+- If the report is valid, a fix will be shipped **as soon as possible** — typically within 7 days for critical issues when practical.
+- You will be credited in the release notes unless you prefer to remain anonymous.
+
+### Bug bounty
+
+We do not currently offer monetary rewards, but we are deeply grateful for high-quality reports and will:
+
+- Publicly credit you (with your permission)
+- Prioritize your future reports
+- Send NovaKey stickers and eternal gratitude
+
+### Non-qualifying issues
+
+The following are **out of scope** (but still appreciated if reported):
+
+- Physical access to an unlocked computer
+- Issues requiring root/admin on an already compromised machine
+- Social engineering, phishing, or user-training issues
+- Denial-of-service via local OS resource limits (e.g., exhausting CPU by running thousands of local clients)
+- Attacks that assume full compromise of the host OS, kernel, or hypervisor
+
+---
+
+## Threat Model (High Level)
+
+### In scope
+
+- Attackers on the **local network** attempting to:
+  - Read NovaKey traffic (passive sniffing).
+  - Modify or inject NovaKey traffic (active MITM).
+  - Replay previously captured packets.
+- Malicious or compromised client apps that know the IP/port but **do not** have valid per-device secrets.
+- Attempts to abuse the service via:
+  - Excessive requests from an otherwise valid device,
+  - Malformed frames aimed at protocol parsing.
+
+### Out of scope / assumed trust
+
+- Fully compromised host operating system, kernel, or hypervisor.
+- Malicious software with the same or greater privileges as NovaKey (e.g., another process with:
+  - Keyboard injection rights,
+  - Accessibility / input monitoring permissions).
+- Physical attacks on the machine (hardware keyloggers, cold boot, RAM scraping).
+- Compromise of the user’s phone or seed secrets used by the mobile app (beyond what per-device rate limiting can mitigate).
+- Attacks on build infrastructure or distribution channels outside the scope of this repository.
+
+### Pairing and QR Codes
+
+- Device pairing currently uses a JSON blob (often via QR code) that includes:
+  - Device ID,
+  - Device secret (`key_hex`),
+  - Server address,
+  - Server ML-KEM-768 public key.
+- Anyone who obtains that pairing blob can impersonate that device on the network.
+- Users should:
+  - Treat pairing QR codes as secrets,
+  - Avoid screenshots and sharing,
+  - Regenerate/revoke device entries via `nvpair` if compromise is suspected.
+
+---
+
+## Cryptography Status Summary
+
+### Currently used (NovaKey v3)
+
+- **KEM:** ML-KEM-768 (Kyber-class), via `filippo.io/mlkem768`.
+- **KDF:** HKDF with SHA-256 for deriving per-message session keys.
+- **AEAD:** XChaCha20-Poly1305 for encrypting and authenticating payloads.
+- **Per-device secrets:** 32-byte keys in `devices.json` used for device identity and in key derivation.
+- **Anti-abuse primitives:**
+  - Timestamp-based freshness checks,
+  - Per-device nonce replay cache,
+  - Per-device rate limiting.
+
+### Future / Planned Enhancements
+
+These are possibilities under consideration and **not guaranteed**:
+
+- Persistent replay state across daemon restarts for stronger replay resistance.
+- Configurable “paranoid” modes with tighter time windows and per-device policies.
+- Optional “approve before typing” flows that involve user confirmation on the phone.
+- More granular control over injection targets (allow-listing certain applications / window classes).
+- Additional transports (e.g. BLE, USB) when they can be implemented safely and portably.
+
+The README and protocol documentation in the repository describe the exact on-wire format and cryptographic choices implemented in each release.
+
+---
+
+Thank you for helping keep NovaKey secure.
+
+— Robert H. Osborne (OsbornePro)  
+Maintainer, NovaKey
+````
+
+
 
 ---
 
@@ -549,6 +810,56 @@ You can wrap `novakey` in systemd, launchd, or a Windows Service as you prefer.
 
 ---
 
+## Security Model
+
+This section describes what NovaKey’s v3 protocol is trying to protect, what it assumes, and what guarantees it does (and does not) provide.
+
+### Goals
+
+NovaKey v3 is designed to:
+
+1. **Keep secrets off the keyboard.**  
+   The high-value secret (e.g., password manager master password) should never be manually typed. It is sent from a trusted device to NovaKey and injected directly into the focused field.
+
+2. **Provide confidential, authenticated transport over an untrusted LAN.**  
+   An attacker on the same network is assumed able to sniff and inject arbitrary packets. The v3 protocol aims to ensure that:
+   - Only devices that hold valid pairing secrets can send frames that NovaKey accepts.
+   - Captured traffic does not reveal the plaintext password or shared session keys.
+   - Captured traffic cannot be replayed indefinitely.
+
+3. **Limit abuse even from a compromised, but authorized, device.**  
+   A compromised phone (or client) should not be able to hammer the daemon indefinitely or replay old frames without detection.
+
+### Non-Goals
+
+NovaKey v3 does **not** attempt to:
+
+- Protect against a fully compromised host OS or hypervisor.
+- Hide secrets from local malware with the same privileges as the NovaKey daemon (e.g., user-space keyloggers, clipboard stealers).
+- Secure lock screens, pre-boot PINs, or login prompts. v3 targets **normal logged-in desktop sessions** only.
+- Provide anonymity or strong unlinkability between frames from the same device.
+
+### Identities, Keys, and Files
+
+NovaKey v3 uses the following long-term and short-term secrets:
+
+#### Device identity / secrets (`devices.json`)
+
+Each allowed client device has an entry in `devices.json`:
+
+```json
+{
+  "devices": [
+    {
+      "id": "roberts-phone",
+      "key_hex": "32-byte-hex-string"
+    }
+  ]
+}
+```
+
+---
+
 ## Logging
 
 Currently, logs are written to stdout/stderr by default.
@@ -589,7 +900,7 @@ We welcome contributions! Please:
 4. Update documentation if you change flags, behavior, or protocol details.
 5. Submit a Pull Request and link any relevant issue.
 
-> **NOTE:** All contributions are accepted under the same commercial licence (*the contributor assigns the rights to OsbornePro, LLC.*). By submitting a PR you agree to this arrangement.
+> **NOTE:** All contributions are accepted under the Apache 2.0 licence. By submitting a PR you agree to this arrangement.
 
 ---
 
@@ -613,7 +924,7 @@ This is because the current Linux injector relies on X11/Xwayland tooling (`xdot
 * Run target apps under **Xwayland** where possible (e.g., `MOZ_ENABLE_WAYLAND=0 firefox`), or
 * Use NovaKey in a **clipboard-only** style and paste manually (`Ctrl+V`).
 
-For more detail and ideas for contributors, see **[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)**.
+For more detail and ideas for contributors, see **[known issues](https://github.com/OsbornePro/NovaKey/issues/3)**.
 
 ---
 
