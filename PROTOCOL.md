@@ -1,20 +1,26 @@
-# NovaKey Protocol v2
+# NovaKey Protocol v3 (Kyber + XChaCha20)
 
-**Status:** implemented
-**Scope:** Typing daemon (Linux/macOS/Windows) ⇄ clients (nvclient, future phone app)
+**Status:** implemented (Kyber key schedule + v3 framing)
+**Scope:** Typing daemon (Linux / macOS / Windows) ⇄ clients (`nvclient`, future phone app)
 
-This describes how clients send “type this password” requests to the NovaKey service over TCP.
+This describes how clients send “type this password” requests to the NovaKey service over TCP using:
+
+* **ML-KEM-768** (Kyber-768-compatible KEM) for post-quantum key establishment
+* **XChaCha20-Poly1305** for authenticated encryption of the payload
+* Per-device pre-shared keys as an extra layer of authentication
+
+There is **no backward compatibility** with protocol v2. Frames with `version != 3` are rejected.
 
 ---
 
-### 1. Transport
+## 1. Transport
 
 * **Protocol:** TCP
 * **Default port:** `60768`
 * **Default listen address:** configured in `server_config.json`, typically:
 
   * `127.0.0.1:60768` (dev)
-  * `0.0.0.0:60768` (LAN testing)
+  * `0.0.0.0:60768` (LAN / VPN use)
 
 Each request is a single TCP connection:
 
@@ -22,32 +28,91 @@ Each request is a single TCP connection:
 2. Client sends one framed message.
 3. Server processes, injects, then closes the connection.
 
----
-
-### 2. High-level flow
-
-1. Client has:
-
-   * `deviceID` (string)
-   * 32-byte secret key (hex) for that device (from `devices.json` / `nvpair`).
-
-2. Client builds **one request**:
-
-   * Packs timestamp + password into a plaintext structure.
-   * Encrypts with XChaCha20-Poly1305 using device key.
-   * Wraps in a versioned frame with deviceID + nonce.
-
-3. Server:
-
-   * Reads frame.
-   * Extracts deviceID.
-   * Looks up that device’s AEAD cipher (from `devices.json`).
-   * Decrypts + verifies timestamp, replay, rate limits.
-   * Injects password into focused control.
+No connection reuse or multiplexing; each “type this secret” is independent.
 
 ---
 
-### 3. On-the-wire framing
+## 2. Pairing & Key Material
+
+NovaKey v3 has **three** relevant secrets:
+
+1. **Server Kyber keypair** (ML-KEM-768)
+2. **Per-device pre-shared key** (PSK) for the AEAD
+3. **Per-message KEM shared secret**, derived from Kyber for that request
+
+### 2.1 Server Kyber keys (`server_keys.json`)
+
+On first startup, the daemon will create `server_keys.json` if it does not exist:
+
+```json
+{
+  "kyber768_public": "<base64-encoded ML-KEM-768 public key>",
+  "kyber768_secret": "<base64-encoded ML-KEM-768 private key>"
+}
+```
+
+These are **long-lived** for the workstation and used only for:
+
+* Accepting KEM ciphertexts from paired devices
+* Decapsulating to obtain per-message shared secrets
+
+If the file is missing or invalid, it is **regenerated automatically**.
+
+### 2.2 Device keys (`devices.json`)
+
+Per-device PSKs are still used as an additional authentication layer and to bind pairing to a particular phone/device.
+
+`devices.json` looks like:
+
+```json
+{
+  "devices": [
+    {
+      "id": "roberts-phone",
+      "key_hex": "7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234"
+    }
+  ]
+}
+```
+
+* `key_hex` is a 32-byte random value (XChaCha20-Poly1305 key material) encoded as hex.
+* Generated and written by the `nvpair` tool.
+
+### 2.3 Pairing JSON (for phone app / nvclient)
+
+The `nvpair` tool does all of this:
+
+* Creates or updates the device entry in `devices.json`
+* Reads `server_config.json` and `server_keys.json`
+* Emits pairing info as JSON (and optionally as a QR code)
+
+Example structure:
+
+```json
+{
+  "v": 1,
+  "device_id": "roberts-phone",
+  "device_key_hex": "7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234",
+  "server_addr": "192.168.8.244:60768",
+  "server_kyber768_pub": "<base64-encoded public key>"
+}
+```
+
+A phone app or external client can just:
+
+* Parse/scan this JSON (or QR)
+* Store:
+
+  * `device_id`
+  * `device_key_hex`
+  * `server_addr`
+  * `server_kyber768_pub`
+
+There is no user-typed secret during pairing; everything is generated on the host, exported via JSON/QR, and imported by the client.
+
+---
+
+## 3. On-the-wire framing
 
 At the TCP level:
 
@@ -55,22 +120,23 @@ At the TCP level:
 [ u16 length ][ length bytes of payload ]
 ```
 
-* `length` is unsigned 16-bit big-endian (0–65535).
-* `payload` is a v2 encrypted message.
+* `length`: unsigned 16-bit big-endian (0–65535)
+* `payload`: a single **v3** encrypted message (`frame` in the Go code)
 
 ---
 
-### 4. Payload (v2) layout
+## 4. Payload (v3) layout
 
-`payload` bytes (what Go calls `frame`) are:
+The `payload` / `frame` bytes are:
 
 ```text
-[ 0 ]             = version           (u8, must be 2)
-[ 1 ]             = msgType           (u8, 1 = password)
-[ 2 ]             = idLen             (u8, length of deviceID in bytes)
-[ 3 .. 3+idLen-1] = deviceID bytes    (ASCII/UTF-8)
-[ ... ]           = nonce             (24 bytes, XChaCha20-Poly1305 nonce)
-[ ... ]           = ciphertext        (rest, AEAD output)
+[ 0 ]               = version        (u8, must be 3)
+[ 1 ]               = msgType        (u8, 1 = password)
+[ 2 ]               = idLen          (u8, length of deviceID in bytes)
+[ 3 .. 3+idLen-1 ]  = deviceID       (ASCII/UTF-8)
+[ ... ]             = kemCt          (ML-KEM-768 ciphertext, fixed length)
+[ ... ]             = nonce          (24 bytes, XChaCha20-Poly1305 nonce)
+[ ... ]             = ciphertext     (AEAD output)
 ```
 
 More explicitly:
@@ -78,98 +144,196 @@ More explicitly:
 ```text
 offset  description
 ------  -----------------------------------------------
-0       version (0x02)
-1       msgType (0x01)
-2       idLen (N)
+0       version = 0x03
+1       msgType = 0x01 (password)
+2       idLen = N
 3..3+N-1 deviceID (N bytes)
 H       = 3 + N
-H..H+23 nonce (24 bytes)
-H+24..  ciphertext (AEAD)
+H..H+K-1  kemCt (K bytes; ML-KEM-768 ciphertext)
+H+K..H+K+23  nonce (24 bytes)
+H+K+24..end  ciphertext (XChaCha20-Poly1305)
 ```
 
-* The **AEAD additional data (AAD)** is the header:
+Where:
 
-  * `header = payload[0 : 3+idLen]`
-  * i.e. `version || msgType || idLen || deviceID`
+* `K` is the ML-KEM-768 ciphertext size (currently 1088 bytes with the Filippo implementation).
 
----
+### 4.1 AEAD Associated Data (AAD)
 
-### 5. Cipher & keys
+The AEAD **associated data** is the fixed header **before** the KEM ciphertext:
 
-* Cipher: **XChaCha20-Poly1305** (via `golang.org/x/crypto/chacha20poly1305.NewX`).
+```text
+header = frame[0 : 3 + idLen]
+       = version || msgType || idLen || deviceID
+```
 
-* Key: 32 bytes, unique per device, stored in `devices.json`:
+That means:
 
-  ```json
-  {
-    "devices": [
-      {
-        "id": "roberts-phone",
-        "key_hex": "7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234"
-      }
-    ]
-  }
-  ```
-
-* Nonce: 24 random bytes, new for each message.
+* Version and device identity are authenticated by AEAD.
+* KEM ciphertext itself is integrity-protected by the ML-KEM-768 scheme.
 
 ---
 
-### 6. Plaintext layout (inside AEAD)
+## 5. Cipher & key schedule
 
-After decryption, the plaintext is:
+### 5.1 Algorithms
+
+* **Key Encapsulation Mechanism**: ML-KEM-768 (Kyber-768-compatible)
+* **Symmetric AEAD**: XChaCha20-Poly1305
+* **Key Derivation**: HKDF-SHA-256
+
+### 5.2 Per-message key derivation (client)
+
+For each request, the client does:
+
+1. **KEM encapsulation**
+
+   ```text
+   input: serverKyberPub (from pairing)
+   output: kemCt (ciphertext), kemShared (32-byte shared secret)
+   ```
+
+2. **Session key derivation with HKDF**
+
+   ```text
+   IKM  = kemShared       (from KEM)
+   salt = deviceKey       (32-byte PSK from device_key_hex)
+   info = "NovaKey v3 session key" (fixed ASCII label)
+   K    = HKDF-SHA256(IKM, salt, info, length = 32)
+   ```
+
+   `K` becomes the XChaCha20-Poly1305 key for this single message.
+
+3. **AEAD encryption**
+
+   * Build `header` and `plaintext` (see below).
+   * Generate random 24-byte nonce.
+   * Use XChaCha20-Poly1305 with:
+
+     * Key = `K`
+     * Nonce = 24 random bytes
+     * AAD = `header`
+   * Result is `ciphertext`.
+
+The **plaintext** layout inside AEAD is unchanged from v2:
 
 ```text
 [ 0..7 ]   = timestamp (uint64, big-endian Unix seconds)
 [ 8..end ] = password bytes (UTF-8)
 ```
 
-* `timestamp` is the client’s wall-clock time in seconds.
+Typical client pseudocode, ignoring errors:
+
+```pseudo
+now       = unix_time()
+password  = "SuperStrongPassword123!"
+idBytes   = utf8_bytes(deviceID)
+
+header = [0x03, 0x01, len(idBytes)] || idBytes
+
+plaintext = uint64_be(now) || utf8_bytes(password)
+
+// KEM: derive kemCt, kemShared
+kemCt, kemShared = MLKEM768_Encapsulate(serverKyberPub)
+
+// HKDF: derive session AEAD key
+deviceKey = hex_decode(device_key_hex)     // 32 bytes
+K = HKDF_SHA256(
+      ikm  = kemShared,
+      salt = deviceKey,
+      info = "NovaKey v3 session key",
+      outLen = 32)
+
+// AEAD: XChaCha20-Poly1305
+nonce      = random_24_bytes()
+ciphertext = XChaCha20_Encrypt(K, nonce, plaintext, aad=header)
+
+// Frame payload
+payload = header || kemCt || nonce || ciphertext
+
+// Outer framing
+length = len(payload)  // must fit in u16
+frame  = uint16_be(length) || payload
+
+tcp_send("server:60768", frame)
+```
+
+### 5.3 Server-side key derivation
+
+On the server, `decryptPasswordFrame` essentially does the reverse:
+
+1. Parse header (`version`, `msgType`, `idLen`, `deviceID`).
+
+2. Lookup `deviceKey` (`key_hex`) for `deviceID` in `devices.json`.
+
+3. Extract `kemCt`, `nonce`, and `ciphertext` from frame.
+
+4. Base64-decode and unmarshal server Kyber private key from `server_keys.json`.
+
+5. **KEM decapsulation**:
+
+   ```text
+   kemShared = MLKEM768_Decapsulate(serverKyberPriv, kemCt)
+   ```
+
+6. **HKDF** with the same parameters as the client:
+
+   ```text
+   IKM  = kemShared
+   salt = deviceKey (32 bytes)
+   info = "NovaKey v3 session key"
+   K    = HKDF-SHA256(IKM, salt, info, length = 32)
+   ```
+
+7. Build a temporary XChaCha20-Poly1305 cipher with `K`.
+
+8. Decrypt `ciphertext` using `nonce`, `header` as AAD.
+
+9. Parse resulting plaintext: `[timestamp || password]`.
+
+10. Run freshness, replay, and rate-limit checks (section 6).
+
+If everything passes, the result is the cleartext password to inject.
 
 ---
 
-### 7. Server-side validation
+## 6. Server-side validation
 
-Once NovaKey decrypts, it applies several checks:
+After decrypting the payload, NovaKey applies the same checks as v2 with updated version:
 
-#### 7.1 Version & msgType
+### 6.1 Version & msgType
 
-* Reject if:
+Reject if:
 
-  * `version != 2`
-  * `msgType != 1`
+* `version != 3`
+* `msgType != 1`
 
-#### 7.2 Device lookup
+### 6.2 Device lookup
 
 * Extract `deviceID` from header.
-* Look up in `devices.json`:
+* Look up in `devices.json`.
+* Reject if unknown device ID.
 
-  * Reject if unknown device ID.
-
-#### 7.3 Timestamp freshness
+### 6.3 Timestamp freshness
 
 Let:
 
 * `now = time.Now().Unix()` (seconds)
 * `ts = timestamp from plaintext`
 
-Configuration constants (current defaults in code):
+Defaults (from code):
 
 * `maxClockSkewSec = 120` (±2 minutes)
-* `maxMsgAgeSec = 300` (5 minutes)
+* `maxMsgAgeSec    = 300` (5 minutes)
 
 Checks:
 
-* Reject if `ts > now + maxClockSkewSec`:
+* Reject if `ts > now + maxClockSkewSec` → “timestamp is in the future”.
+* Reject if `now - ts > maxMsgAgeSec` → “message too old”.
 
-  * “timestamp is in the future”
-* Reject if `now - ts > maxMsgAgeSec`:
+### 6.4 Replay protection
 
-  * “message too old”
-
-#### 7.4 Replay protection
-
-NovaKey maintains an in-memory map:
+In-memory replay cache:
 
 ```text
 replayCache[deviceID][nonceHex] = timestamp
@@ -177,23 +341,14 @@ replayCache[deviceID][nonceHex] = timestamp
 
 On each message:
 
-1. Convert nonce to hex (`nonceHex`).
-2. If `replayCache[deviceID][nonceHex]` already exists:
+1. Convert AEAD nonce to hex (`nonceHex`).
+2. If `replayCache[deviceID][nonceHex]` already exists → reject as replay.
+3. Otherwise store `replayCache[deviceID][nonceHex] = ts`.
+4. Periodically drop entries older than `replayCacheTTL` (default: 600 seconds).
 
-   * Reject as replay.
-3. Otherwise:
+### 6.5 Rate limiting
 
-   * Store `replayCache[deviceID][nonceHex] = ts`.
-4. Periodically (on insert), delete entries older than `replayCacheTTL` (currently 600 seconds).
-
-This means:
-
-* Reusing the **same nonce** from the same device will be rejected, even if timestamp is fresh.
-* Old nonce entries get dropped after ~10 minutes.
-
-#### 7.5 Rate limiting
-
-NovaKey also tracks a simple sliding-ish window per device:
+Simple per-device sliding window:
 
 ```text
 rateState[deviceID] = {
@@ -205,7 +360,7 @@ rateState[deviceID] = {
 Defaults:
 
 * `maxRequestsPerDevicePerMin = 60`
-* Overridden by `max_requests_per_min` in `server_config.json`.
+* Can be overridden by `max_requests_per_min` in `server_config.json`.
 
 On each **accepted** message (before injection):
 
@@ -219,102 +374,107 @@ On each **accepted** message (before injection):
 
 ---
 
-### 8. Injection behavior (summary)
+## 7. Injection behavior (summary)
 
-After all checks pass, NovaKey:
+Once all checks pass, NovaKey calls:
 
-* Calls `InjectPasswordToFocusedControl(password)`:
-
-  * **Linux**:
-
-    * Copies password to clipboard (async).
-    * Uses `xdotool` to type or paste into focused control (depending on environment).
-  * **macOS**:
-
-    * Uses AppleScript / Accessibility APIs to simulate paste/typing.
-  * **Windows**:
-
-    * Uses `SendInput` approach (and fallback) plus optional clipboard set.
-
-* Logs:
-
-  * Device ID.
-  * Obscured password preview (`"Sup..." (len=23)`).
-  * Success/failure of injection.
-
-Clipboard behavior is best-effort and will be further tuned per OS.
-
----
-
-### 9. Example: building a client (language-agnostic)
-
-To talk to NovaKey, a client must:
-
-1. Know `deviceID` and 32-byte key.
-2. Implement XChaCha20-Poly1305.
-3. Implement TCP framing + this layout.
-
-Pseudo-steps:
-
-```pseudo
-deviceID = "roberts-phone"
-key = decode_hex("7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234")
-now = current_unix_time_seconds()
-password = "SuperStrongPassword123!"
-
-// Build plaintext = [timestamp || password]
-plaintext = byte_array(8 + len(password))
-write_uint64_be(plaintext[0:8], now)
-copy(plaintext[8:], utf8_bytes(password))
-
-// Header (AAD)
-idBytes = utf8_bytes(deviceID)
-if len(idBytes) > 255: error
-header = [0x02, 0x01, len(idBytes)] || idBytes
-
-// AEAD(XChaCha20-Poly1305)
-nonce = random_24_bytes()
-ciphertext = AEAD_Encrypt(key, nonce, plaintext, aad=header)
-
-// Frame payload
-payload = header || nonce || ciphertext
-
-// Outer framing
-length = len(payload)  // must fit in 16 bits
-frame = uint16_be(length) || payload
-
-// Send over TCP
-tcp_send("server:60768", frame)
+```go
+InjectPasswordToFocusedControl(password)
 ```
 
-If everything is correct, NovaKey will:
+Platform-specific behavior:
 
-* Validate everything,
-* Inject the password into the focused control.
+* **Linux**
+
+  * On X11/XWayland:
+
+    * Uses `xdotool` to type or paste into the active window.
+    * Optionally copies password to clipboard (`xclip`) as a convenience.
+  * On pure Wayland:
+
+    * Currently **not supported** (see `KNOWN_ISSUES.md`).
+    * The daemon logs a clear message indicating the limitation.
+* **macOS**
+
+  * Uses AppleScript / Accessibility APIs to simulate paste or keystrokes.
+* **Windows**
+
+  * Tries clipboard + `EM_REPLACESEL` / `WM_SETTEXT` on known text controls.
+  * Falls back to `keybd_event` typing if necessary.
+
+NovaKey logs:
+
+* Device ID
+* A short, obfuscated preview of the password (`"Sup..." (len=23)`)
+* Success or failure of the injection path
 
 ---
 
-### 10. Files involved (Go implementation)
+## 8. Example: implementing a non-Go client
 
-For reference in the repo:
+To implement an external client (phone app, Rust CLI, etc.) you need:
+
+1. **Pairing info** (either via JSON file or QR code):
+
+   * `device_id`
+   * `device_key_hex` (32-byte PSK)
+   * `server_addr` (e.g. `192.168.8.244:60768`)
+   * `server_kyber768_pub` (base64, ML-KEM-768 public key)
+2. ML-KEM-768 implementation compatible with the Go `filippo.io/mlkem768` parameters.
+3. XChaCha20-Poly1305 AEAD.
+4. HKDF-SHA-256.
+5. TCP client for framing: `[u16 length][payload]`.
+
+Follow the pseudocode in section 5.2 and match:
+
+* Exact framing offsets
+* KEM cipher parameters
+* HKDF inputs (IKM, salt, info)
+* AEAD nonce length and AAD
+
+If everything matches, NovaKey will:
+
+* Decrypt successfully
+* Validate timestamp / replay / rate limit
+* Inject the password into the currently focused control
+
+---
+
+## 9. Files involved (Go implementation)
+
+For reference:
+
+* `cmd/novakey/config.go`
+  Loads `server_config.json` and default values.
+
+* `cmd/novakey/keys.go`
+  Generates / loads ML-KEM-768 server keypair (`server_keys.json`).
 
 * `cmd/novakey/crypto.go`
 
-  * Implements device key loading, AEAD, timestamp/replay/rate checks.
-* `cmd/novakey/linux_main.go`
+  * Loads device keys (`devices.json`)
+  * Decapsulates KEM ciphertext
+  * Derives per-message session key with HKDF
+  * Decrypts payload
+  * Enforces timestamp / replay / rate limits
 
-  * Linux main + handler.
-* `cmd/novakey/darwin_main.go`
+* `cmd/novakey/linux_main.go`, `darwin_main.go`, `windows_main.go`
+  TCP listener, framing, and hand-off into `decryptPasswordFrame` and injection.
 
-  * macOS main + handler.
-* `cmd/novakey/windows_main.go`
+* `cmd/novakey/inject_*.go`
+  Platform-specific implementations of `InjectPasswordToFocusedControl`.
 
-  * Windows main + handler.
 * `cmd/nvclient/`
+  Reference Go client:
 
-  * Reference Go client implementation.
+  * Parses `device_id` + `key_hex` + server addr + server pub
+  * Performs KEM encapsulation, HKDF, AEAD, and framing.
+
 * `cmd/nvpair/`
+  CLI tool to:
 
-  * CLI tool to add/update devices in `devices.json`.
+  * Add/update devices in `devices.json`
+  * Read `server_config.json` + `server_keys.json`
+  * Emit pairing JSON (and ASCII QR) for the phone app.
 
 ---

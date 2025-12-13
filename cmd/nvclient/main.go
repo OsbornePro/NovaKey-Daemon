@@ -10,11 +10,12 @@ import (
 )
 
 var (
-	addr     = flag.String("addr", "127.0.0.1:60768", "NovaKey server address")
-	password = flag.String("password", "hello", "password to send")
+	addr     = flag.String("addr", "127.0.0.1:60768", "NovaKey server address (host:port)")
+	password = flag.String("password", "hello", "password/secret to send")
 
-	deviceIDFlag = flag.String("device-id", "roberts-phone", "device ID to use")
-	keyHexFlag   = flag.String("key-hex", "", "hex-encoded 32-byte key for this device")
+	deviceIDFlag         = flag.String("device-id", "roberts-phone", "device ID to use")
+	keyHexFlag           = flag.String("key-hex", "", "hex-encoded 32-byte per-device key (matches devices.json)")
+	serverKyberPubB64Flag = flag.String("server-kyber-pub-b64", "", "base64 ML-KEM-768 public key (kyber768_public from server_keys.json or pairing)")
 )
 
 func main() {
@@ -23,8 +24,11 @@ func main() {
 	if *keyHexFlag == "" {
 		log.Fatal("must provide -key-hex (hex-encoded 32-byte key matching server devices.json)")
 	}
+	if *serverKyberPubB64Flag == "" {
+		log.Fatal("must provide -server-kyber-pub-b64 (base64 kyber768_public from server_keys.json / pairing)")
+	}
 
-	if err := initCryptoClient(*deviceIDFlag, *keyHexFlag); err != nil {
+	if err := initCryptoClient(*deviceIDFlag, *keyHexFlag, *serverKyberPubB64Flag); err != nil {
 		log.Fatalf("initCryptoClient failed: %v", err)
 	}
 
@@ -53,6 +57,6 @@ func main() {
 		log.Fatalf("write frame: %v", err)
 	}
 
-	fmt.Println("sent encrypted password frame")
+	fmt.Println("sent v3 Kyber+XChaCha encrypted password frame")
 }
 

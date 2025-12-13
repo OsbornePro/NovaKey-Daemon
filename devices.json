@@ -1,7 +1,7 @@
 {
   "devices": [
     {
-      "id": "roberts-phone",
+      "id": "phone",
       "key_hex": "7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234"
     }
   ]

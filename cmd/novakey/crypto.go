@@ -1,21 +1,25 @@
+// cmd/novakey/crypto.go
 package main
 
 import (
-	"crypto/cipher"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"filippo.io/mlkem768"
 	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/hkdf"
 )
 
 const (
-	protocolVersion = 2
+	protocolVersion = 3
 	msgTypePassword = 1
 
 	defaultDevicesFile = "devices.json"
@@ -27,22 +31,28 @@ const (
 	maxRequestsPerDevicePerMin = 60 // per-device rate limit
 )
 
+// devices.json format
 type deviceConfig struct {
 	ID     string `json:"id"`
-	KeyHex string `json:"key_hex"`
+	KeyHex string `json:"key_hex"` // 32-byte per-device static key (hex)
 }
 
 type devicesConfigFile struct {
 	Devices []deviceConfig `json:"devices"`
 }
 
-// deviceAEAD holds the AEAD cipher for a device.
-type deviceAEAD struct {
-	id   string
-	aead cipher.AEAD
+// For v3 we no longer store a long-lived AEAD per device.
+// We derive a fresh AEAD key per message from:
+//
+//   HKDF-SHA256( ikm = kemShared, salt = deviceStaticKey, info = "NovaKey v3 AEAD key" )
+//
+// deviceState holds the static per-device secret.
+type deviceState struct {
+	id         string
+	staticKey  []byte // 32 bytes from devices.json
 }
 
-var deviceCiphers map[string]deviceAEAD
+var devices map[string]deviceState
 
 // replayCache: deviceID -> nonceHex -> timestamp
 // rateState:  deviceID -> rateWindow
@@ -57,61 +67,98 @@ type rateWindow struct {
 	count       int
 }
 
-// initCrypto loads per-device keys and builds AEADs.
+// initCrypto loads server Kyber keys and per-device static keys.
 func initCrypto() error {
-    // 1. Load or create server Kyber keys
-    if err := loadOrCreateServerKeys(cfg.ServerKeysFile); err != nil {
-        return fmt.Errorf("loading server kyber keys: %w", err)
-    }
+	// 1. Load or create server Kyber keys (fills serverDecapKey / serverEncapKey).
+	if err := loadOrCreateServerKeys(cfg.ServerKeysFile); err != nil {
+		return fmt.Errorf("loading server Kyber keys: %w", err)
+	}
+	if serverDecapKey == nil {
+		return fmt.Errorf("serverDecapKey is nil after loadOrCreateServerKeys")
+	}
 
-    // 2. Load per-device keys and build AEADs (existing logic)
-    path := cfg.DevicesFile
-    if path == "" {
-        path = defaultDevicesFile
-    }
+	// 2. Load per-device static keys from devices.json.
+	path := cfg.DevicesFile
+	if path == "" {
+		path = defaultDevicesFile
+	}
 
-    data, err := os.ReadFile(path)
-    if err != nil {
-        return fmt.Errorf("reading devices file %q: %w", path, err)
-    }
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading devices file %q: %w", path, err)
+	}
 
-    var dc devicesConfigFile
-    if err := json.Unmarshal(data, &dc); err != nil {
-        return fmt.Errorf("parsing devices file %q: %w", path, err)
-    }
+	var dc devicesConfigFile
+	if err := json.Unmarshal(data, &dc); err != nil {
+		return fmt.Errorf("parsing devices file %q: %w", path, err)
+	}
 
-    if len(dc.Devices) == 0 {
-        return fmt.Errorf("devices file %q has no devices", path)
-    }
+	if len(dc.Devices) == 0 {
+		return fmt.Errorf("devices file %q has no devices", path)
+	}
 
-    m := make(map[string]deviceAEAD, len(dc.Devices))
-    for _, d := range dc.Devices {
-        if d.ID == "" {
-            return fmt.Errorf("device with empty id in %q", path)
-        }
-        keyBytes, err := hex.DecodeString(d.KeyHex)
-        if err != nil {
-            return fmt.Errorf("device %q: invalid key_hex: %w", d.ID, err)
-        }
-        if len(keyBytes) != chacha20poly1305.KeySize {
-            return fmt.Errorf("device %q: key must be %d bytes, got %d",
-                d.ID, chacha20poly1305.KeySize, len(keyBytes))
-        }
+	m := make(map[string]deviceState, len(dc.Devices))
+	for _, d := range dc.Devices {
+		if d.ID == "" {
+			return fmt.Errorf("device with empty id in %q", path)
+		}
+		keyBytes, err := hex.DecodeString(d.KeyHex)
+		if err != nil {
+			return fmt.Errorf("device %q: invalid key_hex: %w", d.ID, err)
+		}
+		if len(keyBytes) != chacha20poly1305.KeySize {
+			return fmt.Errorf("device %q: key must be %d bytes, got %d",
+				d.ID, chacha20poly1305.KeySize, len(keyBytes))
+		}
 
-        a, err := chacha20poly1305.NewX(keyBytes)
-        if err != nil {
-            return fmt.Errorf("device %q: NewX failed: %w", d.ID, err)
-        }
-        m[d.ID] = deviceAEAD{id: d.ID, aead: a}
-    }
+		m[d.ID] = deviceState{
+			id:        d.ID,
+			staticKey: keyBytes,
+		}
+	}
 
-    deviceCiphers = m
+	devices = m
 
-    absPath, _ := filepath.Abs(path)
-    fmt.Printf("Loaded %d device keys from %s\n", len(deviceCiphers), absPath)
-    return nil
+	absPath, _ := filepath.Abs(path)
+	fmt.Printf("Loaded %d device keys from %s\n", len(devices), absPath)
+	return nil
 }
 
+// deriveAEADKey derives a per-message AEAD key from the KEM shared key and the device static key.
+func deriveAEADKey(deviceKey, sharedKem []byte) ([]byte, error) {
+	h := hkdf.New(sha256.New, sharedKem, deviceKey, []byte("NovaKey v3 AEAD key"))
+	key := make([]byte, chacha20poly1305.KeySize)
+	if _, err := io.ReadFull(h, key); err != nil {
+		return nil, fmt.Errorf("hkdf derive AEAD key: %w", err)
+	}
+	return key, nil
+}
+
+// decryptPasswordFrame parses and decrypts a v3 frame payload and returns (deviceID, password).
+//
+// v3 frame layout:
+//
+//   [0]               = version (0x03)
+//   [1]               = msgType (0x01 for password)
+//   [2]               = idLen
+//   [3 : 3+idLen]     = deviceID
+//   [3+idLen : ...]   = payload as follows:
+//
+//      H = 3 + idLen
+//      H..H+1         = kemCtLen (uint16, big-endian)
+//      H+2..H+2+kemCtLen-1 = kemCt (ML-KEM-768 ciphertext)
+//
+//      K = H + 2 + kemCtLen
+//      K..K+nonceLen-1     = nonce (XChaCha20-Poly1305, 24 bytes)
+//      K+nonceLen..end     = ciphertext (AEAD)
+//
+// Plaintext layout (after AEAD decrypt):
+//
+//   [0:8]   = timestamp (uint64, unix seconds, big-endian)
+//   [8:...] = password (UTF-8)
+//
+// AEAD AAD (header) is everything up to the start of the nonce:
+//   header = frame[0:K] = version || msgType || idLen || deviceID || kemCtLen || kemCt
 func decryptPasswordFrame(frame []byte) (string, string, error) {
 	if len(frame) < 3 {
 		return "", "", fmt.Errorf("frame too short: %d", len(frame))
@@ -132,26 +179,63 @@ func decryptPasswordFrame(frame []byte) (string, string, error) {
 	}
 	deviceID := string(frame[3 : 3+idLen])
 
-	if deviceCiphers == nil {
-		return "", "", fmt.Errorf("crypto not initialized")
+	if devices == nil {
+		return "", "", fmt.Errorf("crypto not initialized (devices map nil)")
 	}
-	dev, ok := deviceCiphers[deviceID]
+	dev, ok := devices[deviceID]
 	if !ok {
 		return "", "", fmt.Errorf("unknown deviceID: %q", deviceID)
 	}
+	if serverDecapKey == nil {
+		return "", "", fmt.Errorf("serverDecapKey is nil")
+	}
 
-	headerEnd := 3 + idLen
-	header := frame[:headerEnd]
+	headerBaseEnd := 3 + idLen // start of kemCtLen
+	if len(frame) < headerBaseEnd+2 {
+		return "", "", fmt.Errorf("frame too short for kemCtLen")
+	}
 
-	nonceLen := dev.aead.NonceSize()
-	if len(frame) < headerEnd+nonceLen+dev.aead.Overhead() {
+	kemCtLen := int(binary.BigEndian.Uint16(frame[headerBaseEnd : headerBaseEnd+2]))
+	if kemCtLen <= 0 {
+		return "", "", fmt.Errorf("invalid kemCtLen: %d", kemCtLen)
+	}
+
+	kemStart := headerBaseEnd + 2
+	kemEnd := kemStart + kemCtLen
+	if len(frame) < kemEnd {
+		return "", "", fmt.Errorf("frame too short for kemCt (len=%d)", kemCtLen)
+	}
+
+	kemCt := frame[kemStart:kemEnd]
+	header := frame[:kemEnd] // AAD = header up through kemCt
+
+	// KEM decapsulation to get shared key
+	sharedKem, err := mlkem768.Decapsulate(serverDecapKey, kemCt)
+	if err != nil {
+		return "", "", fmt.Errorf("mlkem768.Decapsulate failed: %w", err)
+	}
+
+	// Derive per-message AEAD key from KEM shared key + device static key
+	aeadKey, err := deriveAEADKey(dev.staticKey, sharedKem)
+	if err != nil {
+		return "", "", err
+	}
+
+	aead, err := chacha20poly1305.NewX(aeadKey)
+	if err != nil {
+		return "", "", fmt.Errorf("NewX with derived key failed: %w", err)
+	}
+
+	rest := frame[kemEnd:]
+	nonceLen := aead.NonceSize()
+	if len(rest) < nonceLen+aead.Overhead() {
 		return "", "", fmt.Errorf("frame too short for nonce+ciphertext")
 	}
 
-	nonce := frame[headerEnd : headerEnd+nonceLen]
-	ciphertext := frame[headerEnd+nonceLen:]
+	nonce := rest[:nonceLen]
+	ciphertext := rest[nonceLen:]
 
-	plaintext, err := dev.aead.Open(nil, nonce, ciphertext, header)
+	plaintext, err := aead.Open(nil, nonce, ciphertext, header)
 	if err != nil {
 		return "", "", fmt.Errorf("AEAD.Open failed for device %q: %w", deviceID, err)
 	}
@@ -217,14 +301,14 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	rw.count++
 	rateState[deviceID] = rw
 
-    limit := maxRequestsPerDevicePerMin
-    if cfg.MaxRequestsPerMin > 0 {
-        limit = cfg.MaxRequestsPerMin
-    }
-    if rw.count > limit {
-        return fmt.Errorf("rate limit exceeded for device %q: %d requests in current window (limit=%d)",
-            deviceID, rw.count, limit)
-    }
+	limit := maxRequestsPerDevicePerMin
+	if cfg.MaxRequestsPerMin > 0 {
+		limit = cfg.MaxRequestsPerMin
+	}
+	if rw.count > limit {
+		return fmt.Errorf("rate limit exceeded for device %q: %d requests in current window (limit=%d)",
+			deviceID, rw.count, limit)
+	}
 
 	return nil
 }
