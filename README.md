@@ -222,7 +222,7 @@ Core fields:
 * `devices_file` – path to `devices.json`
 * `server_keys_file` – path to `server_keys.json`
 
-Arming gate + safety fields:
+Arming Gate + safety fields:
 
 * `arm_enabled` – if true, injection requires arming
 * `arm_duration_ms` – default arm duration used by `/arm` if no `ms` override
@@ -254,7 +254,35 @@ The Arm API is local-only and binds to `127.0.0.1:60769`.
 
 ## Security Tester Mode
 
+Two-man rule (*optional*)  
+When `two_man_enabled: true`, NovaKey requires both:
+1. the local workstation is armed, and
+2. the client device has sent a recent “approve” control message
+
+Approval is device-specific and expires after `approve_window_ms`. 
+The next injection from that device must occur before expiry (*and will typically consume the approval*).
+```yaml
+two_man_enabled: true
+approve_window_ms: 15000
+approve_consume_on_inject: true
+approve_magic: "__NOVAKEY_APPROVE__"
+```
+
+Tester workflow example
+
+```bash
+# 1) Locally arm
+./dist/nvclient arm --addr 127.0.0.1:60769 --token_file arm_token.txt --ms 20000
+
+# 2) “Approve” from the device (nvclient simulates the phone app here)
+./dist/nvclient -addr 127.0.0.1:60768 -device-id phone -password "__NOVAKEY_APPROVE__" -key-hex ... -server-kyber-pub-b64 ...
+
+# 3) Send the actual password frame
+./dist/nvclient -addr 127.0.0.1:60768 -device-id phone -password "SuperStrongPassword123!" -key-hex ... -server-kyber-pub-b64 ...
+```
+
 If you’re security testing or demoing NovaKey and want safer defaults, use this configuration. It makes injection explicitly “push-to-type” and removes clipboard side-effects.
+
 
 Create `server_config.yaml`:
 
