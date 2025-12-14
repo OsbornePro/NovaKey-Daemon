@@ -1,10 +1,12 @@
 #!/bin/bash
 # =============================================================================
 # NovaKey - Unified cross-platform build script (Linux host)
+# nvpair - Pair device with the novakey daemon
+# nvclient - Sends password to type to the NovaKey daemon
 # Contact: security@novakey.app
 # Author: Robert H. Osborne (OsbornePro)
 # Date: December 2025
-# Requirements: dnf install -y xdotool xclip
+# Requirements: xdotool xclip
 # =============================================================================
 set -Eeo pipefail
 shopt -s nocasematch
@@ -18,8 +20,17 @@ NC='\033[0m'
 
 log()    { printf "${CYAN}[-] %s ${NC}%s\n" "$(date '+%m-%d-%Y %H:%M:%S')" "$1"; }
 warn()   { printf "${YELLOW}[!] %s${NC}\n" "$1"; }
-success(){ printf "${GREEN}[✓] %s${NC}\n" "$1"; }
+success(){ printf "${GREEN}[âœ“] %s${NC}\n" "$1"; }
 error()  { printf "${RED}[x] %s${NC}\n" "$1" >&2; exit 1; }
+
+# ----------------------------- Requirements -----------------------------
+if command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y xdotool xclip
+elif command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update && sudo apt-get install -y xdotool xclip
+else
+    echo "Neither dnf nor apt is available on this system (skipping xdotool/xclip install)."
+fi
 
 # ----------------------------- Host OS -----------------------------
 HOST_OS="$(uname | tr '[:upper:]' '[:lower:]')"
@@ -64,24 +75,41 @@ LDFLAGS="-s -w -X main.version=${VERSION} -X main.buildDate=${BUILD_DATE}"
 log "Building NovaKey $VERSION for target=$TARGET (host=$HOST_OS)"
 
 # ----------------------------- Clean -----------------------------
-$CLEAN && rm -rf dist
+$CLEAN && rm -rf -- dist
 mkdir -p dist
 
 # ----------------------------- Build -----------------------------
 case "$TARGET" in
     windows)
-        log "Building for windows/amd64"
+        log "Building novakey/nvpair/nvclient for windows/amd64"
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-            go build -trimpath -ldflags="$LDFLAGS" \
-                -o "dist/${FILENAME:-NovaKey.exe}" ./cmd/novakey
+          go build -trimpath -ldflags="$LDFLAGS" \
+            -o "dist/${FILENAME:-NovaKey.exe}" ./cmd/novakey
+
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+          go build -trimpath -ldflags="$LDFLAGS" \
+            -o "dist/nvpair-windows-amd64.exe" ./cmd/nvpair
+
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+          go build -trimpath -ldflags="$LDFLAGS" \
+            -o "dist/nvclient-windows-amd64.exe" ./cmd/nvclient
         ;;
 
     linux)
         for ARCH in amd64 arm64; do
-            log "Building for linux/$ARCH"
-            CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH \
-                go build -trimpath -ldflags="$LDFLAGS" \
-                    -o "dist/${FILENAME:-novakey-linux-$ARCH}" ./cmd/novakey
+            log "Building novakey/nvpair/nvclient for linux/$ARCH"
+
+            CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
+              go build -trimpath -ldflags="$LDFLAGS" \
+                -o "dist/${FILENAME:-novakey-linux-$ARCH}" ./cmd/novakey
+
+            CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
+              go build -trimpath -ldflags="$LDFLAGS" \
+                -o "dist/nvpair-linux-$ARCH" ./cmd/nvpair
+
+            CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
+              go build -trimpath -ldflags="$LDFLAGS" \
+                -o "dist/nvclient-linux-$ARCH" ./cmd/nvclient
         done
         ;;
 
@@ -93,10 +121,19 @@ case "$TARGET" in
         fi
 
         for ARCH in amd64 arm64; do
-            log "Building darwin/$ARCH"
+            log "Building novakey/nvpair/nvclient for darwin/$ARCH"
+
             CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
-                go build -trimpath -ldflags="$LDFLAGS" \
-                    -o "dist/${FILENAME:-NovaKey-darwin-$ARCH}" ./cmd/novakey
+              go build -trimpath -ldflags="$LDFLAGS" \
+                -o "dist/${FILENAME:-NovaKey-darwin-$ARCH}" ./cmd/novakey
+
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
+              go build -trimpath -ldflags="$LDFLAGS" \
+                -o "dist/nvpair-darwin-$ARCH" ./cmd/nvpair
+
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
+              go build -trimpath -ldflags="$LDFLAGS" \
+                -o "dist/nvclient-darwin-$ARCH" ./cmd/nvclient
         done
 
         log "To create universal binary:"
