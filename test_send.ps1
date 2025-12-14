@@ -21,6 +21,42 @@ Define the device secret
 
 .PARAMETER ServerKyberPubBase64
 Define the base64 value of the public Kyber certificate
+
+.PARAMETER ArmAddress
+Arm API address (local only)
+
+.PARAMETER ArmTokenFile
+Path to arm token file
+
+.PARAMETER ArmMs
+Arm duration in milliseconds
+
+
+.EXAMPLE
+PS> ."$env:USERPROFILE\Downloads\NovaKey-Daemon-main\NovaKey-Daemon-main\test_send.ps1"
+# This example shows how to test using the defaults
+
+PS> .\test_send.ps1 `
+        -Address "127.0.0.1:60768" `
+        -DeviceID "phone" `
+        -Password "SuperStrongPassword123!" `
+        -KeyHex "7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234" `
+        -ServerKyberPubBase64 $B64String `
+        -ArmAddress "127.0.0.1:60769" `
+        -ArmTokenFile ".\arm_token.txt" `
+        -ArmMs 20000
+# This example shows how to test using defined parameters
+
+
+.LINK
+https://novakey.app/
+https://osbornepro.com/
+
+
+.NOTES
+Author: Robert H. Osborne (OsbornePro)
+Contact: security@novakey.app
+Last Modified: 12/14/2025
 #>
 [CmdletBinding()]
     param(
@@ -48,11 +84,61 @@ Define the base64 value of the public Kyber certificate
             Mandatory=$False
         )]  # End Parameter
         [String]$ServerKyberPubBase64 ="wgkdGfeAyuqswle8f9e9Aagxc1gQr8ZZhpu2OrIlLZIadRlxMPRWEiWCf+YVfhlsVsHIb9amBboFxuOJxpwXVCiUzEmhW1GSvRAtRGk5NGRQLMdqLhTIrCcY//JKThWJauwjJmC0+6CwhUvHUNpzhQdYRsLMdcN7PxaNu1YfZ+se/5kYmuUfvTQYdUycmGGTI8KUGqFXZAasXgYO9eS/QjchYfg/PBorutxsXempesafyrQly/k4/OiosyzOLfYqMsKjH0c8ftXJCEZ/hSuZkFU7ZQSIadMXSPQkgGk5fiJEmJAoNhvDbhmNdRddpRcGX6obxCOjREpl8pxkA1XF1/SMw9dtddwRPGrPh8oUmBEd9gltDzqMa4yxz/hrj8NF6NIWXHW7GZyZIjwetUt8jBilTZeqIcMwkwtyOHyRzwxyQHx5ncgg2lpZYDKIXlEGO5wHfhq2QbDGkhxXj7LPpuKDHUdPe3TEN9cgrjeMHSZx60jEWxuqiYwGNaSr0WgmKBCFGEK5xblimnqJTXpQDZdyVyo0M7RVPdtTKxtmwAnNxFqGVNd0bWYcuji3ACOKb9wVi2VaaPeQDrYYrqpYpJqHhIZtNJKJ+zwEPDMDhfQ+q7gkd9cR4/INkhSTyhsnmhaipdAZRqBjWoVRcosHaYFbpGVFO+KA9iFDEJSA38EYyPVDsLk7WovBvAsmFoJEUcOZTEOuMoWqn+oYTMAAyXUmtXxCzPx2P4tq31NMotKnAIobfdA7x2x60YEwupssMXRzXdlCStcHHPCdelwKBicO/4agVXl1PKFyYVEl2SoA1Ss+oqwVVWanS3MrqvVSVeg4AHN7KcUDseVgm0UAGCiONoByviYT5Tdg9eeCRYS0m0xQT5uTlRWHO3kriquLniBcS2FBGdtnwhnIwDtd2ptsnpCsVJkFGTJckcIPNdBRgMG0nOSmXaU3ttsSCZtrg2RVMdApjTVOuWQaocgDeLI9iFe7fOQYM3OHu/iErkldXeVaJKiOfeu8inVG3/gJl3pJ/DcCjuuVF6NQjwuJ6BE3OSsYkeqs1vutEaOmsfAPjATPhSMWwLu+RqK/FqetooyqeKgPejRLWTJ+6HSr3eDPeax/J1ZdCMYwd3sDTFdAJXctDVY9d8KcgfIET0ehAPK2d9Fo6fqH98V+4WJ77bEJ+PMVGPAp1ApVuLg966xSzRh6Zjw4VyA+ItZpTiZPyXiPgKmDFurLhQImMNIJC9XJcgAZvlsC7fdPhnRvNduD3TueE8sEpMkt5UuZQcvJUbY7Etq3IgU3YPOpaIlF+9nME3gorxeEI0ePPjZWVlwihRkPJuEjXDQg3fxxPia64FZaOAkMw6RVpucQ51MzBSJBybe8dPum8Cdi7bpyDdKnvvDI3TqPFhYmLSo+MIpVHtrNvQeryQmax+CN6WOGlDRftKApkrwUvkGmdkte6fdeEEFQH2RlMmRmJiJIHKMoFCw2iKQAclqZfHMKEyFWE8wWceQV2LvHeQEy3RbM21QALCqTYdkrn4dcx5QX/tssHIglSWeutK1hTKrbAn2yyVlmSfVxKfqiE48cYQSXLbk="
+
+        [Parameter(
+            Mandatory=$False
+        )]  # End Parameter
+        [String]$ArmAddress = "127.0.0.1:60769",
+
+        [Parameter(
+            Mandatory=$False
+        )]  # End Parameter
+        [String]$ArmTokenFile = ".\arm_token.txt",
+
+        [Parameter(
+            Mandatory=$False
+        )]  # End Parameter
+        [Int]$ArmMs = 20000
     )  # End param
 
-Write-Warning -Message "Click into the browser address bar or somewhere to test the typing that will happen"
-Start-Sleep -Seconds 3
 If (!(Test-Path -Path .\dist\nvclient.exe)) {
     go build -o .\dist\nvclient.exe .\cmd\nvclient
 }  # End If
-.\dist\nvclient.exe -addr $Address -device-id $DeviceID -password $Password -key-hex $KeyHex -server-kyber-pub-b64 $ServerKyberPubBase64
+
+Try {
+
+    $ArmHost, $ArmPort = $ArmAddress.Split(":")
+    $ArmPort = [Int]$ArmPort
+
+    # Fast check: if port is listening on local machine
+    $IsListening = Test-NetConnection -ComputerName $ArmHost -Port $ArmPort -InformationLevel Quiet
+
+    If ($IsListening) {
+
+        Write-Information -MessageData "[+] Arm API detected at $ArmAddress"
+        If (!(Test-Path -Path $ArmTokenFile)) {
+            Throw "Arm API is up but token file not found: $ArmTokenFile"
+        }  # End If
+
+        Write-Information -MessageData "[+] Arming for ${ArmMs}ms"
+        & .\dist\nvclient.exe arm --addr $ArmAddress --token_file $ArmTokenFile --ms $ArmMs
+        If ($LASTEXITCODE -ne 0) {
+            Throw "Arming failed (exit code $LASTEXITCODE)"
+        }  # End If
+    } Else {
+        Write-Warning -Message "[!] Arm API not detected at $ArmAddress (continuing without arming)"
+    }  # End If Else
+
+} Catch {
+    Throw "Arm step skipped/failed: $($Error[0].Exception.Message)"
+}  # End Try Catch
+
+# --- SENDS FRAME ---
+Write-Warning -Message "Click into the browser address bar or somewhere to test the typing that will happen"
+Start-Sleep -Seconds 3
+.\dist\nvclient.exe `
+    -addr $Address `
+    -device-id $DeviceID `
+    -password $Password `
+    -key-hex $KeyHex `
+    -server-kyber-pub-b64 $ServerKyberPubBase64
