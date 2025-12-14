@@ -1,9 +1,3 @@
-Below is a **cleaned-up, drop-in replacement `README.md`** that implements Step 1 (“Security Tester Mode / armed-by-default recommended config”), fixes a few issues in your current README (TOC anchor typo, arm port wording, duplicate “Reporting a Vulnerability” block inside README, clarity around YAML vs JSON), and documents the Arm API + `nvclient arm` clearly.
-
-Copy/paste the entire file as-is.
-
----
-
 # 🔐 NovaKey-Daemon by OsbornePro
 
 **What is NovaKey-Daemon?**

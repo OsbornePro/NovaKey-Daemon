@@ -10,40 +10,26 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"strconv"
-	"time"
 )
 
 func ensureArmToken(path string) (string, error) {
-	// If token exists, validate perms (unix) then read it.
-	if fi, err := os.Lstat(path); err == nil {
-		// Unix hardening: refuse insecure perms / symlinks
+	// If token exists, read it
+	if st, err := os.Stat(path); err == nil {
+		// Refuse weak perms on Unix: must not be readable/writable/executable by group/other.
 		if runtime.GOOS != "windows" {
-			// Refuse symlinks for the token file (prevents redirects)
-			if fi.Mode()&os.ModeSymlink != 0 {
-				return "", fmt.Errorf("arm token file is a symlink (refusing for safety): %s", path)
-			}
-
-			// Require no group/other bits (0600 or stricter)
-			perm := fi.Mode().Perm()
-			if perm&0o077 != 0 {
-				return "", fmt.Errorf(
-					"arm token file has insecure permissions (must be 0600 or stricter): %s (got %04o)",
-					path, perm,
-				)
+			perm := st.Mode().Perm()
+			if (perm & 0o077) != 0 {
+				return "", fmt.Errorf("arm token file has insecure permissions (must be 0600 or stricter): %s (got %04o)", path, perm)
 			}
 		}
 
-		// Read token
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return "", fmt.Errorf("read arm token file: %w", err)
+		if b, err := os.ReadFile(path); err == nil {
+			t := string(bytesTrimSpace(b))
+			if t == "" {
+				return "", fmt.Errorf("arm token file is empty: %s", path)
+			}
+			return t, nil
 		}
-		t := string(bytesTrimSpace(b))
-		if t == "" {
-			return "", fmt.Errorf("arm token file is empty: %s", path)
-		}
-		return t, nil
 	}
 
 	// Create a new token
@@ -54,17 +40,14 @@ func ensureArmToken(path string) (string, error) {
 	tok := base64.RawURLEncoding.EncodeToString(raw)
 
 	// Best-effort restrictive perms on unix; windows will ignore modes.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return "", fmt.Errorf("create token file: %w", err)
 	}
 	defer f.Close()
-
 	if _, err := io.WriteString(f, tok+"\n"); err != nil {
 		return "", fmt.Errorf("write token file: %w", err)
 	}
-
-	// Note: never log the token value.
 	return tok, nil
 }
 
@@ -115,55 +98,20 @@ func startArmAPI() {
 		return
 	}
 
-	// Do NOT print token. Log only safe metadata.
 	log.Printf("[arm] arm API enabled on http://%s (token file: %s, header: %s)",
 		cfg.ArmListenAddr, cfg.ArmTokenFile, cfg.ArmTokenHeader)
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/arm", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "POST only", http.StatusMethodNotAllowed)
-			return
-		}
-		if r.Header.Get(cfg.ArmTokenHeader) != token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		ms := cfg.ArmDurationMs
-		if q := r.URL.Query().Get("ms"); q != "" {
-			if v, err := strconv.Atoi(q); err == nil && v > 0 && v <= 120000 {
-				ms = v
-			}
-		}
-
-		armGate.Arm(time.Duration(ms) * time.Millisecond)
-		cfg.ArmEnabled = true // arming implies gate is active, even if normally off for testing
-		fmt.Fprintf(w, "armed for %dms\n", ms)
-	})
-
-	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "GET only", http.StatusMethodNotAllowed)
-			return
-		}
-		if r.Header.Get(cfg.ArmTokenHeader) != token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		until := armGate.ArmedUntil()
-		fmt.Fprintf(w, "armed_until=%s\n", until.Format(time.RFC3339Nano))
-	})
+	// IMPORTANT: routes are registered ONLY in buildArmAPIMux to avoid duplicate patterns.
+	mux := buildArmAPIMux(token)
 
 	srv := &http.Server{
 		Addr:    cfg.ArmListenAddr,
 		Handler: mux,
 	}
-
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("[arm] ListenAndServe error: %v", err)
 		}
 	}()
 }
+

@@ -19,13 +19,11 @@ type ServerConfig struct {
 	ServerKeysFile    string `json:"server_keys_file" yaml:"server_keys_file"`
 
 	// Arm gate (OFF by default)
-	ArmEnabled bool `json:"arm_enabled" yaml:"arm_enabled"`
-	ArmDurationMs int `json:"arm_duration_ms" yaml:"arm_duration_ms"`
-
-	// Pointer = allows "default true but allow false"
+	ArmEnabled         bool  `json:"arm_enabled" yaml:"arm_enabled"`
+	ArmDurationMs      int   `json:"arm_duration_ms" yaml:"arm_duration_ms"`
 	ArmConsumeOnInject *bool `json:"arm_consume_on_inject" yaml:"arm_consume_on_inject"`
 
-	// Pointer = allows "default true but allow false"
+	// When blocked (disarmed / two-man missing), allow clipboard copy? Default true, can be set false.
 	AllowClipboardWhenDisarmed *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
 
 	// Local-only arming endpoint (OFF by default)
@@ -38,14 +36,19 @@ type ServerConfig struct {
 	AllowNewlines bool `json:"allow_newlines" yaml:"allow_newlines"`
 	MaxInjectLen  int  `json:"max_inject_len" yaml:"max_inject_len"`
 
-	// Two-man rule (OFF by default)
-	TwoManEnabled   bool `json:"two_man_enabled" yaml:"two_man_enabled"`
-	ApproveWindowMs int  `json:"approve_window_ms" yaml:"approve_window_ms"`
+	// Two-man items
+	TwoManEnabled          bool   `json:"two_man_enabled" yaml:"two_man_enabled"`
+	ApproveWindowMs        int    `json:"approve_window_ms" yaml:"approve_window_ms"`
+	ApproveConsumeOnInject *bool  `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
+	ApproveMagic           string `json:"approve_magic" yaml:"approve_magic"`
 
-	// Pointer = allows "default true but allow false"
-	ApproveConsumeOnInject *bool `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
-
-	ApproveMagic string `json:"approve_magic" yaml:"approve_magic"`
+	// Target policy (allow/deny of focused app)
+	TargetPolicyEnabled   bool     `json:"target_policy_enabled" yaml:"target_policy_enabled"`
+	UseBuiltInAllowlist   bool     `json:"use_built_in_allowlist" yaml:"use_built_in_allowlist"`
+	AllowedProcessNames   []string `json:"allowed_process_names" yaml:"allowed_process_names"`
+	AllowedWindowTitles   []string `json:"allowed_window_titles" yaml:"allowed_window_titles"`
+	DeniedProcessNames    []string `json:"denied_process_names" yaml:"denied_process_names"`
+	DeniedWindowTitles    []string `json:"denied_window_titles" yaml:"denied_window_titles"`
 }
 
 var cfg ServerConfig
@@ -57,7 +60,6 @@ const (
 )
 
 func loadConfig() error {
-	// Prefer YAML if present, else JSON
 	path := pickConfigPath()
 
 	data, err := os.ReadFile(path)
@@ -99,7 +101,6 @@ func fileExists(path string) bool {
 }
 
 func applyDefaults() {
-	// Core defaults
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = "127.0.0.1:60768"
 	}
@@ -124,7 +125,7 @@ func applyDefaults() {
 		v := true
 		cfg.ArmConsumeOnInject = &v
 	}
-	if *cfg.AllowClipboardWhenDisarmed == nil {
+	if cfg.AllowClipboardWhenDisarmed == nil {
 		v := true
 		cfg.AllowClipboardWhenDisarmed = &v
 	}
@@ -150,12 +151,22 @@ func applyDefaults() {
 	if cfg.ApproveWindowMs == 0 {
 		cfg.ApproveWindowMs = 15000
 	}
-	if *cfg.ApproveConsumeOnInject == nil {
+	if cfg.ApproveConsumeOnInject == nil {
 		v := true
 		cfg.ApproveConsumeOnInject = &v
 	}
 	if cfg.ApproveMagic == "" {
 		cfg.ApproveMagic = "__NOVAKEY_APPROVE__"
+	}
+
+	// Target policy defaults
+	// Default: disabled (no restriction), but if enabled we default to built-in allowlist for safety.
+	// You can explicitly set use_built_in_allowlist:false and provide your own lists.
+	// (No-op if TargetPolicyEnabled is false.)
+	if cfg.TargetPolicyEnabled && !cfg.UseBuiltInAllowlist &&
+		len(cfg.AllowedProcessNames) == 0 && len(cfg.AllowedWindowTitles) == 0 &&
+		len(cfg.DeniedProcessNames) == 0 && len(cfg.DeniedWindowTitles) == 0 {
+		cfg.UseBuiltInAllowlist = true
 	}
 }
 

@@ -4,7 +4,41 @@ max_requests_per_min: 60
 devices_file: "devices.json"
 server_keys_file: "server_keys.json"
 
-arm_enabled: true
+allowed_process_names:
+  - msedge
+  - microsoft edge
+  - chrome
+  - google chrome
+  - chromium
+  - brave
+  - firefox
+  - safari
+  - opera
+  - vivaldi
+  - duckduckgo
+  - ecosia
+  - aloha
+  - 1password
+  - bitwarden
+  - lastpass
+  - dashlane
+  - keeper
+  - nordpass
+  - protonpass
+  - roboform
+  - totalpassword
+  - avira
+  - norton
+  - aura
+  - notepad
+  - textedit
+  - gedit
+  - kate
+allowed_window_titles: []
+denied_process_names: []
+denied_window_titles: []
+
+arm_enabled: false
 arm_duration_ms: 20000
 arm_consume_on_inject: true
 allow_clipboard_when_disarmed: true
@@ -16,3 +50,8 @@ arm_token_header: "X-NovaKey-Token"
 
 allow_newlines: false
 max_inject_len: 256
+
+two_man_enabled: true 
+approve_window_ms: 15000
+approve_consume_on_inject: true
+approve_magic: __NOVAKEY_APPROVE__

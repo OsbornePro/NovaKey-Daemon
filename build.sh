@@ -6,7 +6,7 @@
 # Contact: security@novakey.app
 # Author: Robert H. Osborne (OsbornePro)
 # Date: December 2025
-# Requirements: xdotool xclip
+# Requirements: xdotool xclip wl-clipboard
 # =============================================================================
 set -Eeo pipefail
 shopt -s nocasematch
@@ -36,7 +36,7 @@ esac
 # Only try to install xdotool/xclip when we're actually on Linux.
 if [[ "$HOST_OS" == "linux" ]]; then
     if command -v dnf >/dev/null 2>&1; then
-        sudo dnf install -y xdotool xclip
+        sudo dnf install -y xdotool xclip wl-clipboard
     elif command -v apt-get >/dev/null 2>&1; then
         sudo apt-get update && sudo apt-get install -y xdotool xclip
     else

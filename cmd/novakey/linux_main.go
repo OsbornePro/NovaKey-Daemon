@@ -44,6 +44,21 @@ func main() {
 	}
 }
 
+func allowClipboardWhenBlocked() bool {
+	// config loader should default it to true, but guard anyway
+	if cfg.AllowClipboardWhenDisarmed == nil {
+		return false
+	}
+	return *cfg.AllowClipboardWhenDisarmed
+}
+
+func boolDeref(ptr *bool, def bool) bool {
+	if ptr == nil {
+		return def
+	}
+	return *ptr
+}
+
 func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 	defer conn.Close()
 	remote := conn.RemoteAddr().String()
@@ -87,14 +102,26 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
+	// --- Filter unsafe text (newlines/max length etc) ---
+	if err := validateInjectText(password); err != nil {
+		logReqf(reqID, "blocked injection (unsafe text): %v", err)
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboard(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+			} else {
+				logReqf(reqID, "clipboard set (unsafe text blocked)")
+			}
+		}
+		return
+	}
+
 	// Serialize injection paths
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
 	// --- TWO-MAN: require recent approval for this device ---
 	if cfg.TwoManEnabled {
-		consume := *cfg.ApproveConsumeOnInject
-		// default to true if unset in config loader
+		consume := boolDeref(cfg.ApproveConsumeOnInject, true)
 		if !approvalGate.Consume(deviceID, consume) {
 			until := approvalGate.ApprovedUntil(deviceID)
 			if until.IsZero() {
@@ -103,10 +130,12 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 				logReqf(reqID, "blocked injection (two-man: approval expired at %s)", until.Format(time.RFC3339Nano))
 			}
 
-			// Optional clipboard behavior when blocked
-			if *cfg.AllowClipboardWhenDisarmed {
-				_ = trySetClipboard(password) // best-effort helper you already added elsewhere; if not, remove this line
-				logReqf(reqID, "blocked injection (two-man); clipboard set (if available)")
+			if allowClipboardWhenBlocked() {
+				if err2 := trySetClipboard(password); err2 != nil {
+					logReqf(reqID, "clipboard set failed: %v", err2)
+				} else {
+					logReqf(reqID, "blocked injection (two-man); clipboard set")
+				}
 			}
 			return
 		}
@@ -116,23 +145,49 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 	// --- ARM GATE ---
 	// Two-man implies arm must be open too, even if arm_enabled was false.
 	if cfg.ArmEnabled || cfg.TwoManEnabled {
-		ok := armGate.Consume(cfg.ArmConsumeOnInject)
+		consume := boolDeref(cfg.ArmConsumeOnInject, true)
+		ok := armGate.Consume(consume)
 		if !ok {
 			logReqf(reqID, "blocked injection (not armed)")
-
-			if *cfg.AllowClipboardWhenDisarmed {
-				_ = trySetClipboard(password) // best-effort; remove if you don't have it
-				logReqf(reqID, "blocked injection (not armed); clipboard set (if available)")
+			if allowClipboardWhenBlocked() {
+				if err2 := trySetClipboard(password); err2 != nil {
+					logReqf(reqID, "clipboard set failed: %v", err2)
+				} else {
+					logReqf(reqID, "blocked injection (not armed); clipboard set")
+				}
 			}
 			return
 		}
 		logReqf(reqID, "armed gate open; proceeding with injection")
 	}
 
+	// --- TARGET POLICY (allow/deny list) ---
+	// If policy blocks, still allow clipboard when configured.
+	if err := enforceTargetPolicy(); err != nil {
+		logReqf(reqID, "blocked injection (target policy): %v", err)
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboard(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+			} else {
+				logReqf(reqID, "blocked injection (target policy); clipboard set")
+			}
+		}
+		return
+	}
+
+	// Try to inject; if it fails (Wayland, etc), optionally still set clipboard.
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboard(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+			} else {
+				logReqf(reqID, "injection failed; clipboard set")
+			}
+		}
 		return
 	}
 
 	logReqf(reqID, "injection complete")
 }
+

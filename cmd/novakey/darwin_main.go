@@ -90,6 +90,11 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		logReqf(reqID, "blocked injection (unsafe text): %v", err)
 		return
 	}
+    // --- Process whitelist ---
+    if err := enforceTargetPolicy(); err != nil {
+        logReqf(reqID, "blocked injection (target policy): %v", err)
+        return
+    }
 
 	injectMu.Lock()
 	defer injectMu.Unlock()
