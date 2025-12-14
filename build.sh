@@ -23,23 +23,26 @@ warn()   { printf "${YELLOW}[!] %s${NC}\n" "$1"; }
 success(){ printf "${GREEN}[âœ“] %s${NC}\n" "$1"; }
 error()  { printf "${RED}[x] %s${NC}\n" "$1" >&2; exit 1; }
 
-# ----------------------------- Requirements -----------------------------
-if command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y xdotool xclip
-elif command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get update && sudo apt-get install -y xdotool xclip
-else
-    echo "Neither dnf nor apt is available on this system (skipping xdotool/xclip install)."
-fi
-
 # ----------------------------- Host OS -----------------------------
 HOST_OS="$(uname | tr '[:upper:]' '[:lower:]')"
 case "$HOST_OS" in
-    windows*)  HOST_OS="windows" ;;
-    linux*)  HOST_OS="linux" ;;
-    darwin*) HOST_OS="darwin" ;;
+    windows*) HOST_OS="windows" ;;
+    linux*)   HOST_OS="linux" ;;
+    darwin*)  HOST_OS="darwin" ;;
     *) error "Unsupported host OS: $HOST_OS" ;;
 esac
+
+# ----------------------------- Requirements (Linux helpers) -----------------
+# Only try to install xdotool/xclip when we're actually on Linux.
+if [[ "$HOST_OS" == "linux" ]]; then
+    if command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y xdotool xclip
+    elif command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update && sudo apt-get install -y xdotool xclip
+    else
+        echo "Neither dnf nor apt is available on this Linux system (skipping xdotool/xclip install)."
+    fi
+fi
 
 # ----------------------------- Args -----------------------------
 TARGET="linux"
