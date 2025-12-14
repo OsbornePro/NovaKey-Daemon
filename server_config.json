@@ -3,5 +3,19 @@
   "max_payload_len": 4096,
   "max_requests_per_min": 60,
   "devices_file": "devices.json",
-  "server_keys_file": "server_keys.json"
+  "server_keys_file": "server_keys.json",
+
+  "arm_enabled": false,
+  "arm_duration_ms": 20000,
+  "arm_consume_on_inject": true,
+  "allow_clipboard_when_disarmed": true,
+
+  "arm_api_enabled": false,
+  "arm_listen_addr": "127.0.0.1:60769",
+  "arm_token_file": "arm_token.txt",
+  "arm_token_header": "X-NovaKey-Token",
+
+  "allow_newlines": false,
+  "max_inject_len": 256
 }
+
