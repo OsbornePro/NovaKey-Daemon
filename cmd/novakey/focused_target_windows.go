@@ -5,20 +5,9 @@ package main
 
 import (
 	"fmt"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-)
-
-var (
-	user32  = windows.NewLazySystemDLL("user32.dll")
-	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
-
-	procGetForegroundWindow     = user32.NewProc("GetForegroundWindow")
-	procGetWindowThreadProcessId = user32.NewProc("GetWindowThreadProcessId")
-	procGetWindowTextW          = user32.NewProc("GetWindowTextW")
-	procGetWindowTextLengthW    = user32.NewProc("GetWindowTextLengthW")
 )
 
 func getFocusedTarget() (string, string, error) {
@@ -32,7 +21,11 @@ func getFocusedTarget() (string, string, error) {
 	n, _, _ := procGetWindowTextLengthW.Call(hwnd)
 	if n > 0 {
 		buf := make([]uint16, n+1)
-		procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(n+1))
+		procGetWindowTextW.Call(
+			hwnd,
+			uintptr(unsafe.Pointer(&buf[0])),
+			uintptr(n+1),
+		)
 		title = windows.UTF16ToString(buf)
 	}
 
@@ -49,16 +42,14 @@ func getFocusedTarget() (string, string, error) {
 	}
 	defer windows.CloseHandle(h)
 
-	// QueryFullProcessImageNameW
 	var size uint32 = 4096
 	buf := make([]uint16, size)
-	err = windows.QueryFullProcessImageName(h, 0, &buf[0], &size)
-	if err != nil {
+	if err := windows.QueryFullProcessImageName(h, 0, &buf[0], &size); err != nil {
 		return "", title, fmt.Errorf("QueryFullProcessImageName: %w", err)
 	}
 	full := windows.UTF16ToString(buf[:size])
 
-	// Return just the exe name (cheap parse)
+	// Return just the exe name
 	exe := full
 	for i := len(exe) - 1; i >= 0; i-- {
 		if exe[i] == '\\' || exe[i] == '/' {
@@ -70,10 +61,5 @@ func getFocusedTarget() (string, string, error) {
 		exe = full
 	}
 	return exe, title, nil
-}
-
-// ensure x/sys/windows is linked
-func _noop_syscall_ref() {
-	_ = syscall.Errno(0)
 }
 
