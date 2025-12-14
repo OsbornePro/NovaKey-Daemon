@@ -96,7 +96,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 
 	// --- TWO-MAN: require recent approval for this device ---
 	if cfg.TwoManEnabled {
-		consume := cfg.ApproveConsumeOnInject
+		consume := *cfg.ApproveConsumeOnInject
 		if !approvalGate.Consume(deviceID, consume) {
 			until := approvalGate.ApprovedUntil(deviceID)
 			if until.IsZero() {

@@ -124,7 +124,7 @@ func applyDefaults() {
 		v := true
 		cfg.ArmConsumeOnInject = &v
 	}
-	if cfg.AllowClipboardWhenDisarmed == nil {
+	if *cfg.AllowClipboardWhenDisarmed == nil {
 		v := true
 		cfg.AllowClipboardWhenDisarmed = &v
 	}
@@ -150,7 +150,7 @@ func applyDefaults() {
 	if cfg.ApproveWindowMs == 0 {
 		cfg.ApproveWindowMs = 15000
 	}
-	if cfg.ApproveConsumeOnInject == nil {
+	if *cfg.ApproveConsumeOnInject == nil {
 		v := true
 		cfg.ApproveConsumeOnInject = &v
 	}

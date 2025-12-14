@@ -93,7 +93,7 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 
 	// --- TWO-MAN: require recent approval for this device ---
 	if cfg.TwoManEnabled {
-		consume := cfg.ApproveConsumeOnInject
+		consume := *cfg.ApproveConsumeOnInject
 		// default to true if unset in config loader
 		if !approvalGate.Consume(deviceID, consume) {
 			until := approvalGate.ApprovedUntil(deviceID)
@@ -104,7 +104,7 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 			}
 
 			// Optional clipboard behavior when blocked
-			if cfg.AllowClipboardWhenDisarmed {
+			if *cfg.AllowClipboardWhenDisarmed {
 				_ = trySetClipboard(password) // best-effort helper you already added elsewhere; if not, remove this line
 				logReqf(reqID, "blocked injection (two-man); clipboard set (if available)")
 			}
@@ -120,7 +120,7 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 		if !ok {
 			logReqf(reqID, "blocked injection (not armed)")
 
-			if cfg.AllowClipboardWhenDisarmed {
+			if *cfg.AllowClipboardWhenDisarmed {
 				_ = trySetClipboard(password) // best-effort; remove if you don't have it
 				logReqf(reqID, "blocked injection (not armed); clipboard set (if available)")
 			}
