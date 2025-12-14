@@ -1,7 +1,7 @@
 # 🔐 NovaKey-Daemon by OsbornePro
 
 **What is the NovaKey-Daemon?**
-*NovaKey is a lightweight, cross-platform Go agent that turns your computer into a secure, authenticated password-injection endpoint.*
+*NovaKey-Daemon is a lightweight, cross-platform Go agent that turns your computer into a secure, authenticated password-injection endpoint.*
 
 **Why would I need this?**
 Even with a password manager you still need a master password (or other high-value secret). That secret is often the weakest link—either memorized, re-used, or stored in sketchy ways.
