@@ -73,6 +73,21 @@ The following are **out of scope** (but still appreciated if reported):
 
 NovaKey-Daemon is designed with defense-in-depth. The current v3 implementation includes:
 
+> **Optional** two-man rule (*local arm + device approval*)
+
+When enabled, injection requires:
+* a local arm action, and
+* a recent per-device approval message.
+
+This reduces risk from:
+* accidental injections into the wrong window while armed,
+* other paired devices injecting without the intended device’s approval.
+
+Limitations to state clearly:
+* If a device secret is compromised, the attacker can still send approval messages but still cannot inject unless the host is locally armed.
+* Does not protect against host compromise / local malware (*same as everything else*).
+
+
 ### Per-device identity and secrets
 
 * Each device has a unique **device ID** and 32-byte secret stored in `devices.json`.
