@@ -1,4 +1,3 @@
-// cmd/nvclient/main.go
 package main
 
 import (
@@ -7,18 +6,34 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 )
 
 var (
 	addr     = flag.String("addr", "127.0.0.1:60768", "NovaKey server address (host:port)")
 	password = flag.String("password", "hello", "password/secret to send")
 
-	deviceIDFlag         = flag.String("device-id", "roberts-phone", "device ID to use")
-	keyHexFlag           = flag.String("key-hex", "", "hex-encoded 32-byte per-device key (matches devices.json)")
+	deviceIDFlag          = flag.String("device-id", "roberts-phone", "device ID to use")
+	keyHexFlag            = flag.String("key-hex", "", "hex-encoded 32-byte per-device key (matches devices.json)")
 	serverKyberPubB64Flag = flag.String("server-kyber-pub-b64", "", "base64 ML-KEM-768 public key (kyber768_public from server_keys.json or pairing)")
 )
 
+func usage() {
+	fmt.Fprintf(os.Stderr, "Usage:\n")
+	fmt.Fprintf(os.Stderr, "  nvclient arm [--addr 127.0.0.1:60769] [--token_file arm_token.txt] [--ms 20000]\n")
+	fmt.Fprintf(os.Stderr, "  nvclient [flags]   (send encrypted password frame)\n\n")
+	flag.PrintDefaults()
+}
+
 func main() {
+	// Subcommand dispatch BEFORE flag.Parse()
+	if len(os.Args) >= 2 && os.Args[1] == "arm" {
+		code := cmdArm(os.Args[2:])
+		os.Exit(code)
+		return
+	}
+
+	flag.Usage = usage
 	flag.Parse()
 
 	if *keyHexFlag == "" {
@@ -36,7 +51,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("encryptPasswordFrame: %v", err)
 	}
-
 	if len(frame) > 0xFFFF {
 		log.Fatalf("frame too large: %d", len(frame))
 	}

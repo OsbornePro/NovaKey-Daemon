@@ -17,6 +17,7 @@ func main() {
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
+    startArmAPI()
 
 	listenAddr := cfg.ListenAddr
 	maxLen := cfg.MaxPayloadLen
@@ -74,8 +75,33 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 	}
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
+    // --- Filter new lines ---
+	if err := validateInjectText(password); err != nil {
+		logReqf(reqID, "blocked injection (unsafe text): %v", err)
+		return
+	}
+
 	injectMu.Lock()
 	defer injectMu.Unlock()
+
+	// --- ARM GATE ---
+    if cfg.ArmAPIEnabled || cfg.ArmEnabled {
+        ok := armGate.Consume(*cfg.ArmConsumeOnInject)
+		if !ok {
+			// Optional: still populate clipboard for usability (especially Wayland)
+			if cfg.AllowClipboardWhenDisarmed {
+				go func(p string) {
+					_ = setClipboardLinux(p)
+				}(password)
+				logReqf(reqID, "blocked injection (not armed); clipboard set (if available)")
+				return
+			}
+
+			logReqf(reqID, "blocked injection (not armed)")
+			return
+		}
+		logReqf(reqID, "armed gate open; proceeding with injection")
+	}
 
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
