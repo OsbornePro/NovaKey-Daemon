@@ -4,27 +4,15 @@ max_requests_per_min: 60
 devices_file: "devices.json"
 server_keys_file: "server_keys.json"
 
-<<<<<<< HEAD
-arm_enabled: false
-=======
 arm_enabled: true
->>>>>>> f4c8c55 (Updated for arming functionality)
 arm_duration_ms: 20000
 arm_consume_on_inject: true
 allow_clipboard_when_disarmed: true
 
-<<<<<<< HEAD
-arm_api_enabled: false
-=======
 arm_api_enabled: true
->>>>>>> f4c8c55 (Updated for arming functionality)
 arm_listen_addr: "127.0.0.1:60769"
 arm_token_file: "arm_token.txt"
 arm_token_header: "X-NovaKey-Token"
 
 allow_newlines: false
 max_inject_len: 256
-<<<<<<< HEAD
-=======
-
->>>>>>> f4c8c55 (Updated for arming functionality)
