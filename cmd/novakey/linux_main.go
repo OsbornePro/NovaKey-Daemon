@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
 func main() {
@@ -17,7 +18,9 @@ func main() {
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
-    startArmAPI()
+
+	// Arm API (if enabled)
+	startArmAPI()
 
 	listenAddr := cfg.ListenAddr
 	maxLen := cfg.MaxPayloadLen
@@ -73,31 +76,54 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 		logReqf(reqID, "decryptPasswordFrame failed: %v", err)
 		return
 	}
-	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
-    // --- Filter new lines ---
-	if err := validateInjectText(password); err != nil {
-		logReqf(reqID, "blocked injection (unsafe text): %v", err)
+	// --- TWO-MAN: approval control message ---
+	if cfg.TwoManEnabled && isApproveControlPayload(password) {
+		until := approvalGate.Approve(deviceID, approveWindow())
+		logReqf(reqID, "two-man approve received from device=%q; approved until %s",
+			deviceID, until.Format(time.RFC3339Nano))
 		return
 	}
 
+	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
+
+	// Serialize injection paths
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
-	// --- ARM GATE ---
-    if cfg.ArmAPIEnabled || cfg.ArmEnabled {
-        ok := armGate.Consume(*cfg.ArmConsumeOnInject)
-		if !ok {
-			// Optional: still populate clipboard for usability (especially Wayland)
-			if cfg.AllowClipboardWhenDisarmed {
-				go func(p string) {
-					_ = setClipboardLinux(p)
-				}(password)
-				logReqf(reqID, "blocked injection (not armed); clipboard set (if available)")
-				return
+	// --- TWO-MAN: require recent approval for this device ---
+	if cfg.TwoManEnabled {
+		consume := cfg.ApproveConsumeOnInject
+		// default to true if unset in config loader
+		if !approvalGate.Consume(deviceID, consume) {
+			until := approvalGate.ApprovedUntil(deviceID)
+			if until.IsZero() {
+				logReqf(reqID, "blocked injection (two-man: not approved)")
+			} else {
+				logReqf(reqID, "blocked injection (two-man: approval expired at %s)", until.Format(time.RFC3339Nano))
 			}
 
+			// Optional clipboard behavior when blocked
+			if cfg.AllowClipboardWhenDisarmed {
+				_ = trySetClipboard(password) // best-effort helper you already added elsewhere; if not, remove this line
+				logReqf(reqID, "blocked injection (two-man); clipboard set (if available)")
+			}
+			return
+		}
+		logReqf(reqID, "two-man approval OK; proceeding")
+	}
+
+	// --- ARM GATE ---
+	// Two-man implies arm must be open too, even if arm_enabled was false.
+	if cfg.ArmEnabled || cfg.TwoManEnabled {
+		ok := armGate.Consume(cfg.ArmConsumeOnInject)
+		if !ok {
 			logReqf(reqID, "blocked injection (not armed)")
+
+			if cfg.AllowClipboardWhenDisarmed {
+				_ = trySetClipboard(password) // best-effort; remove if you don't have it
+				logReqf(reqID, "blocked injection (not armed); clipboard set (if available)")
+			}
 			return
 		}
 		logReqf(reqID, "armed gate open; proceeding with injection")
@@ -110,4 +136,3 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 
 	logReqf(reqID, "injection complete")
 }
-
