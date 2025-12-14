@@ -3,7 +3,7 @@
 **Status:** implemented (Kyber key schedule + v3 framing)
 **Scope:** Typing daemon (Linux / macOS / Windows) ⇄ clients (`nvclient`, future phone app)
 
-This describes how clients send “type this password” requests to the NovaKey service over TCP using:
+This describes how clients send “*type this password*” requests to the NovaKey service over TCP using:
 
 * **ML-KEM-768** (Kyber-768-compatible KEM) for post-quantum key establishment
 * **XChaCha20-Poly1305** for authenticated encryption of the payload
