@@ -17,7 +17,7 @@ There is **no backward compatibility** with protocol v2. Frames with `version !=
 
 * **Protocol:** TCP
 * **Default port:** `60768`
-* **Default listen address:** configured in `server_config.json`, typically:
+* **Default listen address:** configured in `server_config.yaml` (*preferred*) or `server_config.json` (*fallback*), typically:
 
   * `127.0.0.1:60768` (dev)
   * `0.0.0.0:60768` (LAN / VPN use)
@@ -83,7 +83,7 @@ Per-device PSKs are still used as an additional authentication layer and to bind
 The `nvpair` tool does all of this:
 
 * Creates or updates the device entry in `devices.json`
-* Reads `server_config.json` and `server_keys.json`
+* Reads `server_config.yaml` (*preferred*) or `server_config.json` and `server_keys.json`
 * Emits pairing info as JSON (and optionally as a QR code)
 
 Example structure:
@@ -360,7 +360,7 @@ rateState[deviceID] = {
 Defaults:
 
 * `maxRequestsPerDevicePerMin = 60`
-* Can be overridden by `max_requests_per_min` in `server_config.json`.
+* Can be overridden by `max_requests_per_min` in `server_config.yaml` (*preferred*) or `server_config.json`.
 
 On each **accepted** message (before injection):
 
@@ -372,6 +372,18 @@ On each **accepted** message (before injection):
 
    * Reject as “rate limit exceeded”.
 
+### 6.6 Arming gate (*optional*)
+
+NovaKey may be configured to require a local “**armed**” state before performing injection.
+When enabled, the daemon will still:
+
+* parse and decrypt frames,
+* enforce freshness / replay / rate limits,  
+  but it will block injection unless armed.  
+  Depending on configuration, it may still copy to clipboard when disarmed.
+  
+This is not part of protocol v3. Clients do not need to do anything different. It only affects whether the server injects locally
+
 ---
 
 ## 7. Injection behavior (summary)
@@ -382,7 +394,9 @@ Once all checks pass, NovaKey-Daemon calls:
 InjectPasswordToFocusedControl(password)
 ```
 
-Platform-specific behavior:
+> **NOTE:** Injection may be blocked due to arming. Before injection, the daemon may apply injection-safety policies (*newline blocking, max length*). If blocked, logs will show `blocked injection (not armed)` or `blocked injection (unsafe text)`.
+
+**Platform-specific behavior:**
 
 * **Linux**
 
@@ -440,15 +454,18 @@ If everything matches, NovaKey-Daemon will:
 
 ---
 
-## 9. Files involved (Go implementation)
+## 9. Files involved (*Go implementation*)
 
 For reference:
 
 * `cmd/novakey/config.go`
-  Loads `server_config.json` and default values.
+  Loads `server_config.yaml` (*preferred*) or `server_config.json` and default values.
 
 * `cmd/novakey/keys.go`
   Generates / loads ML-KEM-768 server keypair (`server_keys.json`).
+
+* `cmd/novakey/arm_api.go`
+  Loads Arming API local endpoint
 
 * `cmd/novakey/crypto.go`
 
@@ -469,12 +486,13 @@ For reference:
 
   * Parses `device_id` + `key_hex` + server addr + server pub
   * Performs KEM encapsulation, HKDF, AEAD, and framing.
+  * `nvclient arm` command exists but that is tooling, not a protocol
 
 * `cmd/nvpair/`
   CLI tool to:
 
   * Add/update devices in `devices.json`
-  * Read `server_config.json` + `server_keys.json`
+  * Read `server_config.yaml` (*preferred*) or `server_config.json` + `server_keys.json`
   * Emit pairing JSON (and ASCII QR) for the phone app.
 
 ---
