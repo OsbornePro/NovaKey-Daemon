@@ -20,6 +20,21 @@ NovaKey aims to eliminate “manual typing” of those secrets:
 
 > **Status note:** Current code targets *normal logged-in desktop sessions* (browser fields, terminals, editors, etc.). Lock screens / pre-boot PINs / login screens are future/experimental work, not guaranteed or supported yet.
 
+### Security Review Invited 
+
+NovaKey v3 uses ML-KEM-768 + HKDF + XChaCha20-Poly1305 with per-device secrets and replay / rate-limit controls.
+The protocol and threat model are documented in PROTOCOL.md and SECURITY.md.
+
+If you find issues, please follow the disclosure process in SECURITY.md – we’re actively looking for feedback on:
+
+The v3 key schedule (KEM + per-device secret → AEAD key),
+
+Replay / freshness logic,
+
+Any injection-path weirdness on Windows/macOS/Linux.
+I plan to make a phone application for interacting with this service as a password managers password manager.
+Found issues are not emergencies yet but will be credited and taken seriously.
+
 ---
 
 ## Table of Contents
