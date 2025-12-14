@@ -422,6 +422,17 @@ NovaKey-Daemon logs:
 * A short, obfuscated preview of the password (`"Sup..." (len=23)`)
 * Success or failure of the injection path
 
+**Two-man rule control message (*optional*)**  
+
+If `two_man_enabled` is enabled on the server, NovaKey-Daemon treats a decrypted password equal to approve_magic (*default* `__NOVAKEY_APPROVE__`) as a control message:
+
+* It does not inject.
+* It grants that device an “**approved**” state until `approve_window_ms` elapses.
+
+This does not change the v3 framing or crypto; it’s an application-level semantic inside the decrypted payload.
+
+A subsequent password message from the same device can inject only if the host is also armed and the approval is still valid.
+
 ---
 
 ## 8. Example: implementing a non-Go client
