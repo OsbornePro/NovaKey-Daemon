@@ -100,16 +100,13 @@ Switch ($Target) {
 
         $env:CGO_ENABLED = 0
         $env:GOOS = "windows"
-        $env:GOARCH = "amd64"
         $OutName = $FileName
         If ($OutName.Length -eq 0) { $OutName = "novakey-windows-amd64.exe" }
         If ($OutName -notmatch '\.exe$') { $OutName += ".exe" }
         $Output = Join-Path -Path $DistDir -ChildPath $OutName
         ForEach ($Arch in @("amd64")) { #, "arm64")) {
 
-            $env:GOOS = "darwin"
             $env:GOARCH = $Arch
-            $env:CGO_ENABLED = "1"
             Write-Information -MessageData "[-] $OutName go build (windows/$Arch)"
             go build -trimpath -ldflags $LdFlags -o $Output "./cmd/novakey"
 
@@ -125,14 +122,11 @@ Switch ($Target) {
 
         $env:CGO_ENABLED = 0
         $env:GOOS = "linux"
-        $env:GOARCH = "amd64"
         $OutName = $FileName
         If ($OutName.Length -eq 0) { $OutName = "novakey-linux" }
         ForEach ($Arch in @("amd64")) { #, "arm64")) {
 
-            $env:GOOS = "darwin"
             $env:GOARCH = $Arch
-            $env:CGO_ENABLED = "1"
             $Output = Join-Path -Path $DistDir -ChildPath "$OutName-$Arch"
             Write-Information -MessageData "[-] $OutName go build (linux/$Arch)"
             go build -trimpath -ldflags $LdFlags -o $Output "./cmd/novakey"
@@ -164,12 +158,12 @@ What to do:
 # In case it ever becomes possible
         Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Attempting build of macOS binaries"
         $OutName = $FileName
+        $env:GOOS = "darwin"
+        $env:CGO_ENABLED = 0
         If ($OutName.Length -eq 0) { $OutName = "novakey-darwin" }
         ForEach ($Arch in @("amd64")) { #, "arm64")) {
 
-            $env:GOOS = "darwin"
             $env:GOARCH = $Arch
-            $env:CGO_ENABLED = "1"
             $Output = Join-Path -Path $DistDir -ChildPath "$OutName-$Arch"
             Write-Information -MessageData "[-] $OutName go build (darwin/$Arch)"
             go build -trimpath -ldflags $LdFlags -o $Output ./cmd/novakey
