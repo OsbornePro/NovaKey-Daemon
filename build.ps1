@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-This cmdlet is a cross-platform build script for NovaKey (Windows, Linux, macOS)
+This cmdlet is a cross-platform build script for NovaKey, nvclient, and nvpair (Windows, Linux, macOS)
 
 
 .DESCRIPTION
-Builds NovaKey for Windows, Linux, or macOS (darwin) from a single PowerShell script.
+Builds NovaKey, nvclient, and nvpair for Windows, Linux, or macOS (darwin) from a single PowerShell script.
 
 
 .PARAMETER Target
@@ -46,15 +46,21 @@ https://osbornepro.com/
 #>
 [CmdletBinding()]
     param(
-        [Parameter(Mandatory=$false)]
+        [Parameter(
+            Mandatory=$False
+        )]  # End Parameter
         [ValidateSet("windows", "linux", "darwin", IgnoreCase=$true)]
-        [string]$Target = "windows",
+        [String]$Target = "windows",
 
-        [Parameter(Mandatory=$false)]
-        [switch]$Clean,
+        [Parameter(
+            Mandatory=$False
+        )]  # End Parameter
+        [Switch]$Clean,
 
-        [Parameter(Mandatory=$false)]
-        [string]$FileName
+        [Parameter(
+            Mandatory=$False
+        )]  # End Parameter
+        [String]$FileName
     )  # End param
 
 $ErrorActionPreference = "Stop"
@@ -99,9 +105,22 @@ Switch ($Target) {
         If (-not $OutName) { $OutName = "NovaKey.exe" }
         If ($OutName -notmatch '\.exe$') { $OutName += ".exe" }
         $Output = Join-Path -Path $DistDir -ChildPath $OutName
+        ForEach ($Arch in @("amd64")) { #, "arm64")) {
 
-        Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') go build (windows/amd64)"
-        go build -trimpath -ldflags $LdFlags -o $Output ./cmd/novakey
+            $env:GOOS = "darwin"
+            $env:GOARCH = $Arch
+            $env:CGO_ENABLED = "1"
+            $Output = Join-Path -Path $DistDir -ChildPath "novakey-windows-$Arch"
+            Write-Information -MessageData "[-] $FileName go build (windows/$Arch)"
+            go build -trimpath -ldflags $LdFlags -o $Output "./cmd/novakey"
+
+            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvpair go build (windows/$Arch)"
+            go build -o ".\dist\nvpair-windows-$Arch.exe" ".\cmd\nvpair"
+
+            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvclient go build (windows/$Arch)"
+            go build -o ".\dist\nvclient-windows-$Arch.exe" ".\cmd\nvclient"
+
+        }  # End ForEach   
 
     } "linux" {
 
@@ -111,9 +130,23 @@ Switch ($Target) {
         $OutName = $FileName
         If (-not $OutName) { $OutName = "NovaKey" }
         $Output = Join-Path -Path $DistDir -ChildPath $OutName
+        ForEach ($Arch in @("amd64")) { #, "arm64")) {
 
-        Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') go build (linux/amd64)"
-        go build -trimpath -ldflags $LdFlags -o $Output ./cmd/novakey
+            $env:GOOS = "darwin"
+            $env:GOARCH = $Arch
+            $env:CGO_ENABLED = "1"
+            $Output = Join-Path -Path $DistDir -ChildPath "novakey-linux-$Arch"
+
+            Write-Information -MessageData "[-] $FileName go build (linux/$Arch)"
+            go build -trimpath -ldflags $LdFlags -o $Output "./cmd/novakey"
+
+            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvpair go build (linux/$Arch)"
+            go build -o ".\dist\nvpair-linux-$Arch" ".\cmd\nvpair"
+
+            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvclient go build (linux/$Arch)"
+            go build -o ".\dist\nvclient-linux-$Arch" ".\cmd\nvclient"
+
+        }  # End ForEach
 
     } "darwin" {
 
@@ -133,15 +166,21 @@ What to do:
 <#
 # In case it ever becomes possible
         Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Attempting build of macOS binaries"
-        ForEach ($Arch in @("amd64", "arm64")) {
+        ForEach ($Arch in @("amd64")) { #, "arm64")) {
 
             $env:GOOS = "darwin"
             $env:GOARCH = $Arch
             $env:CGO_ENABLED = "1"
+            $Output = Join-Path -Path $DistDir -ChildPath "novakey-darwin-$Arch"
 
-            $Output = Join-Path $DistDir "NovaKey-darwin-$Arch"
-            Write-Information "[-] go build (darwin/$Arch)"
+            Write-Information -MessageData "[-] go build (darwin/$Arch)"
             go build -trimpath -ldflags $LdFlags -o $Output ./cmd/novakey
+
+            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvpair go build (darwin/$Arch)"
+            go build -o ".\dist\nvpair-darwin-$Arch" ".\cmd\nvpair"
+
+            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvclient go build (darwin/$Arch)"
+            go build -o ".\dist\nvclient-darwin-$Arch" ".\cmd\nvclient"
 
         }  # End ForEach
 
