@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
 func main() {
@@ -17,7 +18,7 @@ func main() {
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
-    startArmAPI()
+	startArmAPI()
 
 	listenAddr := cfg.ListenAddr
 	maxLen := cfg.MaxPayloadLen
@@ -73,9 +74,18 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		logReqf(reqID, "decryptPasswordFrame failed: %v", err)
 		return
 	}
+
+	// --- TWO-MAN: approval control message ---
+	if cfg.TwoManEnabled && isApproveControlPayload(password) {
+		until := approvalGate.Approve(deviceID, approveWindow())
+		logReqf(reqID, "two-man approve received from device=%q; approved until %s",
+			deviceID, until.Format(time.RFC3339Nano))
+		return
+	}
+
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
-    // --- Filter new lines ---
+	// --- Filter unsafe injection text (newlines, max len, etc.) ---
 	if err := validateInjectText(password); err != nil {
 		logReqf(reqID, "blocked injection (unsafe text): %v", err)
 		return
@@ -84,9 +94,25 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
+	// --- TWO-MAN: require recent approval for this device ---
+	if cfg.TwoManEnabled {
+		consume := cfg.ApproveConsumeOnInject
+		if !approvalGate.Consume(deviceID, consume) {
+			until := approvalGate.ApprovedUntil(deviceID)
+			if until.IsZero() {
+				logReqf(reqID, "blocked injection (two-man: not approved)")
+			} else {
+				logReqf(reqID, "blocked injection (two-man: approval expired at %s)", until.Format(time.RFC3339Nano))
+			}
+			return
+		}
+		logReqf(reqID, "two-man approval OK; proceeding")
+	}
+
 	// --- ARM GATE ---
-    if cfg.ArmAPIEnabled || cfg.ArmEnabled {
-        ok := armGate.Consume(*cfg.ArmConsumeOnInject)
+	// Two-man implies arm must also be open.
+	if cfg.ArmEnabled || cfg.TwoManEnabled {
+		ok := armGate.Consume(*cfg.ArmConsumeOnInject)
 		if !ok {
 			logReqf(reqID, "blocked injection (not armed)")
 			return
@@ -101,4 +127,3 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 
 	logReqf(reqID, "injection complete")
 }
-
