@@ -19,10 +19,14 @@ type ServerConfig struct {
 	ServerKeysFile    string `json:"server_keys_file" yaml:"server_keys_file"`
 
 	// Arm gate (OFF by default)
-	ArmEnabled         bool  `json:"arm_enabled" yaml:"arm_enabled"`
-	ArmDurationMs      int   `json:"arm_duration_ms" yaml:"arm_duration_ms"`
+	ArmEnabled bool `json:"arm_enabled" yaml:"arm_enabled"`
+	ArmDurationMs int `json:"arm_duration_ms" yaml:"arm_duration_ms"`
+
+	// Pointer = allows "default true but allow false"
 	ArmConsumeOnInject *bool `json:"arm_consume_on_inject" yaml:"arm_consume_on_inject"`
-    AllowClipboardWhenDisarmed bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
+
+	// Pointer = allows "default true but allow false"
+	AllowClipboardWhenDisarmed *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
 
 	// Local-only arming endpoint (OFF by default)
 	ArmAPIEnabled  bool   `json:"arm_api_enabled" yaml:"arm_api_enabled"`
@@ -33,6 +37,15 @@ type ServerConfig struct {
 	// Injection safety
 	AllowNewlines bool `json:"allow_newlines" yaml:"allow_newlines"`
 	MaxInjectLen  int  `json:"max_inject_len" yaml:"max_inject_len"`
+
+	// Two-man rule (OFF by default)
+	TwoManEnabled   bool `json:"two_man_enabled" yaml:"two_man_enabled"`
+	ApproveWindowMs int  `json:"approve_window_ms" yaml:"approve_window_ms"`
+
+	// Pointer = allows "default true but allow false"
+	ApproveConsumeOnInject *bool `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
+
+	ApproveMagic string `json:"approve_magic" yaml:"approve_magic"`
 }
 
 var cfg ServerConfig
@@ -71,7 +84,6 @@ func loadConfig() error {
 }
 
 func pickConfigPath() string {
-	// you can later add: if env := os.Getenv("NOV AKEY_CONFIG"); env != "" { return env }
 	if fileExists(defaultYAML) {
 		return defaultYAML
 	}
@@ -87,6 +99,7 @@ func fileExists(path string) bool {
 }
 
 func applyDefaults() {
+	// Core defaults
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = "127.0.0.1:60768"
 	}
@@ -107,11 +120,14 @@ func applyDefaults() {
 	if cfg.ArmDurationMs == 0 {
 		cfg.ArmDurationMs = 20000
 	}
-    if cfg.ArmConsumeOnInject == nil {
-        v := true
-        cfg.ArmConsumeOnInject = &v
-    }
-    cfg.AllowClipboardWhenDisarmed = true
+	if cfg.ArmConsumeOnInject == nil {
+		v := true
+		cfg.ArmConsumeOnInject = &v
+	}
+	if cfg.AllowClipboardWhenDisarmed == nil {
+		v := true
+		cfg.AllowClipboardWhenDisarmed = &v
+	}
 
 	// Arm API defaults
 	if cfg.ArmListenAddr == "" {
@@ -129,5 +145,17 @@ func applyDefaults() {
 		cfg.MaxInjectLen = 256
 	}
 	// AllowNewlines defaults false
+
+	// Two-man defaults
+	if cfg.ApproveWindowMs == 0 {
+		cfg.ApproveWindowMs = 15000
+	}
+	if cfg.ApproveConsumeOnInject == nil {
+		v := true
+		cfg.ApproveConsumeOnInject = &v
+	}
+	if cfg.ApproveMagic == "" {
+		cfg.ApproveMagic = "__NOVAKEY_APPROVE__"
+	}
 }
 
