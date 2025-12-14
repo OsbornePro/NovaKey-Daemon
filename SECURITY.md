@@ -143,6 +143,8 @@ The server enforces:
 * A configurable **freshness window** (`maxMsgAgeSec` and `maxClockSkewSec`).
 * An in-memory **replay cache** per device keyed by `(deviceID, nonce)` for a fixed TTL.
 
+> **NOTE:** Device IDs are sent in plaintext for routing/logging; don’t use sensitive identifiers.  
+
 Result:
 
 * Frames outside the acceptable time window are rejected as stale or too far in the future.

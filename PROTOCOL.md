@@ -139,6 +139,8 @@ The `payload` / `frame` bytes are:
 [ ... ]             = ciphertext     (AEAD output)
 ```
 
+> **NOTE:** Device IDs are sent in plaintext for routing/logging; don’t use sensitive identifiers.  
+
 More explicitly:
 
 ```text
