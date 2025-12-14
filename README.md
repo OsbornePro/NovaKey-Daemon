@@ -45,6 +45,7 @@ Found issues are not emergencies yet but will be credited and taken seriously.
 * [Configuration Files](#configuration-files)
 * [Protocol & Crypto Stack](#protocol--crypto-stack)
 * [Auto-Type Support Notes](#auto-type-support-notes)
+* [Arming Gate])(#arming-gate)
 * [Roadmap](#roadmap)
 * [Security Model](#security-model)
 * [Build from Source](#build-from-source)
@@ -59,10 +60,10 @@ Found issues are not emergencies yet but will be credited and taken seriously.
 
 ## Overview
 
-The NovaKey-Daemon service (`novakey`) runs on a workstation (*Windows, macOS, or Linux*). It creates a TCP listener (default `0.0.0.0:60768`). One or more clients (e.g. a future mobile app, or the included `nvclient` test tool) connect to this listener, send an encrypted payload, and NovaKey-Daemon:
+The NovaKey-Daemon service (`novakey`) runs on a workstation (*Windows, macOS, or Linux*). NovaKey can run in an “**armed injection**” mode where secrets are only injected after a local arm action (*push-to-type*), reducing the impact of a compromised device secret. The arming creates a TCP listener (default `0.0.0.0:60769`). The daemon that inserts a secret creates a TCP listener (default `0.0.0.0:60768`). One or more clients (*e.g. a future mobile app, or the included* `nvclient` *test tool*) connect to this listener, send an encrypted payload, and NovaKey-Daemon:
 
-1. **Authenticates** the device via a per-device symmetric key (PSK) stored on the host.
-2. **Derives a per-message session key** using **ML-KEM-768** (Kyber-768-compatible) and **HKDF-SHA-256**.
+1. **Authenticates** the device via a per-device symmetric key (*PSK*) stored on the host.
+2. **Derives a per-message session key** using **ML-KEM-768** (*Kyber-768-compatible*) and **HKDF-SHA-256**.
 3. **Decrypts & validates** the request using XChaCha20-Poly1305 with:
 
    * Per-device PSK as salt,
@@ -90,9 +91,13 @@ The protocol version in use is **v3** (see `PROTOCOL.md`).
 | ✅ | Message freshness (timestamp) validation                                                   |
 | ✅ | Nonce-based replay protection per device                                                   |
 | ✅ | Per-device rate limiting (requests/min)                                                    |
-| ✅ | Configurable listen address, payload size, and limits via `server_config.json`             |
+| ✅ | Configurable listen address, payload size, and limits via `server_config.yaml` (*preferred*) or **if you prefer json delete the server_config.yaml** file to use `server_config.json`             |
 | ✅ | Simple CLI test client (`nvclient`) that speaks the v3 protocol                            |
 | ✅ | CLI pairing / key management tool (`nvpair`) that emits JSON suitable for QR-based pairing |
+| ✅ | Optional “armed injection” gate (blocks injection unless locally armed)                |
+| ✅ | Local-only Arm API on `127.0.0.1:60769` with token auth (for hotkey binding / testing) |
+| ✅ | Auto-generation of `arm_token.txt` when Arm API is enabled                             |
+| ✅ | Injection safety policies: newline blocking by default (`\n`, `\r`) + `max_inject_len` |
 
 ---
 
@@ -104,7 +109,7 @@ All commands live under `cmd/` and are typically built into binaries under `dist
 
 The main service process:
 
-* Loads configuration from `server_config.json`.
+* Loads configuration from `server_config.yaml` (*preferred*) or `server_config.json` (*fallback*).
 * Loads per-device keys from `devices.json`.
 * Loads (or auto-generates) server Kyber/ML-KEM-768 keys in `server_keys.json`.
 * Listens on the configured TCP address (default `0.0.0.0:60768`).
@@ -134,6 +139,12 @@ Typical usage (Windows, PowerShell):
 
 By default it logs to stdout/stderr; you can wrap it in systemd / launchd / a Windows Service if you want it to run as a background service.
 
+#### Arming (Push-to-Type) Mode
+NovaKey supports an optional arm gate. When enabled, the daemon will decrypt frames but will not inject unless the service is currently armed.
+Arming can be done via the local Arm API (*loopback only*).
+* Arm API binds to 127.0.0.1:60769 (*refuses non-loopback binds*).
+* When enabled, the daemon auto-generates `arm_token.txt` if missing.
+
 ---
 
 ### `nvclient` – reference/test client
@@ -153,6 +164,13 @@ Usage (example):
   -key-hex 7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234 \
   -server-kyber-pub-b64 "<base64-encoded server Kyber public key>" \
   -password "SuperStrongPassword123!"
+```
+
+nvclient can also arming the daemon (*local only*)  
+The token comes from `arm_token.txt` which gets created by novakey when Arm API is enabled and the file does not already exist.
+```bash
+# Arms NovaKey for 20 seconds (requires arm_api_enabled:true set in the server_config.yaml||server_config.json)
+./dist/nvclient arm --addr 127.0.0.1:60769 --token_file arm_token.txt --ms 20000
 ```
 
 Flags (current implementation):
@@ -177,7 +195,7 @@ A helper that:
 
 * Generates a random 32-byte per-device key.
 * Adds a new device entry to `devices.json`, or updates an existing one (with `-force`).
-* Reads `server_config.json` and `server_keys.json`.
+* Reads `server_config.yaml` or `server_config.json` and `server_keys.json`.
 * Emits a **pairing JSON blob** that contains everything a client/phone app needs:
 
   * `device_id`
@@ -213,21 +231,45 @@ If you have QR tooling available, you can render the JSON as a QR code (for exam
 
 Flags:
 
-* `-devices-file` – path to `devices.json` (default: `devices.json` in CWD)
-* `-config-file` – path to `server_config.json` (default: `server_config.json`)
-* `-id` – device ID to add or update (required)
+* `-devices-file` – path to `devices.json` (*default:* `devices.json` in CWD)
+* `-config-file` – path to `server_config.yaml` or `server_config.json` (*default:* `server_config.yaml`)
+* `-id` – device ID to add or update (*required*)
 * `-force` – overwrite an existing device with the same ID
-* `-qr` – optionally print instructions or an ASCII QR for pairing (implementation-dependent)
+* `-qr` – optionally print instructions or an ASCII QR for pairing (*implementation-dependent*)
 
 ---
 
 ## Configuration Files
 
-### `server_config.json`
+### `server_config.yaml` (*or if you prefer* `server_config.json`)
 
 Controls how the daemon listens and enforces limits.
 
-Example:
+YAML Example:
+
+```yaml
+listen_addr: "0.0.0.0:60768"
+max_payload_len: 4096
+max_requests_per_min: 60
+devices_file: "devices.json"
+server_keys_file: "server_keys.json"
+
+arm_enabled: true
+arm_duration_ms: 20000
+arm_consume_on_inject: true
+allow_clipboard_when_disarmed: true
+
+arm_api_enabled: true
+arm_listen_addr: "127.0.0.1:60769"
+arm_token_file: "arm_token.txt"
+arm_token_header: "X-NovaKey-Token"
+
+allow_newlines: false
+max_inject_len: 256
+
+```
+
+JSON Example:
 
 ```json
 {
@@ -235,20 +277,44 @@ Example:
   "max_payload_len": 4096,
   "max_requests_per_min": 60,
   "devices_file": "devices.json",
-  "server_keys_file": "server_keys.json"
+  "server_keys_file": "server_keys.json",
+
+  "arm_enabled": false,
+  "arm_duration_ms": 20000,
+  "arm_consume_on_inject": true,
+  "allow_clipboard_when_disarmed": true,
+
+  "arm_api_enabled": false,
+  "arm_listen_addr": "127.0.0.1:60769",
+  "arm_token_file": "arm_token.txt",
+  "arm_token_header": "X-NovaKey-Token",
+
+  "allow_newlines": false,
+  "max_inject_len": 256
 }
 ```
+
+> **Security note:** The Arm API is intentionally loopback-only. **DO NOT** bind it to `0.0.0.0`.
 
 Fields:
 
 * `listen_addr` – TCP address to bind to.
-
   * `127.0.0.1:60768` – **local only**
-  * `0.0.0.0:60768` – listen on all interfaces (for LAN usage)
-* `max_payload_len` – max allowed payload bytes (before decryption).
+  * `0.0.0.0:60768` – listen on all interfaces (*for LAN usage*)
+* `max_payload_len` – max allowed payload bytes (*before decryption*).
 * `max_requests_per_min` – per-device rate limit.
 * `devices_file` – path to the `devices.json` file.
-* `server_keys_file` – path to `server_keys.json` (ML-KEM-768 server keypair).
+* `server_keys_file` – path to `server_keys.json` (*ML-KEM-768 server keypair*).
+* `arm_enabled` – if true, injection requires arming.
+* `arm_duration_ms` – default arm duration used by `/arm` if no ms override.
+* `arm_consume_on_inject` – if true, disarms after the first injection.
+* `allow_clipboard_when_disarmed` – if true, will still set clipboard when injection is blocked.
+* `arm_api_enabled` – enables local control API.
+* `arm_listen_addr` – should be `127.0.0.1:60769`.
+* `arm_token_file` – token file path (*auto-generated if missing when API is enabled*).
+* `arm_token_header` – header name (*default X-NovaKey-Token*).
+* `allow_newlines` – default false; blocks \n and \r.
+* `max_inject_len` – max length of injected text (*separate from payload length*).
 
 > **Important:** If you expose `0.0.0.0:60768`, ensure your firewall is configured appropriately. NovaKey-Daemon enforces authentication and replay protection, but the port is still a high-value interface.
 
@@ -454,6 +520,9 @@ NovaKey-Daemon v3 is designed to:
 3. **Limit abuse even from a compromised, but authorized, device.**  
    A compromised phone (or client) should not be able to hammer the daemon indefinitely or replay old frames without detection.
 
+**Armed injection gate:** When enabled, a compromised device secret alone is not sufficient to trigger keystroke injection unless the daemon has been locally armed. 
+This reduces silent remote injection risk, but does not protect against a compromised host or local malware.
+
 ### Non-Goals
 
 NovaKey-Daemon v3 does **not** attempt to:
@@ -572,7 +641,7 @@ Given the above, the protocol aims to provide:
 
 4. **Abuse limitation**
 
-   * Per-device rate limiting enforces a maximum number of accepted frames per minute (`max_requests_per_min` in `server_config.json`).
+   * Per-device rate limiting enforces a maximum number of accepted frames per minute (`max_requests_per_min` in `server_config.yaml` or `server_config.json`).
    * A compromised but valid device cannot spam arbitrary numbers of successful injections per minute without hitting rate limits.
 
 ### What an Attacker on the LAN Can and Cannot Do
@@ -785,7 +854,7 @@ Set-Location -Path "C:\Path\To\NovaKey-Daemon"
 
 ## Running NovaKey-Daemon
 
-1. Ensure `server_config.json` exists (NovaKey-Daemon will default some values).
+1. Ensure `server_config.yaml` or `server_config.json` exists (*NovaKey-Daemon will default some values*).
 
 2. Start the daemon from the directory containing your config files:
 
@@ -803,11 +872,27 @@ Set-Location -Path "C:\Path\To\NovaKey-Daemon"
    2025/12/13 12:41:18 NovaKey (Linux) service listening on 0.0.0.0:60768
    ```
 
+If arming is enabled (`arm_enabled: true`), injection will be blocked until you arm:
+
+```bash
+# Check status
+TOKEN=$(tr -d '\r\n' < arm_token.txt)
+curl -H "X-NovaKey-Token: $TOKEN" http://127.0.0.1:60769/status
+
+# Arm for 20 seconds
+./dist/nvclient arm --addr 127.0.0.1:60769 --token_file arm_token.txt --ms 20000
+```
+
+Then run nvclient to send the frame.
+`clipboard when disarmed` being sent to true is for Linux distros.
+It tells linux it is okay to copy to your clipboard even when arming is enabled.
+I did this becuase the daemon is not able to type in Wayland.
+
 3. Use `nvpair` to create a device and get pairing info.
 
-4. Use `nvclient` (or your phone app) with that pairing info to send a test password.
+4. Use `nvclient` (*or your phone app*) with that pairing info to send a test password.
 
-5. Focus a text field and watch NovaKey-Daemon type it for you (subject to the Auto-Type notes and Known Issues).
+5. Focus a text field and watch NovaKey-Daemon type it for you (*subject to the Auto-Type notes and Known Issues*).
 
 You can wrap `novakey` in systemd, launchd, or a Windows Service as you prefer.
 
@@ -870,6 +955,8 @@ This is because the current Linux injector relies on X11/Xwayland tooling (`xdot
 
 * Logs that Wayland keystroke injection is **not implemented yet**, and
 * Focuses on what it can safely do (e.g., clipboard behavior).
+
+On Wayland, keystroke injection is still unsupported; arming primarily controls whether clipboard/injection is allowed.
 
 **Workarounds:**
 
