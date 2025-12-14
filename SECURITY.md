@@ -1,6 +1,6 @@
 # Security Policy
 
-**NovaKey** is a security-critical application that receives encrypted secrets over a local TCP connection and injects them into the active window. We take security extremely seriously.
+**NovaKey-Daemon** is a security-critical application that receives encrypted secrets over a local TCP connection and injects them into the active window. We take security extremely seriously.
 
 ## Supported Versions
 
@@ -51,7 +51,7 @@ We do not currently offer monetary rewards, but we are deeply grateful for high-
 
 - Publicly credit you (with your permission)
 - Prioritize your future reports
-- Send NovaKey stickers and eternal gratitude
+- Send NovaKey-Daemon stickers gift the app when made and eternal gratitude
 
 ### Non-qualifying issues
 
@@ -67,17 +67,17 @@ The following are **out of scope** (but still appreciated if reported):
 
 ## Security Features
 
-NovaKey is designed with defense-in-depth. The current v3 implementation includes:
+NovaKey-Daemon is designed with defense-in-depth. The current v3 implementation includes:
 
 ### Per-device identity and secrets
 
 - Each device has a unique **device ID** and 32-byte secret stored in `devices.json`.
 - Only devices that possess the correct secret can derive valid AEAD session keys for accepted frames.
-- Device secrets are not transmitted in plaintext and should be kept local to the NovaKey host and trusted clients.
+- Device secrets are not transmitted in plaintext and should be kept local to the NovaKey-Daemon host and trusted clients.
 
 ### Post-quantum key encapsulation (ML-KEM-768)
 
-- NovaKey v3 uses **ML-KEM-768** (Kyber-class) via `filippo.io/mlkem768`.
+- NovaKey-Daemon v3 uses **ML-KEM-768** (Kyber-class) via `filippo.io/mlkem768`.
 - The server maintains a long-term KEM keypair in `server_keys.json`:
   - `kyber768_public` is distributed to clients during pairing (e.g., via QR code).
   - `kyber768_secret` remains on the server and is used only to decapsulate client KEM ciphertexts.
@@ -125,7 +125,7 @@ Result:
 
 ### Per-device rate limiting
 
-- NovaKey tracks basic rate state per device (`windowStart`, `count`).
+- NovaKey-Daemon tracks basic rate state per device (`windowStart`, `count`).
 - Each device is limited to a configurable number of accepted frames per minute (`max_requests_per_min` in `server_config.json`).
 - This protects against:
   - Misbehaving apps spamming injections.
@@ -139,7 +139,7 @@ Result:
 
 ### Local-only or LAN-only; no cloud
 
-- NovaKey listens on a locally configured TCP address, e.g.:
+- NovaKey-Daemon listens on a locally configured TCP address, e.g.:
   - `127.0.0.1:60768` for local-only, or
   - `0.0.0.0:60768` for LAN usage.
 - There is **no external relay or cloud backend**.
@@ -147,7 +147,7 @@ Result:
 
 ### No special privileges at runtime
 
-- NovaKey is intended to run as a normal user-level process or unprivileged service.
+- NovaKey-Daemon is intended to run as a normal user-level process or unprivileged service.
 - Elevated privileges may be required for:
   - Installation,
   - Service wiring,
@@ -167,8 +167,8 @@ Result:
 ### In scope
 
 - Attackers on the **local network** attempting to:
-  - Read NovaKey traffic (passive sniffing).
-  - Modify or inject NovaKey traffic (active MITM).
+  - Read NovaKey-Daemon traffic (passive sniffing).
+  - Modify or inject NovaKey-Daemon traffic (active MITM).
   - Replay previously captured packets.
 - Malicious or compromised client apps that know the IP/port but **do not** have valid per-device secrets.
 - Attempts to abuse the service via:
@@ -178,7 +178,7 @@ Result:
 ### Out of scope / assumed trust
 
 - Fully compromised host operating system, kernel, or hypervisor.
-- Malicious software with the same or greater privileges as NovaKey (e.g., another process with:
+- Malicious software with the same or greater privileges as NovaKey-Daemon (e.g., another process with:
   - Keyboard injection rights,
   - Accessibility / input monitoring permissions).
 - Physical attacks on the machine (hardware keyloggers, cold boot, RAM scraping).
@@ -202,7 +202,7 @@ Result:
 
 ## Cryptography Status Summary
 
-### Currently used (NovaKey v3)
+### Currently used (NovaKey-Daemon v3)
 
 - **KEM:** ML-KEM-768 (Kyber-class), via `filippo.io/mlkem768`.
 - **KDF:** HKDF with SHA-256 for deriving per-message session keys.
@@ -227,8 +227,8 @@ The README and protocol documentation in the repository describe the exact on-wi
 
 ---
 
-Thank you for helping keep NovaKey secure.
+Thank you for helping keep NovaKey-Daemon secure.
 
 — Robert H. Osborne (OsbornePro)  
-Maintainer, NovaKey
+Maintainer, NovaKey-Daemon
 

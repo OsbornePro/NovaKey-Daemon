@@ -1,6 +1,6 @@
-# 🔐 NovaKey by OsbornePro
+# 🔐 NovaKey-Daemon by OsbornePro
 
-**What is NovaKey?**
+**What is the NovaKey-Daemon?**
 *NovaKey is a lightweight, cross-platform Go agent that turns your computer into a secure, authenticated password-injection endpoint.*
 
 **Why would I need this?**
@@ -22,7 +22,7 @@ NovaKey aims to eliminate “manual typing” of those secrets:
 
 ### Security Review Invited 
 
-NovaKey v3 uses ML-KEM-768 + HKDF + XChaCha20-Poly1305 with per-device secrets and replay / rate-limit controls.
+NovaKey-Daemon v3 uses ML-KEM-768 + HKDF + XChaCha20-Poly1305 with per-device secrets and replay / rate-limit controls.
 The protocol and threat model are documented in PROTOCOL.md and SECURITY.md.
 
 If you find issues, please follow the disclosure process in SECURITY.md – we’re actively looking for feedback on:
@@ -48,7 +48,7 @@ Found issues are not emergencies yet but will be credited and taken seriously.
 * [Roadmap](#roadmap)
 * [Security Model](#security-model)
 * [Build from Source](#build-from-source)
-* [Running NovaKey](#running-novakey)
+* [Running NovaKey-Daemon](#running-novakey)
 * [Logging](#logging)
 * [Contributing](#contributing)
 * [Known Issues](#known-issues)
@@ -59,7 +59,7 @@ Found issues are not emergencies yet but will be credited and taken seriously.
 
 ## Overview
 
-The NovaKey service (`novakey`) runs on a workstation (*Windows, macOS, or Linux*). It creates a TCP listener (default `0.0.0.0:60768`). One or more clients (e.g. a future mobile app, or the included `nvclient` test tool) connect to this listener, send an encrypted payload, and NovaKey:
+The NovaKey-Daemon service (`novakey`) runs on a workstation (*Windows, macOS, or Linux*). It creates a TCP listener (default `0.0.0.0:60768`). One or more clients (e.g. a future mobile app, or the included `nvclient` test tool) connect to this listener, send an encrypted payload, and NovaKey-Daemon:
 
 1. **Authenticates** the device via a per-device symmetric key (PSK) stored on the host.
 2. **Derives a per-message session key** using **ML-KEM-768** (Kyber-768-compatible) and **HKDF-SHA-256**.
@@ -138,7 +138,7 @@ By default it logs to stdout/stderr; you can wrap it in systemd / launchd / a Wi
 
 ### `nvclient` – reference/test client
 
-A simple CLI client that speaks the **v3 NovaKey protocol**. It’s useful for:
+A simple CLI client that speaks the **v3 NovaKey-Daemon protocol**. It’s useful for:
 
 * Testing the daemon.
 * Experimenting with passwords and device IDs.
@@ -206,7 +206,7 @@ Added new device "roberts-phone" to /path/to/devices.json
   "server_kyber768_pub": "<base64-encoded public key>"
 }
 
-Use this pairing info in your phone app to configure NovaKey v3.
+Use this pairing info in your phone app to configure NovaKey-Daemon v3.
 ```
 
 If you have QR tooling available, you can render the JSON as a QR code (for example, via `qrencode`, or via the optional `go-qrcode` integration in the source).
@@ -250,13 +250,13 @@ Fields:
 * `devices_file` – path to the `devices.json` file.
 * `server_keys_file` – path to `server_keys.json` (ML-KEM-768 server keypair).
 
-> **Important:** If you expose `0.0.0.0:60768`, ensure your firewall is configured appropriately. NovaKey enforces authentication and replay protection, but the port is still a high-value interface.
+> **Important:** If you expose `0.0.0.0:60768`, ensure your firewall is configured appropriately. NovaKey-Daemon enforces authentication and replay protection, but the port is still a high-value interface.
 
 ---
 
 ### `devices.json`
 
-Defines which devices are allowed to talk to NovaKey and what keys they use.
+Defines which devices are allowed to talk to NovaKey-Daemon and what keys they use.
 
 Example:
 
@@ -345,7 +345,7 @@ Per-message key derivation:
    ```text
    IKM  = kemShared (32 bytes from KEM)
    salt = per-device key (device_key_hex -> 32 bytes)
-   info = "NovaKey v3 session key"
+   info = "NovaKey-Daemon v3 session key"
    K    = HKDF-SHA256(IKM, salt, info, outLen = 32)
    ```
 
@@ -374,9 +374,9 @@ If everything passes, the password is injected.
 
 ## Auto-Type Support Notes
 
-NovaKey’s goal is:
+NovaKey-Daemon’s goal is:
 
-> “NovaKey works on most normal apps/fields, but some weird or high-security ones just aren’t supported.”
+> “NovaKey-Daemon works on most normal apps/fields, but some weird or high-security ones just aren’t supported.”
 
 Current behavior:
 
@@ -436,18 +436,18 @@ Features planned or on deck:
 
 ## Security Model
 
-This section describes what NovaKey’s v3 protocol is trying to protect, what it assumes, and what guarantees it does (and does not) provide.
+This section describes what NovaKey-Daemon’s v3 protocol is trying to protect, what it assumes, and what guarantees it does (and does not) provide.
 
 ### Goals
 
-NovaKey v3 is designed to:
+NovaKey-Daemon v3 is designed to:
 
 1. **Keep secrets off the keyboard.**  
-   The high-value secret (e.g., password manager master password) should never be manually typed. It is sent from a trusted device to NovaKey and injected directly into the focused field.
+   The high-value secret (e.g., password manager master password) should never be manually typed. It is sent from a trusted device to NovaKey-Daemon and injected directly into the focused field.
 
 2. **Provide confidential, authenticated transport over an untrusted LAN.**  
    An attacker on the same network is assumed able to sniff and inject arbitrary packets. The v3 protocol aims to ensure that:
-   - Only devices that hold valid pairing secrets can send frames that NovaKey accepts.
+   - Only devices that hold valid pairing secrets can send frames that NovaKey-Daemon accepts.
    - Captured traffic does not reveal the plaintext password or shared session keys.
    - Captured traffic cannot be replayed indefinitely.
 
@@ -456,7 +456,7 @@ NovaKey v3 is designed to:
 
 ### Non-Goals
 
-NovaKey v3 does **not** attempt to:
+NovaKey-Daemon v3 does **not** attempt to:
 
 - Protect against a fully compromised host OS or hypervisor.
 - Hide secrets from local malware with the same privileges as the NovaKey daemon (e.g., user-space keyloggers, clipboard stealers).
@@ -465,7 +465,7 @@ NovaKey v3 does **not** attempt to:
 
 ### Identities, Keys, and Files
 
-NovaKey v3 uses the following long-term and short-term secrets:
+NovaKey-Daemon v3 uses the following long-term and short-term secrets:
 
 #### Device identity / secrets (`devices.json`)
 
@@ -488,7 +488,7 @@ Each allowed client device has an entry in `devices.json`:
   * Identifying and authenticating that device.
   * Feeding into key derivation (HKDF) in combination with the post-quantum KEM secret.
 
-This file must be kept private and is intended to be local to the NovaKey host.
+This file must be kept private and is intended to be local to the NovaKey-Daemon host.
 
 #### Server post-quantum KEM keys (`server_keys.json`)
 
@@ -595,8 +595,8 @@ They **cannot**:
 They **can**:
 
 * Deny service by flooding the TCP port or exhausting system resources.
-* Observe **when** NovaKey is used (traffic patterns, timing).
-* If they later compromise the NovaKey host or obtain `devices.json` + `server_keys.json`, they may attempt more powerful attacks (out of scope for the protocol itself).
+* Observe **when** NovaKey-Daemon is used (traffic patterns, timing).
+* If they later compromise the NovaKey-Daemon host or obtain `devices.json` + `server_keys.json`, they may attempt more powerful attacks (out of scope for the protocol itself).
 
 ### Remaining Limitations
 
@@ -607,10 +607,10 @@ They **can**:
   If the OS, window system, or user account is compromised, an attacker can:
 
   * Read secrets from process memory, clipboard, or key events.
-  * Instrument NovaKey itself.
+  * Instrument NovaKey-Daemon itself.
 
 * **Injection scope is “focused control”.**
-  NovaKey injects into whichever control currently has focus. There is no built-in allow-list of applications yet. Mis-clicks or social engineering could still cause secrets to be typed into the wrong window.
+  NovaKey-Daemon injects into whichever control currently has focus. There is no built-in allow-list of applications yet. Mis-clicks or social engineering could still cause secrets to be typed into the wrong window.
 
 ---
 
@@ -650,7 +650,7 @@ We do not currently offer monetary rewards, but we are deeply grateful for high-
 
 - Publicly credit you (with your permission)
 - Prioritize your future reports
-- Send NovaKey stickers and eternal gratitude
+- Send NovaKey stickers gift the phone app once made and eternal grattitude
 
 ### Non-qualifying issues
 
@@ -669,8 +669,8 @@ The following are **out of scope** (but still appreciated if reported):
 ### In scope
 
 - Attackers on the **local network** attempting to:
-  - Read NovaKey traffic (passive sniffing).
-  - Modify or inject NovaKey traffic (active MITM).
+  - Read NovaKey-Daemon traffic (passive sniffing).
+  - Modify or inject NovaKey-Daemon traffic (active MITM).
   - Replay previously captured packets.
 - Malicious or compromised client apps that know the IP/port but **do not** have valid per-device secrets.
 - Attempts to abuse the service via:
@@ -680,7 +680,7 @@ The following are **out of scope** (but still appreciated if reported):
 ### Out of scope / assumed trust
 
 - Fully compromised host operating system, kernel, or hypervisor.
-- Malicious software with the same or greater privileges as NovaKey (e.g., another process with:
+- Malicious software with the same or greater privileges as NovaKey-Daemon (e.g., another process with:
   - Keyboard injection rights,
   - Accessibility / input monitoring permissions).
 - Physical attacks on the machine (hardware keyloggers, cold boot, RAM scraping).
@@ -704,7 +704,7 @@ The following are **out of scope** (but still appreciated if reported):
 
 ## Cryptography Status Summary
 
-### Currently used (NovaKey v3)
+### Currently used (NovaKey-Daemon v3)
 
 - **KEM:** ML-KEM-768 (Kyber-class), via `filippo.io/mlkem768`.
 - **KDF:** HKDF with SHA-256 for deriving per-message session keys.
@@ -740,8 +740,8 @@ You’ll need:
 ### Clone
 
 ```bash
-git clone https://github.com/OsbornePro/NovaKey.git
-cd NovaKey
+git clone https://github.com/OsbornePro/NovaKey-Daemon.git
+cd NovaKey-Daemon
 ```
 
 ### Build (Linux/macOS, Bash)
@@ -777,15 +777,15 @@ go build -o dist/nvpair   ./cmd/nvpair
 Example:
 
 ```powershell
-Set-Location -Path "C:\Path\To\NovaKey"
+Set-Location -Path "C:\Path\To\NovaKey-Daemon"
 .\build.ps1 -Target windows -FileName NovaKey.exe
 ```
 
 ---
 
-## Running NovaKey
+## Running NovaKey-Daemon
 
-1. Ensure `server_config.json` exists (NovaKey will default some values).
+1. Ensure `server_config.json` exists (NovaKey-Daemon will default some values).
 
 2. Start the daemon from the directory containing your config files:
 
@@ -807,7 +807,7 @@ Set-Location -Path "C:\Path\To\NovaKey"
 
 4. Use `nvclient` (or your phone app) with that pairing info to send a test password.
 
-5. Focus a text field and watch NovaKey type it for you (subject to the Auto-Type notes and Known Issues).
+5. Focus a text field and watch NovaKey-Daemon type it for you (subject to the Auto-Type notes and Known Issues).
 
 You can wrap `novakey` in systemd, launchd, or a Windows Service as you prefer.
 
@@ -861,12 +861,12 @@ We welcome contributions! Please:
 
 ### Linux Wayland sessions
 
-On Linux **Wayland** sessions (`XDG_SESSION_TYPE=wayland`), NovaKey:
+On Linux **Wayland** sessions (`XDG_SESSION_TYPE=wayland`), NovaKey-Daemon:
 
 * **Does** handle the crypto, validation, and clipboard aspects, but
 * **Does *not*** currently perform keystroke injection into the focused window.
 
-This is because the current Linux injector relies on X11/Xwayland tooling (`xdotool`, `xclip`), which does not work reliably against native Wayland windows. Rather than silently failing, NovaKey:
+This is because the current Linux injector relies on X11/Xwayland tooling (`xdotool`, `xclip`), which does not work reliably against native Wayland windows. Rather than silently failing, NovaKey-Daemon:
 
 * Logs that Wayland keystroke injection is **not implemented yet**, and
 * Focuses on what it can safely do (e.g., clipboard behavior).
@@ -875,9 +875,9 @@ This is because the current Linux injector relies on X11/Xwayland tooling (`xdot
 
 * Log in using an **Xorg/X11 session** instead of Wayland, or
 * Run target apps under **Xwayland** where possible (e.g., `MOZ_ENABLE_WAYLAND=0 firefox`), or
-* Use NovaKey in a **clipboard-only** style and paste manually (`Ctrl+V`).
+* Use NovaKey-Daemon in a **clipboard-only** style and paste manually (`Ctrl+V`).
 
-For more detail and ideas for contributors, see **[known issues](https://github.com/OsbornePro/NovaKey/issues/3)**.
+For more detail and ideas for contributors, see **[known issues](https://github.com/OsbornePro/NovaKey-Daemon/issues/3)**.
 
 ---
 
@@ -885,10 +885,10 @@ For more detail and ideas for contributors, see **[known issues](https://github.
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-NovaKey (by OsbornePro) is licensed under the Apache License, Version 2.0.
+NovaKey-Daemon (by OsbornePro) is licensed under the Apache License, Version 2.0.
 See [`LICENSE.md`](LICENSE.md) for the full license text.
 
-Copyright © 2025 OsbornePro – NovaKey
+Copyright © 2025 OsbornePro – NovaKey-Daemon
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -911,6 +911,6 @@ limitations under the License.
 * **Product website / purchase:** [https://novakey.app](https://novakey.app)
 * **Technical support:** [support@novakey.app](mailto:support@novakey.app)
 * **PGP key (for encrypted email):** [https://downloads.osbornepro.com/publickey.asc](https://downloads.osbornepro.com/publickey.asc)
-* **Security disclosures:** Review the policy **[HERE](https://github.com/OsbornePro/NovaKey/blob/main/SECURITY.md)** (do **not** open vulnerabilities via GitHub Issues).
+* **Security disclosures:** Review the policy **[HERE](https://github.com/OsbornePro/NovaKey-Daemon/blob/main/SECURITY.md)** (do **not** open vulnerabilities via GitHub Issues).
 * **GitHub issues:** Use the Issues tab for bugs, feature requests, or installation help. Please do not submit security findings as GitHub Issues.
 

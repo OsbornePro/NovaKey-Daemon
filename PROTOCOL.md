@@ -1,9 +1,9 @@
-# NovaKey Protocol v3 (Kyber + XChaCha20)
+# NovaKey-Daemon Protocol v3 (Kyber + XChaCha20)
 
 **Status:** implemented (Kyber key schedule + v3 framing)
 **Scope:** Typing daemon (Linux / macOS / Windows) ⇄ clients (`nvclient`, future phone app)
 
-This describes how clients send “*type this password*” requests to the NovaKey service over TCP using:
+This describes how clients send “*type this password*” requests to the NovaKey-Daemon service over TCP using:
 
 * **ML-KEM-768** (Kyber-768-compatible KEM) for post-quantum key establishment
 * **XChaCha20-Poly1305** for authenticated encryption of the payload
@@ -34,7 +34,7 @@ No connection reuse or multiplexing; each “type this secret” is independent.
 
 ## 2. Pairing & Key Material
 
-NovaKey v3 has **three** relevant secrets:
+NovaKey-Daemon v3 has **three** relevant secrets:
 
 1. **Server Kyber keypair** (ML-KEM-768)
 2. **Per-device pre-shared key** (PSK) for the AEAD
@@ -198,7 +198,7 @@ For each request, the client does:
    ```text
    IKM  = kemShared       (from KEM)
    salt = deviceKey       (32-byte PSK from device_key_hex)
-   info = "NovaKey v3 session key" (fixed ASCII label)
+   info = "NovaKey-Daemon v3 session key" (fixed ASCII label)
    K    = HKDF-SHA256(IKM, salt, info, length = 32)
    ```
 
@@ -241,7 +241,7 @@ deviceKey = hex_decode(device_key_hex)     // 32 bytes
 K = HKDF_SHA256(
       ikm  = kemShared,
       salt = deviceKey,
-      info = "NovaKey v3 session key",
+      info = "NovaKey-Daemon v3 session key",
       outLen = 32)
 
 // AEAD: XChaCha20-Poly1305
@@ -281,7 +281,7 @@ On the server, `decryptPasswordFrame` essentially does the reverse:
    ```text
    IKM  = kemShared
    salt = deviceKey (32 bytes)
-   info = "NovaKey v3 session key"
+   info = "NovaKey-Daemon v3 session key"
    K    = HKDF-SHA256(IKM, salt, info, length = 32)
    ```
 
@@ -299,7 +299,7 @@ If everything passes, the result is the cleartext password to inject.
 
 ## 6. Server-side validation
 
-After decrypting the payload, NovaKey applies the same checks as v2 with updated version:
+After decrypting the payload, NovaKey-Daemon applies the same checks as v2 with updated version:
 
 ### 6.1 Version & msgType
 
@@ -376,7 +376,7 @@ On each **accepted** message (before injection):
 
 ## 7. Injection behavior (summary)
 
-Once all checks pass, NovaKey calls:
+Once all checks pass, NovaKey-Daemon calls:
 
 ```go
 InjectPasswordToFocusedControl(password)
@@ -402,7 +402,7 @@ Platform-specific behavior:
   * Tries clipboard + `EM_REPLACESEL` / `WM_SETTEXT` on known text controls.
   * Falls back to `keybd_event` typing if necessary.
 
-NovaKey logs:
+NovaKey-Daemon logs:
 
 * Device ID
 * A short, obfuscated preview of the password (`"Sup..." (len=23)`)
@@ -432,7 +432,7 @@ Follow the pseudocode in section 5.2 and match:
 * HKDF inputs (IKM, salt, info)
 * AEAD nonce length and AAD
 
-If everything matches, NovaKey will:
+If everything matches, NovaKey-Daemon will:
 
 * Decrypt successfully
 * Validate timestamp / replay / rate limit
