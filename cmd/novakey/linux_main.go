@@ -29,6 +29,7 @@ func main() {
 	if err := loadConfig(); err != nil {
 		log.Fatalf("loadConfig failed: %v", err)
 	}
+    initLoggingFromConfig()
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
