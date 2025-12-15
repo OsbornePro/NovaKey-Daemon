@@ -11,12 +11,26 @@ import (
 
 func cmdArm(args []string) int {
 	fs := flag.NewFlagSet("arm", flag.ContinueOnError)
+
+	help := fs.Bool("h", false, "show help")
+	help2 := fs.Bool("help", false, "show help")
+
 	addr := fs.String("addr", "127.0.0.1:60769", "arm API address")
 	tokenFile := fs.String("token_file", "arm_token.txt", "path to arm token file")
 	ms := fs.Int("ms", 20000, "arm duration in ms")
 	header := fs.String("header", "X-NovaKey-Token", "token header name")
+
 	if err := fs.Parse(args); err != nil {
+		if *help || *help2 {
+			usage()
+			return 0
+		}
 		return 2
+	}
+
+	if *help || *help2 {
+		usage()
+		return 0
 	}
 
 	b, err := os.ReadFile(*tokenFile)

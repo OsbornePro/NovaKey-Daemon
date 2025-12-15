@@ -16,15 +16,20 @@ import (
 )
 
 const (
-	msgTypeInject  = 1
-	msgTypeApprove = 2
+	// IMPORTANT: Outer v3 msgType must remain 1 so the server accepts the frame.
+	// The "approve vs inject" distinction is carried in the INNER typed message frame.
+	outerMsgTypePassword = 1
+
+	innerFrameVersionV1 = 1
+	innerMsgTypeInject  = 1
+	innerMsgTypeApprove = 2
 )
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n")
 	fmt.Fprintf(os.Stderr, "  nvclient arm [--addr 127.0.0.1:60769] [--token_file arm_token.txt] [--ms 20000]\n")
-	fmt.Fprintf(os.Stderr, "  nvclient approve [flags] [--legacy_magic] [--magic __NOVAKEY_APPROVE__]\n")
-	fmt.Fprintf(os.Stderr, "  nvclient [flags]   (send inject/password frame)\n\n")
+	fmt.Fprintf(os.Stderr, "  nvclient approve [flags]            (send typed APPROVE control message)\n")
+	fmt.Fprintf(os.Stderr, "  nvclient [flags]                    (send typed INJECT/password message)\n\n")
 	fmt.Fprintf(os.Stderr, "Common flags:\n")
 	fmt.Fprintf(os.Stderr, "  -addr                 NovaKey server address (host:port)\n")
 	fmt.Fprintf(os.Stderr, "  -device-id            device ID to use\n")
@@ -34,11 +39,11 @@ func usage() {
 }
 
 type commonArgs struct {
-	addr                 string
-	deviceID             string
-	keyHex               string
-	serverKyberPubB64    string
-	password             string
+	addr              string
+	deviceID          string
+	keyHex            string
+	serverKyberPubB64 string
+	password          string
 }
 
 func parseCommon(fs *flag.FlagSet) *commonArgs {
@@ -58,10 +63,13 @@ func requireCryptoInputs(c *commonArgs) {
 	if c.serverKyberPubB64 == "" {
 		log.Fatal("must provide -server-kyber-pub-b64 (base64 kyber768_public from server_keys.json / pairing)")
 	}
+	if c.deviceID == "" {
+		log.Fatal("must provide -device-id (non-empty)")
+	}
 }
 
 func main() {
-	// Subcommand dispatch BEFORE flag.Parse()
+	// Subcommand dispatch BEFORE parsing default flags.
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "arm":
@@ -76,8 +84,19 @@ func main() {
 
 	fs := flag.NewFlagSet("nvclient", flag.ExitOnError)
 	fs.Usage = usage
+
+	// Make "--help" probes succeed (test scripts often do this)
+	help := fs.Bool("h", false, "show help")
+	help2 := fs.Bool("help", false, "show help")
+
 	c := parseCommon(fs)
-	fs.Parse(os.Args[1:])
+	_ = fs.Parse(os.Args[1:])
+
+	if *help || *help2 {
+		usage()
+		os.Exit(0)
+		return
+	}
 
 	requireCryptoInputs(c)
 
@@ -85,23 +104,40 @@ func main() {
 		log.Fatalf("initCryptoClient failed: %v", err)
 	}
 
-	if err := sendV3Frame(c.addr, msgTypeInject, []byte(c.password)); err != nil {
+	// Always send typed inner frame (no legacy mode).
+	inner, err := encodeInnerMessageFrame(c.deviceID, innerMsgTypeInject, []byte(c.password))
+	if err != nil {
+		log.Fatalf("encodeInnerMessageFrame: %v", err)
+	}
+
+	if err := sendV3OuterFrame(c.addr, inner); err != nil {
 		log.Fatalf("send failed: %v", err)
 	}
-	fmt.Printf("sent v3 Kyber+XChaCha encrypted password frame (msgType=%d)\n", msgTypeInject)
+	fmt.Printf("sent v3 Kyber+XChaCha encrypted password frame (inner msgType=%d)\n", innerMsgTypeInject)
 }
 
 func cmdApprove(args []string) int {
 	fs := flag.NewFlagSet("approve", flag.ContinueOnError)
 	fs.Usage = usage
+	fs.SetOutput(os.Stdout)
+
+	// Accept -h/--help so test_send.sh can probe support reliably.
+	help := fs.Bool("h", false, "show help")
+	help2 := fs.Bool("help", false, "show help")
 
 	c := parseCommon(fs)
-
-	legacyMagic := fs.Bool("legacy_magic", false, "send legacy approve as msgType=1 with payload==magic (for older servers)")
-	magic := fs.String("magic", "__NOVAKEY_APPROVE__", "legacy approve magic payload (used only with --legacy_magic)")
-
 	if err := fs.Parse(args); err != nil {
+		// If they asked for help, treat as success
+		if *help || *help2 {
+			usage()
+			return 0
+		}
 		return 2
+	}
+
+	if *help || *help2 {
+		usage()
+		return 0
 	}
 
 	requireCryptoInputs(c)
@@ -111,28 +147,24 @@ func cmdApprove(args []string) int {
 		return 1
 	}
 
-	mt := uint8(msgTypeApprove)
-	payload := []byte{}
-	label := "APPROVE control"
-
-	if *legacyMagic {
-		mt = uint8(msgTypeInject)
-		payload = []byte(*magic)
-		label = "LEGACY APPROVE magic"
+	inner, err := encodeInnerMessageFrame(c.deviceID, innerMsgTypeApprove, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "encodeInnerMessageFrame failed: %v\n", err)
+		return 1
 	}
 
-	if err := sendV3Frame(c.addr, mt, payload); err != nil {
+	if err := sendV3OuterFrame(c.addr, inner); err != nil {
 		fmt.Fprintf(os.Stderr, "send failed: %v\n", err)
 		return 1
 	}
 
-	fmt.Printf("sent v3 Kyber+XChaCha encrypted %s frame (msgType=%d)\n", label, mt)
+	fmt.Printf("sent v3 Kyber+XChaCha encrypted APPROVE control frame (inner msgType=%d)\n", innerMsgTypeApprove)
 	return 0
 }
 
-// sendV3Frame sends a single v3 frame to the daemon: [u16 length][payload] over TCP4.
-func sendV3Frame(addr string, msgType uint8, payload []byte) error {
-	frame, err := encryptV3Frame(msgType, payload)
+// sendV3OuterFrame sends a single v3 frame to the daemon: [u16 length][payload] over TCP4.
+func sendV3OuterFrame(addr string, innerBody []byte) error {
+	frame, err := encryptV3OuterFrame(innerBody)
 	if err != nil {
 		return err
 	}
@@ -158,22 +190,17 @@ func sendV3Frame(addr string, msgType uint8, payload []byte) error {
 	return nil
 }
 
-// encryptV3Frame builds the v3 payload:
-//   header = version || msgType || idLen || deviceID || kemCtLen || kemCt   (AAD)
-//   plaintext = timestamp(u64be) || payloadBytes
-//   out = header || nonce || aead(ciphertext)
+// encryptV3OuterFrame builds the v3 payload:
 //
-// NOTE: Relies on globals initialized by initCryptoClient():
-//   clientDeviceID, deviceStaticKey, serverEncapKey, deriveAEADKey()
-func encryptV3Frame(msgType uint8, payload []byte) ([]byte, error) {
+//   header = version || outerMsgType(=1) || idLen || deviceID || kemCtLen || kemCt   (AAD)
+//   plaintext = timestamp(u64be) || innerBody
+//   out = header || nonce || aead(ciphertext)
+func encryptV3OuterFrame(innerBody []byte) ([]byte, error) {
 	if deviceStaticKey == nil || len(deviceStaticKey) == 0 {
 		return nil, fmt.Errorf("device static key not initialized")
 	}
 	if serverEncapKey == nil || len(serverEncapKey) == 0 {
 		return nil, fmt.Errorf("server Kyber public key not initialized")
-	}
-	if msgType != msgTypeInject && msgType != msgTypeApprove {
-		return nil, fmt.Errorf("invalid msgType=%d", msgType)
 	}
 
 	idBytes := []byte(clientDeviceID)
@@ -200,10 +227,9 @@ func encryptV3Frame(msgType uint8, payload []byte) ([]byte, error) {
 		return nil, fmt.Errorf("NewX with derived key failed: %w", err)
 	}
 
-	// AAD header: version || msgType || idLen || deviceID || kemCtLen || kemCt
 	header := make([]byte, 0, 3+len(idBytes)+2+len(kemCt))
 	header = append(header, protocolVersion)
-	header = append(header, byte(msgType))
+	header = append(header, byte(outerMsgTypePassword))
 	header = append(header, idLen)
 	header = append(header, idBytes...)
 
@@ -212,11 +238,10 @@ func encryptV3Frame(msgType uint8, payload []byte) ([]byte, error) {
 	header = append(header, kemLenBuf[:]...)
 	header = append(header, kemCt...)
 
-	// plaintext = timestamp || payload
 	now := time.Now().Unix()
-	plaintext := make([]byte, 8+len(payload))
+	plaintext := make([]byte, 8+len(innerBody))
 	binary.BigEndian.PutUint64(plaintext[:8], uint64(now))
-	copy(plaintext[8:], payload)
+	copy(plaintext[8:], innerBody)
 
 	nonce := make([]byte, aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
@@ -229,6 +254,39 @@ func encryptV3Frame(msgType uint8, payload []byte) ([]byte, error) {
 	out = append(out, header...)
 	out = append(out, nonce...)
 	out = append(out, ct...)
+	return out, nil
+}
+
+func encodeInnerMessageFrame(deviceID string, msgType uint8, payload []byte) ([]byte, error) {
+	if deviceID == "" {
+		return nil, fmt.Errorf("deviceID required")
+	}
+	if msgType != innerMsgTypeInject && msgType != innerMsgTypeApprove {
+		return nil, fmt.Errorf("invalid inner msgType=%d", msgType)
+	}
+	if payload == nil {
+		payload = []byte{}
+	}
+
+	dev := []byte(deviceID)
+	if len(dev) > 0xFFFF {
+		return nil, fmt.Errorf("deviceID too long")
+	}
+
+	out := make([]byte, 0, 1+1+2+4+len(dev)+len(payload))
+	out = append(out, byte(innerFrameVersionV1))
+	out = append(out, byte(msgType))
+
+	var tmp2 [2]byte
+	binary.BigEndian.PutUint16(tmp2[:], uint16(len(dev)))
+	out = append(out, tmp2[:]...)
+
+	var tmp4 [4]byte
+	binary.BigEndian.PutUint32(tmp4[:], uint32(len(payload)))
+	out = append(out, tmp4[:]...)
+
+	out = append(out, dev...)
+	out = append(out, payload...)
 	return out, nil
 }
 

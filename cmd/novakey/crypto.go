@@ -22,6 +22,9 @@ const (
 	// Outer transport protocol (current)
 	protocolVersion = 3
 
+	// Outer msgType (must remain 1; approve/inject is inside the decrypted body)
+	msgTypePassword = 1
+
 	defaultDevicesFile = "devices.json"
 
 	maxClockSkewSec = 120 // allow up to ±120 seconds clock skew
@@ -41,7 +44,7 @@ type devicesConfigFile struct {
 	Devices []deviceConfig `json:"devices"`
 }
 
-// For v3 we no longer store a long-lived AEAD per device.
+// For v3 we do NOT store a long-lived AEAD per device.
 // We derive a fresh AEAD key per message from:
 //
 //   HKDF-SHA256( ikm = kemShared, salt = deviceStaticKey, info = "NovaKey v3 AEAD key" )
@@ -69,7 +72,7 @@ type rateWindow struct {
 
 // initCrypto loads server Kyber keys and per-device static keys.
 func initCrypto() error {
-	// 1. Load or create server Kyber keys (fills serverDecapKey / serverEncapKey).
+	// 1) Load or create server Kyber keys (fills serverDecapKey / serverEncapKey).
 	if err := loadOrCreateServerKeys(cfg.ServerKeysFile); err != nil {
 		return fmt.Errorf("loading server Kyber keys: %w", err)
 	}
@@ -77,7 +80,7 @@ func initCrypto() error {
 		return fmt.Errorf("serverDecapKey is nil after loadOrCreateServerKeys")
 	}
 
-	// 2. Load per-device static keys from devices.json.
+	// 2) Load per-device static keys from devices.json.
 	path := cfg.DevicesFile
 	if path == "" {
 		path = defaultDevicesFile
@@ -134,46 +137,63 @@ func deriveAEADKey(deviceKey, sharedKem []byte) ([]byte, error) {
 	return key, nil
 }
 
-// decryptMessageFrame decrypts a v3 outer frame and returns:
+// decryptMessageFrame decrypts a v3 outer frame and returns a typed *inner* message:
 //
-//   deviceID, msgType, payloadString
+// - If the decrypted plaintext after timestamp begins with a v1 typed message frame
+//   (from message_frame.go), it decodes it and returns MsgTypeInject/MsgTypeApprove.
+// - Otherwise it treats plaintext[8:] as a legacy password string and returns MsgTypeInject.
 //
-// Current (no-legacy) behavior:
-// - msgType is the OUTER msgType byte (1 = inject, 2 = approve).
-// - plaintext is: [u64 timestamp][payload bytes]
-// - payload bytes are interpreted as UTF-8 for inject; approve may be empty.
-func decryptMessageFrame(frame []byte) (string, uint8, string, error) {
-	deviceID, msgType, plaintext, nonce, err := decryptOuterV3(frame)
+// NOTE: Your nvclient now ALWAYS sends typed inner frames. This function is what makes
+// macOS/Linux/Windows all interpret those correctly.
+func decryptMessageFrame(frame []byte) (deviceID string, msgType uint8, payload []byte, err error) {
+	devID, plaintext, nonce, err := decryptOuterV3(frame)
 	if err != nil {
-		return "", 0, "", err
+		return "", 0, nil, err
 	}
-
 	if len(plaintext) < 8 {
-		return "", 0, "", fmt.Errorf("plaintext too short for timestamp: %d", len(plaintext))
+		return "", 0, nil, fmt.Errorf("plaintext too short for timestamp: %d", len(plaintext))
 	}
 
 	ts := int64(binary.BigEndian.Uint64(plaintext[:8]))
-	if err := validateFreshnessAndRate(deviceID, nonce, ts); err != nil {
-		return "", 0, "", err
+	if err := validateFreshnessAndRate(devID, nonce, ts); err != nil {
+		return "", 0, nil, err
 	}
 
 	body := plaintext[8:]
-	return deviceID, msgType, string(body), nil
+
+	// Typed inner frame?
+	if len(body) >= 1 && body[0] == byte(frameVersionV1) {
+		innerDev, innerType, innerPayload, derr := decodeMessageFrame(body)
+		if derr != nil {
+			return "", 0, nil, fmt.Errorf("invalid inner message frame: %w", derr)
+		}
+		if innerDev != devID {
+			return "", 0, nil, fmt.Errorf("inner deviceID mismatch (outer=%q inner=%q)", devID, innerDev)
+		}
+		return devID, innerType, innerPayload, nil
+	}
+
+	// Legacy: timestamp + UTF-8 password string
+	return devID, MsgTypeInject, body, nil
 }
 
 // decryptPasswordFrame parses and decrypts a v3 frame payload and returns (deviceID, password).
 //
-// Kept for compatibility with older main paths.
-// If msgType is approve, return approveMagicDefault() so older approve-magic logic still works.
+// Kept for compatibility with main loops that still operate on "password strings" and
+// magic approve payloads.
+//
+// If a typed approve message is received, we return approve_magic so the existing
+// isApproveControlPayload(password) path continues to work unchanged.
 func decryptPasswordFrame(frame []byte) (string, string, error) {
-	dev, msgType, payload, err := decryptMessageFrame(frame)
+	dev, mt, pl, err := decryptMessageFrame(frame)
 	if err != nil {
 		return "", "", err
 	}
-	if msgType == MsgTypeApprove {
+
+	if mt == MsgTypeApprove {
 		return dev, approveMagicDefault(), nil
 	}
-	return dev, payload, nil
+	return dev, string(pl), nil
 }
 
 func approveMagicDefault() string {
@@ -183,103 +203,93 @@ func approveMagicDefault() string {
 	return "__NOVAKEY_APPROVE__"
 }
 
-// decryptOuterV3 performs the outer v3 parsing, KEM decapsulation, AEAD open.
-// It returns (deviceID, msgType, plaintext, nonce, error).
+// decryptOuterV3 performs outer v3 parsing, KEM decapsulation, AEAD open.
+// It returns (deviceID, plaintext, nonce, error).
 //
 // v3 frame layout:
 //
-//   [0]               = version (0x03)
-//   [1]               = msgType (1=inject, 2=approve)
-//   [2]               = idLen
-//   [3 : 3+idLen]     = deviceID
-//   [3+idLen : ...]   = payload as follows:
-//
-//      H = 3 + idLen
-//      H..H+1               = kemCtLen (uint16, big-endian)
-//      H+2..H+2+kemCtLen-1   = kemCt (ML-KEM-768 ciphertext)
-//
-//      K = H + 2 + kemCtLen
-//      K..K+nonceLen-1       = nonce (XChaCha20-Poly1305, 24 bytes)
-//      K+nonceLen..end       = ciphertext (AEAD)
+//   [0]                 = version (0x03)
+//   [1]                 = msgType (MUST be 0x01 for outer password frame)
+//   [2]                 = idLen
+//   [3 : 3+idLen]       = deviceID
+//   [..]                = kemCtLen(u16be) || kemCt || nonce || ciphertext
 //
 // Plaintext layout (after AEAD decrypt):
 //
-//   [0:8]   = timestamp (uint64, unix seconds, big-endian)
-//   [8:...] = payload bytes (UTF-8 for inject; may be empty for approve)
+//   [0:8]   = timestamp (u64be unix seconds)
+//   [8:...] = body (typed inner frame OR legacy password string)
 //
 // AEAD AAD (header) is everything up to the start of the nonce:
-//   header = frame[0:K] = version || msgType || idLen || deviceID || kemCtLen || kemCt
-func decryptOuterV3(frame []byte) (string, uint8, []byte, []byte, error) {
+//   header = version || msgType || idLen || deviceID || kemCtLen || kemCt
+func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 	if len(frame) < 3 {
-		return "", 0, nil, nil, fmt.Errorf("frame too short: %d", len(frame))
+		return "", nil, nil, fmt.Errorf("frame too short: %d", len(frame))
 	}
 	if frame[0] != protocolVersion {
-		return "", 0, nil, nil, fmt.Errorf("unsupported protocol version: %d", frame[0])
+		return "", nil, nil, fmt.Errorf("unsupported protocol version: %d", frame[0])
 	}
-
-	msgType := frame[1]
-	if msgType != MsgTypeInject && msgType != MsgTypeApprove {
-		return "", 0, nil, nil, fmt.Errorf("unexpected msgType: %d", msgType)
+	if frame[1] != msgTypePassword {
+		return "", nil, nil, fmt.Errorf("unexpected msgType: %d", frame[1])
 	}
 
 	idLen := int(frame[2])
 	if idLen <= 0 {
-		return "", 0, nil, nil, fmt.Errorf("invalid idLen: %d", idLen)
+		return "", nil, nil, fmt.Errorf("invalid idLen: %d", idLen)
 	}
 	if len(frame) < 3+idLen {
-		return "", 0, nil, nil, fmt.Errorf("frame too short for idLen=%d", idLen)
+		return "", nil, nil, fmt.Errorf("frame too short for idLen=%d", idLen)
 	}
 	deviceID := string(frame[3 : 3+idLen])
 
 	if devices == nil {
-		return "", 0, nil, nil, fmt.Errorf("crypto not initialized (devices map nil)")
+		return "", nil, nil, fmt.Errorf("crypto not initialized (devices map nil)")
 	}
 	dev, ok := devices[deviceID]
 	if !ok {
-		return "", 0, nil, nil, fmt.Errorf("unknown deviceID: %q", deviceID)
+		return "", nil, nil, fmt.Errorf("unknown deviceID: %q", deviceID)
 	}
 	if serverDecapKey == nil {
-		return "", 0, nil, nil, fmt.Errorf("serverDecapKey is nil")
+		return "", nil, nil, fmt.Errorf("serverDecapKey is nil")
 	}
 
 	headerBaseEnd := 3 + idLen // start of kemCtLen
 	if len(frame) < headerBaseEnd+2 {
-		return "", 0, nil, nil, fmt.Errorf("frame too short for kemCtLen")
+		return "", nil, nil, fmt.Errorf("frame too short for kemCtLen")
 	}
 
 	kemCtLen := int(binary.BigEndian.Uint16(frame[headerBaseEnd : headerBaseEnd+2]))
 	if kemCtLen != mlkem768.CiphertextSize {
-		return "", 0, nil, nil, fmt.Errorf("invalid kemCtLen: got %d expected %d", kemCtLen, mlkem768.CiphertextSize)
+		return "", nil, nil, fmt.Errorf("invalid kemCtLen: got %d expected %d", kemCtLen, mlkem768.CiphertextSize)
 	}
 
 	kemStart := headerBaseEnd + 2
 	kemEnd := kemStart + kemCtLen
 	if len(frame) < kemEnd {
-		return "", 0, nil, nil, fmt.Errorf("frame too short for kemCt (len=%d)", kemCtLen)
+		return "", nil, nil, fmt.Errorf("frame too short for kemCt (len=%d)", kemCtLen)
 	}
 
 	kemCt := frame[kemStart:kemEnd]
-	header := frame[:kemEnd] // AAD = header up through kemCt
+	header := frame[:kemEnd] // AAD
 
 	sharedKem, err := mlkem768.Decapsulate(serverDecapKey, kemCt)
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("mlkem768.Decapsulate failed: %w", err)
+		return "", nil, nil, fmt.Errorf("mlkem768.Decapsulate failed: %w", err)
 	}
 
 	aeadKey, err := deriveAEADKey(dev.staticKey, sharedKem)
 	if err != nil {
-		return "", 0, nil, nil, err
+		return "", nil, nil, err
 	}
 
 	aead, err := chacha20poly1305.NewX(aeadKey)
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("NewX with derived key failed: %w", err)
+		return "", nil, nil, fmt.Errorf("NewX with derived key failed: %w", err)
 	}
 
 	rest := frame[kemEnd:]
 	nonceLen := aead.NonceSize()
 	if len(rest) < nonceLen+aead.Overhead() {
-		return "", 0, nil, nil, fmt.Errorf("frame too short for nonce+ciphertext")
+		return "", nil, nil, fmt.Errorf("frame too short for nonce+ciphertext")
 	}
 
 	nonce := rest[:nonceLen]
@@ -287,17 +297,16 @@ func decryptOuterV3(frame []byte) (string, uint8, []byte, []byte, error) {
 
 	plaintext, err := aead.Open(nil, nonce, ciphertext, header)
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("AEAD.Open failed for device %q: %w", deviceID, err)
+		return "", nil, nil, fmt.Errorf("AEAD.Open failed for device %q: %w", deviceID, err)
 	}
 
-	return deviceID, msgType, plaintext, nonce, nil
+	return deviceID, plaintext, nonce, nil
 }
 
 // validateFreshnessAndRate enforces timestamp window, replay protection, and rate limiting.
 func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	now := time.Now().Unix()
 
-	// Basic time window checks
 	if ts > now+maxClockSkewSec {
 		return fmt.Errorf("message timestamp is in the future (ts=%d, now=%d)", ts, now)
 	}
@@ -310,28 +319,25 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	replayMu.Lock()
 	defer replayMu.Unlock()
 
-	// ----- Replay protection -----
+	// Replay protection
 	m, ok := replayCache[deviceID]
 	if !ok {
 		m = make(map[string]int64)
 		replayCache[deviceID] = m
 	}
-
 	if prevTs, exists := m[nonceHex]; exists {
 		return fmt.Errorf("replay detected for device %q (nonce seen at ts=%d)", deviceID, prevTs)
 	}
 	m[nonceHex] = ts
 
-	// Cleanup stale nonces
 	for k, v := range m {
 		if now-v > replayCacheTTL {
 			delete(m, k)
 		}
 	}
 
-	// ----- Rate limiting -----
+	// Rate limiting
 	rw := rateState[deviceID]
-
 	if now-rw.windowStart >= 60 || rw.windowStart == 0 {
 		rw.windowStart = now
 		rw.count = 0
