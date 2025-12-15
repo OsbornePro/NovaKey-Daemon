@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"unicode"
 )
 
 func enforceTargetPolicy() error {
@@ -23,11 +22,11 @@ func enforceTargetPolicy() error {
 		return fmt.Errorf("getFocusedTarget: %w", err)
 	}
 
-	procKey := normProcKey(procRaw)  // e.g. "C:\...\msedge.exe" -> "msedge"
-	titleKey := normTitleKey(titleRaw) // normalized for substring checks
+	proc := canonProc(procRaw)
+	title := norm(titleRaw)
 
 	// Denylist first (wins)
-	if matchProcExact(procKey, cfg.DeniedProcessNames) || matchTitleSubstring(titleKey, cfg.DeniedWindowTitles) {
+	if matchProc(proc, cfg.DeniedProcessNames) || matchSubstring(title, cfg.DeniedWindowTitles) {
 		return fmt.Errorf("focused target denied (proc=%q title=%q)", procRaw, titleRaw)
 	}
 
@@ -48,7 +47,7 @@ func enforceTargetPolicy() error {
 		return nil
 	}
 
-	if matchProcExact(procKey, allowedProcs) || matchTitleSubstring(titleKey, allowedTitles) {
+	if matchProc(proc, allowedProcs) || matchSubstring(title, allowedTitles) {
 		return nil
 	}
 
@@ -56,7 +55,8 @@ func enforceTargetPolicy() error {
 }
 
 func builtInAllowedProcessNames() []string {
-	// Canonical process keys (NO .exe needed). We normalize anyway.
+	// Names are normalized via canonProc(), so include “logical” names;
+	// .exe and full paths are handled automatically.
 	return []string{
 		// Browsers
 		"msedge", "microsoft edge",
@@ -83,9 +83,10 @@ func builtInAllowedProcessNames() []string {
 		"aura",
 		"norton",
 		"avira",
-		"totalpassword", "total password",
+		"totalpassword",
+		"keepass",
 
-		// Testing / editors
+		// Editors for testing
 		"notepad",
 		"textedit",
 		"gedit",
@@ -94,115 +95,60 @@ func builtInAllowedProcessNames() []string {
 }
 
 func builtInAllowedWindowTitleHints() []string {
-	// Substring match on normalized title
 	return []string{
 		"chrome", "chromium", "brave", "firefox", "safari", "edge", "opera", "vivaldi",
-		"duckduckgo", "ecosia", "aloha",
-		"1password", "bitwarden", "dashlane", "keeper", "roboform", "nordpass", "proton", "lastpass",
-		"notepad", "textedit", "gedit", "kate",
+		"1password", "bitwarden", "dashlane", "keeper", "roboform", "nordpass", "proton",
+		"notepad", "textedit",
 	}
 }
 
-/*
-Normalization helpers
-
-Goal:
-- make "msedge", "msedge.exe", and "C:\...\msedge.exe" all compare equal
-- also tolerate friendly names like "Microsoft Edge" in config
-*/
-
-func normProcKey(s string) string {
+// canonProc normalizes a process name for matching:
+// - lowercases
+// - strips any directory
+// - strips trailing ".exe"
+func canonProc(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""
 	}
 
-	// If a full path sneaks in, reduce to basename.
+	// Strip paths (handles both / and \ via filepath.Base)
 	s = filepath.Base(s)
 
-	// Lowercase
-	s = strings.ToLower(s)
+	s = strings.ToLower(strings.TrimSpace(s))
 
-	// Strip common Windows extension (we compare canonical key without .exe)
-	if strings.HasSuffix(s, ".exe") {
-		s = strings.TrimSuffix(s, ".exe")
-	}
+	// Strip ".exe" if present
+	s = strings.TrimSuffix(s, ".exe")
 
-	// Collapse to alnum only so "Microsoft Edge" -> "microsoftedge"
-	s = stripToAlnum(s)
-
-	// Alias map to reduce common “friendly names” to canonical process keys
-	if aliased, ok := procAliases()[s]; ok {
-		return aliased
-	}
-	return s
-}
-
-func normTitleKey(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-
-	// lower; keep spaces (we’ll substring match)
-	s = strings.ToLower(s)
-
-	// Some apps include weird unicode separators; normalize by stripping control-ish chars.
-	// (We keep most characters; just drop non-printing/control.)
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, s)
+	// Collapse internal whitespace (optional, helps "Microsoft Edge" variants)
+	s = strings.Join(strings.Fields(s), " ")
 
 	return s
 }
 
-func stripToAlnum(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
+func norm(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
 }
 
-func procAliases() map[string]string {
-	// Keys must already be alnum-only + lowercase.
-	return map[string]string{
-		"microsoftedge": "msedge",
-		"googlechrome":  "chrome",
-		"bravebrowser":  "brave",
-		"duckduckgobrowser": "duckduckgo",
-		"protonpass":    "protonpass",
-		"protonpassapp": "protonpass",
-		"totalpassword": "totalpassword",
-		"onepassword":   "1password",
-	}
-}
-
-func matchProcExact(procKey string, list []string) bool {
-	if procKey == "" || len(list) == 0 {
+func matchProc(procCanon string, list []string) bool {
+	if procCanon == "" || len(list) == 0 {
 		return false
 	}
 	for _, it := range list {
-		if normProcKey(it) == procKey {
+		if canonProc(it) == procCanon {
 			return true
 		}
 	}
 	return false
 }
 
-func matchTitleSubstring(titleKey string, list []string) bool {
-	if titleKey == "" || len(list) == 0 {
+func matchSubstring(val string, list []string) bool {
+	if val == "" || len(list) == 0 {
 		return false
 	}
 	for _, it := range list {
-		n := strings.ToLower(strings.TrimSpace(it))
-		if n != "" && strings.Contains(titleKey, n) {
+		n := norm(it)
+		if n != "" && strings.Contains(val, n) {
 			return true
 		}
 	}
