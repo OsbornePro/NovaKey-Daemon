@@ -1,91 +1,98 @@
-#!/bin/bash
-# send_test.sh
-# Reads server kyber public key from server_keys.json, then uses nvclient to:
-#  1) (optional) arm via local Arm API if reachable
-#  2) (optional) send TWO-MAN approve (msgType=2) if enabled
-#  3) send the real password (msgType=1)
-#
-# Requirements (Linux):
-#  - bash
-#  - ./dist/nvclient-linux-amd64 present + executable
-#  - server_keys.json present (default in repo root)
-#  - Optional: arm_token.txt if Arm API enabled
-#
-# Optional tools:
-#  - jq (preferred) OR python3 fallback for JSON parsing
+#!/usr/bin/env bash
+# test_send.sh (portable: macOS bash 3.2 + Linux bash 4/5)
+# - Reads server Kyber public key from server_keys.json
+# - Optionally arms via local Arm API if reachable
+# - Optionally sends TWO-MAN approve control first
+# - Sends the real password frame
 
 set -euo pipefail
 
-NVCLIENT="${NVCLIENT:-./dist/nvclient-linux-amd64}"
+# -------------------------
+# Config (override via env)
+# -------------------------
+NVCLIENT="${NVCLIENT:-./dist/nvclient-linux-amd64}"     # mac: set NVCLIENT=./dist/nvclient-darwin-arm64 (or your name)
 SERVER_ADDR="${SERVER_ADDR:-127.0.0.1:60768}"
 
-# Arm API (optional)
+SERVER_KEYS_FILE="${SERVER_KEYS_FILE:-./server_keys.json}"
+
+DEVICE_ID="${DEVICE_ID:-phone}"
+KEY_HEX="${KEY_HEX:-7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234}"
+PASSWORD="${PASSWORD:-SuperStrongPassword123!}"
+
+# Arm (optional)
 ARM_ADDR="${ARM_ADDR:-127.0.0.1:60769}"
-ARM_TOKEN_FILE="${ARM_TOKEN_FILE:-arm_token.txt}"
+ARM_TOKEN_FILE="${ARM_TOKEN_FILE:-./arm_token.txt}"
 ARM_MS="${ARM_MS:-20000}"
 
 # Two-man (optional)
 TWO_MAN_ENABLED="${TWO_MAN_ENABLED:-true}"
 APPROVE_MAGIC="${APPROVE_MAGIC:-__NOVAKEY_APPROVE__}"
 
-# Device + secret
-DEVICE_ID="${DEVICE_ID:-phone}"
-KEY_HEX="${KEY_HEX:-7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234}"
-PASSWORD="${PASSWORD:-SuperStrongPassword123!}"
-
-# Server keys file
-SERVER_KEYS_FILE="${SERVER_KEYS_FILE:-server_keys.json}"
-
+# -------------------------
+# Helpers
+# -------------------------
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-[[ -x "$NVCLIENT" ]] || die "nvclient not found/executable at $NVCLIENT"
-[[ -f "$SERVER_KEYS_FILE" ]] || die "server keys file not found: $SERVER_KEYS_FILE"
+is_true() {
+  # Accept: true/1/yes/on/y (case-insensitive)
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|y|on) return 0 ;;
+    *)               return 1 ;;
+  esac
+}
 
-get_kyber_pub_b64() {
-  local path="$1"
+read_kyber_pub_b64() {
+  local f="$1"
+  [[ -f "$f" ]] || die "server keys file not found: $f"
+
+  # Prefer jq if available
   if command -v jq >/dev/null 2>&1; then
-    # -r strips quotes; also strip whitespace just in case
-    jq -r '.kyber768_public // empty' "$path" | tr -d ' \t\r\n'
-    return
+    jq -r '.kyber768_public // empty' "$f" | tr -d '[:space:]'
+    return 0
   fi
+
+  # Fallback: python3 one-liner (NO heredoc)
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; obj=json.load(open(sys.argv[1],"r",encoding="utf-8")); v=obj.get("kyber768_public",""); print("".join(str(v).split()))' "$f"
+    return 0
+  fi
+
+  # Last resort: sed (brittle but OK for simple JSON)
+  sed -n 's/.*"kyber768_public"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" | tr -d '[:space:]'
+}
+
+validate_b64() {
+  local b64="$1"
+  [[ -n "$b64" ]] || return 1
 
   if command -v python3 >/dev/null 2>&1; then
-    python3 - <<'PY' "$path"
-import json,sys
-p=sys.argv[1]
-with open(p,'r',encoding='utf-8') as f:
-    o=json.load(f)
-v=(o.get('kyber768_public') or '').strip()
-v=''.join(v.split())
-print(v)
-PY
-    return
+    python3 -c 'import base64,sys; base64.b64decode(sys.argv[1], validate=True)' "$b64" >/dev/null 2>&1 || return 1
+  fi
+  return 0
+}
+
+tcp_port_open() {
+  # Usage: tcp_port_open host port timeout_seconds
+  local host="$1" port="$2" t="${3:-1}"
+
+  # Prefer nc if present
+  if command -v nc >/dev/null 2>&1; then
+    nc -z -w "$t" "$host" "$port" >/dev/null 2>&1
+    return $?
   fi
 
-  die "need jq or python3 to parse $path"
+  # Bash /dev/tcp (works in bash on both mac/linux)
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$t" bash -c "cat < /dev/null > /dev/tcp/$host/$port" >/dev/null 2>&1
+    return $?
+  fi
+
+  # No timeout on stock macOS: best-effort quick connect
+  bash -c "cat < /dev/null > /dev/tcp/$host/$port" >/dev/null 2>&1
+  return $?
 }
 
-SERVER_KYBER_PUB_B64="$(get_kyber_pub_b64 "$SERVER_KEYS_FILE")"
-[[ -n "$SERVER_KYBER_PUB_B64" ]] || die "kyber768_public missing/empty in $SERVER_KEYS_FILE"
-
-# Quick TCP check (bash /dev/tcp)
-tcp_up() {
-  local hostport="$1"
-  local host="${hostport%:*}"
-  local port="${hostport#*:}"
-  # shellcheck disable=SC2086
-  timeout 1 bash -c "cat < /dev/null > /dev/tcp/${host}/${port}" >/dev/null 2>&1
-}
-
-echo "Click into the browser address bar (or focused field) now..."
-sleep 3
-
-# Best-effort fix for hardened arm_token perms
-if [[ -f "$ARM_TOKEN_FILE" ]]; then
-  chmod 600 "$ARM_TOKEN_FILE" 2>/dev/null || true
-fi
-
-send_payload () {
+send_payload() {
   local payload="$1"
   "$NVCLIENT" \
     -addr "$SERVER_ADDR" \
@@ -95,26 +102,44 @@ send_payload () {
     -server-kyber-pub-b64 "$SERVER_KYBER_PUB_B64"
 }
 
+# -------------------------
+# Main
+# -------------------------
+[[ -x "$NVCLIENT" ]] || die "nvclient not found/executable at: $NVCLIENT"
+
+SERVER_KYBER_PUB_B64="$(read_kyber_pub_b64 "$SERVER_KEYS_FILE")"
+[[ -n "$SERVER_KYBER_PUB_B64" ]] || die "kyber768_public missing/empty in $SERVER_KEYS_FILE"
+validate_b64 "$SERVER_KYBER_PUB_B64" || die "kyber768_public in $SERVER_KEYS_FILE is not valid base64"
+
+echo "Click into the browser address bar (or focused field) now..."
+sleep 3
+
+# Best-effort: lock down token file perms (mac/linux)
+if [[ -f "$ARM_TOKEN_FILE" ]]; then
+  chmod 600 "$ARM_TOKEN_FILE" 2>/dev/null || true
+fi
+
 # --- ARM (optional) ---
-if tcp_up "$ARM_ADDR"; then
+ARM_HOST="${ARM_ADDR%:*}"
+ARM_PORT="${ARM_ADDR##*:}"
+if [[ -n "$ARM_HOST" && -n "$ARM_PORT" ]] && tcp_port_open "$ARM_HOST" "$ARM_PORT" 1; then
   echo "[+] Arm API detected at $ARM_ADDR"
   [[ -f "$ARM_TOKEN_FILE" ]] || die "Arm API is up but token file not found: $ARM_TOKEN_FILE"
+
   echo "[+] Arming for ${ARM_MS}ms..."
-  "$NVCLIENT" arm --addr "$ARM_ADDR" --token_file "$ARM_TOKEN_FILE" --ms "$ARM_MS" || die "arming failed"
+  "$NVCLIENT" arm --addr "$ARM_ADDR" --token_file "$ARM_TOKEN_FILE" --ms "$ARM_MS"
 else
   echo "[-] Arm API not detected at $ARM_ADDR (continuing without arming)"
 fi
 
 # --- TWO-MAN approve (optional) ---
-if [[ "${TWO_MAN_ENABLED,,}" == "true" || "${TWO_MAN_ENABLED,,}" == "1" || "${TWO_MAN_ENABLED,,}" == "yes" ]]; then
+if is_true "$TWO_MAN_ENABLED"; then
   echo "[+] Sending TWO-MAN approval control payload..."
-  send_payload "$APPROVE_MAGIC" || die "approval payload send failed"
-  # keep this short; approval window is often 15s
+  send_payload "$APPROVE_MAGIC"
   sleep 0.2
-else
-  echo "[-] TWO-MAN disabled for this test (TWO_MAN_ENABLED=$TWO_MAN_ENABLED)"
 fi
 
+# --- Send real password ---
 echo "[+] Sending encrypted password frame to $SERVER_ADDR..."
 send_payload "$PASSWORD"
 echo "[+] Done."
