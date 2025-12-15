@@ -1,6 +1,6 @@
 module novakey
 
-go 1.25.3
+go 1.21
 
 require (
 	filippo.io/mlkem768 v0.0.0-20250818110517-29047ffe79fb
