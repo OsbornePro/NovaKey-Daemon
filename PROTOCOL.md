@@ -90,7 +90,7 @@ Treat this pairing blob as a secret.
 
 ---
 
-## 3. Outer framing
+## 3. Outer framing (TCP)
 
 At the TCP level:
 
@@ -103,27 +103,13 @@ At the TCP level:
 
 ---
 
-## 4. Message types
+## 4. Outer v3 payload layout (current)
 
-`msgType` is a single byte at `payload[1]`.
-
-Currently defined:
-
-* `1` = **Password** (injectable payload)
-* `2` = **Approve** (two-man approval control message)
-
-> **Compatibility note:** Some older clients may send approval as a password payload equal to `approve_magic`.
-> This behavior is optional and controlled by `legacy_approve_magic_enabled`.
-
----
-
-## 5. Payload layout (v3)
-
-The payload bytes are:
+The v3 payload bytes are:
 
 ```text
 [0]                = version (u8, must be 3)
-[1]                = msgType (u8)
+[1]                = outer msgType (u8, must be 1)
 [2]                = idLen (u8)
 [3 : 3+idLen]      = deviceID (bytes)
 
@@ -139,34 +125,52 @@ K = H + 2 + kemCtLen
 Notes:
 
 * `kemCtLen` is included for robustness/future-proofing.
-* With `filippo.io/mlkem768` today, the ciphertext is typically **1088 bytes**.
+* With `filippo.io/mlkem768` today, the ciphertext is **1088 bytes**.
 
-### 5.1 Associated Data (AAD)
+### 4.1 Associated Data (AAD)
 
 NovaKey authenticates (binds) the entire header **through the KEM ciphertext** as AAD:
 
 ```text
 AAD = payload[0 : K]
-    = version || msgType || idLen || deviceID || kemCtLen || kemCt
+    = version || outerMsgType || idLen || deviceID || kemCtLen || kemCt
 ```
 
-This prevents tampering with version/type/device routing fields **and** the KEM ciphertext bytes.
+This prevents tampering with version/device routing fields and the KEM ciphertext bytes.
 
 ---
 
-## 6. Plaintext layout inside AEAD
+## 5. Plaintext layout inside AEAD (current)
 
 After AEAD decryption:
 
 ```text
 [0..7]   = timestamp (uint64 big-endian unix seconds)
-[8..end] = payload bytes (UTF-8)
+[8..end] = inner message frame bytes
 ```
 
-Interpretation by message type:
+The **inner message frame** is a typed frame (v1) that carries “approve vs inject” explicitly.
 
-* `msgType=1` (Password): payload bytes are the password / secret string.
-* `msgType=2` (Approve): payload bytes are ignored (may be empty).
+---
+
+## 6. Inner message frame (typed) format (v1)
+
+Inner frame bytes:
+
+```text
+[0]   = innerVersion (u8) = 1
+[1]   = innerMsgType (u8) = 1 inject, 2 approve
+[2:4] = deviceIDLen (u16, big endian)
+[4:8] = payloadLen  (u32, big endian)
+[..]  = deviceID bytes (UTF-8)
+[..]  = payload bytes  (UTF-8)
+```
+
+Rules:
+
+* inner `deviceID` MUST match the outer `deviceID` (server rejects mismatch)
+* `innerMsgType=1` (Inject): payload bytes are the secret string (UTF-8)
+* `innerMsgType=2` (Approve): payload may be empty (ignored by server)
 
 ---
 
@@ -216,7 +220,8 @@ Server reverses the process:
 * `kemShared = MLKEM768_Decapsulate(serverSecret, kemCt)`
 * HKDF derive the same `K`
 * AEAD open with the same AAD
-* Parse timestamp + message bytes
+* Parse timestamp + inner frame bytes
+* Decode inner frame and enforce policies
 
 ---
 
@@ -245,7 +250,7 @@ Server enforces per-device accepted message limits using `max_requests_per_min`.
 These are **server policies**, not protocol changes:
 
 * **Arming gate:** blocks injection unless locally armed.
-* **Two-man mode:** requires a recent approve from the same device before injection.
+* **Two-man mode:** requires a recent approve (inner msgType=2) from the same device before injection.
 
 ---
 
@@ -261,11 +266,11 @@ Platform notes:
 
 * **Linux**
 
-  * X11/Xwayland: keystroke injection works
-  * Wayland native: focused app detection/typing is not implemented yet (clipboard fallback may be used)
+  * X11/XWayland: keystroke injection can work
+  * Wayland native: focused app detection/typing may be limited (clipboard fallback may be used)
 * **macOS**
 
-  * Uses Accessibility / AppleScript automation paths
+  * Uses Accessibility / automation paths
 * **Windows**
 
   * Uses safe control messaging where possible, otherwise synthetic typing fallback
@@ -274,11 +279,20 @@ Platform notes:
 
 ## 10. Files involved (reference)
 
-* `cmd/novakey/crypto.go` — framing parse + KEM/HKDF/AEAD + replay/rate/freshness
+* `cmd/novakey/crypto.go` — framing parse + KEM/HKDF/AEAD + replay/rate/freshness + inner frame decode
+* `cmd/novakey/message_frame.go` — inner typed message frame format
 * `cmd/novakey/keys.go` — server key generation/loading
 * `cmd/novakey/*_main.go` — TCP listener and dispatch
 * `cmd/nvclient/` — reference client implementation
 * `cmd/nvpair/` — pairing + device key management
 
 > **NOTE:** Device IDs are sent in plaintext for routing/logging. Do not use sensitive identifiers.
+
+```
+
+---
+
+If you also want, paste your current `server_config.yaml` schema/struct tags and I’ll tell you exactly which config keys should be removed vs. marked “deprecated/ignored” in the docs so it stays perfectly aligned with what the daemon actually reads.
+::contentReference[oaicite:0]{index=0}
+```
 

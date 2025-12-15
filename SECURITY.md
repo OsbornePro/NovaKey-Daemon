@@ -69,8 +69,17 @@ Session keys are single-use and not stored.
 
 ### Authenticated encryption (XChaCha20-Poly1305)
 
-* Passwords are encrypted and authenticated with AEAD.
+* Secrets are encrypted and authenticated with AEAD.
 * The server binds the header (including device ID and KEM ciphertext) as AAD to prevent tampering.
+
+### Typed message framing (approve vs inject)
+
+In current v3 usage, the server expects an **outer v3 frame** with a fixed outer type, and the decrypted plaintext carries a **typed inner message frame**:
+
+* inner msgType `1` = Inject (payload is the secret string)
+* inner msgType `2` = Approve (payload is empty/ignored)
+
+This avoids “magic string” controls and keeps policy decisions explicit.
 
 ### Freshness & replay protection
 
@@ -97,10 +106,7 @@ This reduces the impact of leaked pairing material by requiring a local “push-
 When enabled (`two_man_enabled: true`), injection requires:
 
 1) local arming, **and**
-2) a recent per-device approve message.
-
-The approve message is a protocol-level `msgType=2` frame.  
-Optionally, legacy behavior can be enabled to treat a password payload equal to `approve_magic` as approval (`legacy_approve_magic_enabled`).
+2) a recent per-device **typed approve** message (inner msgType=2).
 
 ### Local Arm API (loopback only)
 
@@ -129,8 +135,7 @@ NovaKey logs **never** include full secrets.
   * `log_dir` or `log_file`
   * `log_rotate_mb`, `log_keep`
 * When `log_redact: true` (default), NovaKey redacts:
-  * configured approve magic
-  * arm token (if available)
+  * arm tokens (if available)
   * long blob-like strings
   * obvious `token=`, `password=`, etc patterns
 
@@ -166,3 +171,4 @@ Thank you for helping keep NovaKey secure.
 
 — Robert H. Osborne (OsbornePro)
 Maintainer, NovaKey-Daemon
+

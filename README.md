@@ -18,6 +18,13 @@ It’s designed for a world where you don’t want to type high-value secrets (m
 
 NovaKey-Daemon v3 uses **ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305** with per-device secrets, freshness checks, replay protection, and per-device rate limiting.
 
+In addition, NovaKey supports safety controls:
+
+* arming (“push-to-type”)
+* two-man approval gating (per-device approve window)
+* injection safety rules (`allow_newlines`, `max_inject_len`)
+* target policy allow/deny lists
+
 * Protocol format: `PROTOCOL.md`
 * Security model: `SECURITY.md`
 
@@ -58,10 +65,14 @@ NovaKey-Daemon (`novakey`) runs on a workstation (Windows, macOS, Linux). Client
 2. decapsulates ML-KEM ciphertext (per-message shared secret)
 3. derives a per-message AEAD key via HKDF
 4. decrypts and validates (freshness / replay / rate limit)
-5. applies safety policies (arming, two-man, newline blocking, target policy)
-6. injects into the currently focused control (or clipboard fallback)
+5. parses the **inner typed message frame**
+6. applies safety policies (arming, two-man, newline blocking, target policy)
+7. injects into the currently focused control (or clipboard fallback)
 
 Protocol version is **v3**.
+
+> **Important:** In v3, the *outer* frame type is fixed (server expects outer `msgType=1`).
+> “Approve vs Inject” is represented by an **inner message frame** inside the AEAD plaintext.
 
 ---
 
@@ -80,6 +91,7 @@ Protocol version is **v3**.
 | ✅ | Optional two-man mode (arm + device approval required) |
 | ✅ | Local-only Arm API with token auth |
 | ✅ | Injection safety (`allow_newlines`, `max_inject_len`) |
+| ✅ | Target policy allow/deny lists |
 | ✅ | Config via YAML (preferred) or JSON fallback |
 | ✅ | Configurable logging to file w/ rotation + redaction |
 
@@ -102,8 +114,9 @@ Linux/macOS:
 ```bash
 ./dist/novakey-linux-amd64
 # or macOS
-./dist/NovaKey-darwin-arm64
-````
+./dist/novakey-darwin-amd64
+# (or arm64 build if you produce it)
+```
 
 Windows (PowerShell):
 
@@ -113,9 +126,9 @@ Windows (PowerShell):
 
 ### `nvclient` – reference/test client
 
-Sends v3 frames to the daemon.
+Sends v3 frames to the daemon using a typed inner message frame.
 
-Example:
+Inject example:
 
 ```bash
 ./dist/nvclient \
@@ -124,6 +137,16 @@ Example:
   -key-hex <device_key_hex> \
   -server-kyber-pub-b64 "<server_kyber768_public>" \
   -password "SuperStrongPassword123!"
+```
+
+Approve example (for two-man mode):
+
+```bash
+./dist/nvclient approve \
+  -addr 127.0.0.1:60768 \
+  -device-id phone \
+  -key-hex <device_key_hex> \
+  -server-kyber-pub-b64 "<server_kyber768_public>"
 ```
 
 #### Arm API helper
@@ -169,14 +192,13 @@ Safety fields:
 * `two_man_enabled`
 * `approve_window_ms`
 * `approve_consume_on_inject`
-* `approve_magic`
-* `legacy_approve_magic_enabled`
-* target policy allow/deny lists:
 
-  * `target_policy_enabled`
-  * `use_built_in_allowlist`
-  * `allowed_process_names`, `allowed_window_titles`
-  * `denied_process_names`, `denied_window_titles`
+Target policy allow/deny lists:
+
+* `target_policy_enabled`
+* `use_built_in_allowlist`
+* `allowed_process_names`, `allowed_window_titles`
+* `denied_process_names`, `denied_window_titles`
 
 Arm API fields:
 
@@ -193,6 +215,9 @@ Logging fields:
 * `log_stderr`
 * `log_redact`
 
+> Note: older configs may include fields like `approve_magic` / `legacy_*`.
+> Current protocol uses **typed approve messages**, not magic strings.
+
 ---
 
 ## Arming & Two-Man Safety
@@ -206,10 +231,7 @@ When `arm_enabled: true`, NovaKey will decrypt/validate frames but block injecti
 When `two_man_enabled: true`, injection requires:
 
 1. host is armed, and
-2. device has sent an **approve** message recently
-
-Preferred approval mechanism is protocol-level `msgType=2` (Approve).
-Optional legacy behavior: if `legacy_approve_magic_enabled: true`, a password payload equal to `approve_magic` is treated as approval.
+2. device has sent a recent **typed approve** message (inner msgType=2)
 
 ---
 
@@ -230,7 +252,7 @@ log_redact: true
 Notes:
 
 * Passwords are never logged in full (only a short preview).
-* With `log_redact: true`, NovaKey redacts configured approve magic, tokens (if available), and obvious secret patterns.
+* With `log_redact: true`, NovaKey redacts configured tokens (if available), long blob-like strings, and obvious secret patterns.
 
 ---
 
@@ -240,8 +262,8 @@ NovaKey targets “normal” apps and text fields. Some secure desktops and elev
 
 * **Linux**
 
-  * X11/XWayland: keystroke injection works
-  * Wayland native: typing/focused app detection is limited; clipboard fallback may be used
+  * X11 / XWayland: keystroke injection can work (focused detection via X11 tooling)
+  * Wayland native: focused-app detection / typing may be limited; clipboard fallback may be used
 * **macOS**
 
   * Requires Accessibility permissions for automation paths
@@ -290,9 +312,26 @@ Windows build script:
 ./dist/nvpair -id phone
 ```
 
-4. Focus a text field and test:
+4. Focus a text field and test injection:
 
 ```bash
+./dist/nvclient \
+  -addr 127.0.0.1:60768 \
+  -device-id phone \
+  -key-hex <device_key_hex> \
+  -server-kyber-pub-b64 "<server_kyber768_public>" \
+  -password "TestPassword123!"
+```
+
+5. If `two_man_enabled: true`, approve then inject:
+
+```bash
+./dist/nvclient approve \
+  -addr 127.0.0.1:60768 \
+  -device-id phone \
+  -key-hex <device_key_hex> \
+  -server-kyber-pub-b64 "<server_kyber768_public>"
+
 ./dist/nvclient \
   -addr 127.0.0.1:60768 \
   -device-id phone \
@@ -323,5 +362,3 @@ NovaKey-Daemon is licensed under the Apache License, Version 2.0. See `LICENSE.m
 * Security disclosures: see `SECURITY.md` (do not open security findings as public issues)
 
 ```
-
----
