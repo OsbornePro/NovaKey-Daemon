@@ -71,8 +71,9 @@ NovaKey-Daemon (`novakey`) runs on a workstation (Windows, macOS, Linux). Client
 
 Protocol version is **v3**.
 
-> **Important:** In v3, the *outer* frame type is fixed (server expects outer `msgType=1`).
-> “Approve vs Inject” is represented by an **inner message frame** inside the AEAD plaintext.
+> **Important (v3 framing):**
+> The v3 *outer* header `msgType` is **fixed to `1`** so the daemon accepts the frame.
+> “Approve vs Inject” is represented by a **typed inner message frame** inside the AEAD plaintext.
 
 ---
 
@@ -214,9 +215,6 @@ Logging fields:
 * `log_keep`
 * `log_stderr`
 * `log_redact`
-
-> Note: older configs may include fields like `approve_magic` / `legacy_*`.
-> Current protocol uses **typed approve messages**, not magic strings.
 
 ---
 
@@ -361,4 +359,3 @@ NovaKey-Daemon is licensed under the Apache License, Version 2.0. See `LICENSE.m
 * Support: `support@novakey.app`
 * Security disclosures: see `SECURITY.md` (do not open security findings as public issues)
 
-```

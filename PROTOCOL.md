@@ -1,4 +1,4 @@
-# NovaKey-Daemon Protocol v3 (ML-KEM-768 + XChaCha20)
+# NovaKey-Daemon Protocol v3 (ML-KEM-768 + XChaCha20-Poly1305)
 
 **Status:** implemented  
 **Scope:** Typing daemon (Linux / macOS / Windows) ⇄ clients (`nvclient`, future phone app)
@@ -109,7 +109,7 @@ The v3 payload bytes are:
 
 ```text
 [0]                = version (u8, must be 3)
-[1]                = outer msgType (u8, must be 1)
+[1]                = outer msgType (u8, fixed to 1 in v3)
 [2]                = idLen (u8)
 [3 : 3+idLen]      = deviceID (bytes)
 
@@ -126,6 +126,8 @@ Notes:
 
 * `kemCtLen` is included for robustness/future-proofing.
 * With `filippo.io/mlkem768` today, the ciphertext is **1088 bytes**.
+* The daemon rejects frames where `outer msgType != 1`.
+  “Approve vs Inject” is represented only in the **inner** message frame.
 
 ### 4.1 Associated Data (AAD)
 
@@ -291,8 +293,3 @@ Platform notes:
 ```
 
 ---
-
-If you also want, paste your current `server_config.yaml` schema/struct tags and I’ll tell you exactly which config keys should be removed vs. marked “deprecated/ignored” in the docs so it stays perfectly aligned with what the daemon actually reads.
-::contentReference[oaicite:0]{index=0}
-```
-

@@ -4,6 +4,8 @@
 
 NovaKey-Daemon v3 uses **ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305**, plus timestamp freshness checks, replay protection, and per-device rate limiting. NovaKey also supports optional **arming** and **two-man** controls to reduce risk from compromised device pairing material.
 
+> Reviewer note: Please test only on systems you own/operate and do not expose your test daemon to the public Internet. This project is designed for LAN/local testing and normal desktop sessions.
+
 ---
 
 ## Supported Versions
@@ -74,12 +76,14 @@ Session keys are single-use and not stored.
 
 ### Typed message framing (approve vs inject)
 
-In current v3 usage, the server expects an **outer v3 frame** with a fixed outer type, and the decrypted plaintext carries a **typed inner message frame**:
+In current v3 usage, the daemon expects an **outer v3 frame** with a fixed outer type, and the decrypted plaintext carries a **typed inner message frame**:
 
 * inner msgType `1` = Inject (payload is the secret string)
 * inner msgType `2` = Approve (payload is empty/ignored)
 
 This avoids “magic string” controls and keeps policy decisions explicit.
+
+> There is no “legacy approve magic” mode in current v3 framing.
 
 ### Freshness & replay protection
 
@@ -169,6 +173,5 @@ If an attacker obtains a device secret (pairing JSON/QR or `devices.json`):
 
 Thank you for helping keep NovaKey secure.
 
-— Robert H. Osborne (OsbornePro)
+— Robert H. Osborne (OsbornePro)  
 Maintainer, NovaKey-Daemon
-
