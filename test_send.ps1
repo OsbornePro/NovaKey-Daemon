@@ -19,8 +19,8 @@ Define the password to type
 .PARAMETER KeyHex
 Define the device secret
 
-.PARAMETER ServerKyberPubBase64
-Define the base64 value of the public Kyber certificate
+.PARAMETER ServerKeysFile
+Define file containing the servers kyber key values
 
 .PARAMETER ArmAddress
 Arm API address (local only)
@@ -31,6 +31,11 @@ Path to arm token file
 .PARAMETER ArmMs
 Arm duration in milliseconds
 
+.PARAMETER TwoManEnabled
+Handle when two man is enabled
+
+.PARAMETER ApproveMagic
+Define the approve magic secret
 
 .EXAMPLE
 PS> ."$env:USERPROFILE\Downloads\NovaKey-Daemon-main\NovaKey-Daemon-main\test_send.ps1"
@@ -59,86 +64,143 @@ Contact: security@novakey.app
 Last Modified: 12/14/2025
 #>
 [CmdletBinding()]
+param(
+    [Parameter(Mandatory=$False)]
+    [String]$Address = "127.0.0.1:60768",
+
+    [Parameter(Mandatory=$False)]
+    [String]$DeviceID = "phone",
+
+    [Parameter(Mandatory=$False)]
+    [String]$Password = "SuperStrongPassword123!",
+
+    [Parameter(Mandatory=$False)]
+    [String]$KeyHex = "7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234",
+
+    [Parameter(Mandatory=$False)]
+    [String]$ServerKeysFile = ".\server_keys.json",
+
+    [Parameter(Mandatory=$False)]
+    [String]$ArmAddress = "127.0.0.1:60769",
+
+    [Parameter(Mandatory=$False)]
+    [String]$ArmTokenFile = ".\arm_token.txt",
+
+    [Parameter(Mandatory=$False)]
+    [Int]$ArmMs = 20000,
+
+    [Parameter(Mandatory=$False)]
+    [Bool]$TwoManEnabled = $True,
+
+    [Parameter(Mandatory=$False)]
+    [String]$ApproveMagic = "__NOVAKEY_APPROVE__"
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$ServerAddr = $Address
+$NvClient = ".\dist\nvclient.exe"
+
+Function Test-TcpPort {
     param(
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [String]$Address = '127.0.0.1:60768',
+        [Parameter(Mandatory=$True)][String]$ComputerName,
+        [Parameter(Mandatory=$True)][Int]$Port,
+        [Int]$TimeoutMs = 300
+    )
+    Try {
+        $C = New-Object System.Net.Sockets.TcpClient
+        $Iar = $C.BeginConnect($ComputerName, $Port, $Null, $Null)
+        If (-not $Iar.AsyncWaitHandle.WaitOne($TimeoutMs, $False)) { $C.Close(); Return $False }
+        $C.EndConnect($Iar) | Out-Null
+        $C.Close()
+        Return $True
+    } Catch { Return $False }
+}
 
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [String]$DeviceID = "phone",
+Function Get-ServerKyberPubB64 {
+    param([Parameter(Mandatory=$True)][String]$Path)
 
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [String]$Password ="SuperStrongPassword123!",
+    If (!(Test-Path -Path $Path)) {
+        Throw "server keys file not found: $Path"
+    }
 
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [String]$KeyHex = "7f0c9e6b3a8d9c0b9a45f32caf51bc0f7a83f663e27aa4b4ca9e5216a28e1234",
+    $Raw = Get-Content -Raw -Path $Path
+    $Obj = $Raw | ConvertFrom-Json
 
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [String]$ServerKyberPubBase64 ="wgkdGfeAyuqswle8f9e9Aagxc1gQr8ZZhpu2OrIlLZIadRlxMPRWEiWCf+YVfhlsVsHIb9amBboFxuOJxpwXVCiUzEmhW1GSvRAtRGk5NGRQLMdqLhTIrCcY//JKThWJauwjJmC0+6CwhUvHUNpzhQdYRsLMdcN7PxaNu1YfZ+se/5kYmuUfvTQYdUycmGGTI8KUGqFXZAasXgYO9eS/QjchYfg/PBorutxsXempesafyrQly/k4/OiosyzOLfYqMsKjH0c8ftXJCEZ/hSuZkFU7ZQSIadMXSPQkgGk5fiJEmJAoNhvDbhmNdRddpRcGX6obxCOjREpl8pxkA1XF1/SMw9dtddwRPGrPh8oUmBEd9gltDzqMa4yxz/hrj8NF6NIWXHW7GZyZIjwetUt8jBilTZeqIcMwkwtyOHyRzwxyQHx5ncgg2lpZYDKIXlEGO5wHfhq2QbDGkhxXj7LPpuKDHUdPe3TEN9cgrjeMHSZx60jEWxuqiYwGNaSr0WgmKBCFGEK5xblimnqJTXpQDZdyVyo0M7RVPdtTKxtmwAnNxFqGVNd0bWYcuji3ACOKb9wVi2VaaPeQDrYYrqpYpJqHhIZtNJKJ+zwEPDMDhfQ+q7gkd9cR4/INkhSTyhsnmhaipdAZRqBjWoVRcosHaYFbpGVFO+KA9iFDEJSA38EYyPVDsLk7WovBvAsmFoJEUcOZTEOuMoWqn+oYTMAAyXUmtXxCzPx2P4tq31NMotKnAIobfdA7x2x60YEwupssMXRzXdlCStcHHPCdelwKBicO/4agVXl1PKFyYVEl2SoA1Ss+oqwVVWanS3MrqvVSVeg4AHN7KcUDseVgm0UAGCiONoByviYT5Tdg9eeCRYS0m0xQT5uTlRWHO3kriquLniBcS2FBGdtnwhnIwDtd2ptsnpCsVJkFGTJckcIPNdBRgMG0nOSmXaU3ttsSCZtrg2RVMdApjTVOuWQaocgDeLI9iFe7fOQYM3OHu/iErkldXeVaJKiOfeu8inVG3/gJl3pJ/DcCjuuVF6NQjwuJ6BE3OSsYkeqs1vutEaOmsfAPjATPhSMWwLu+RqK/FqetooyqeKgPejRLWTJ+6HSr3eDPeax/J1ZdCMYwd3sDTFdAJXctDVY9d8KcgfIET0ehAPK2d9Fo6fqH98V+4WJ77bEJ+PMVGPAp1ApVuLg966xSzRh6Zjw4VyA+ItZpTiZPyXiPgKmDFurLhQImMNIJC9XJcgAZvlsC7fdPhnRvNduD3TueE8sEpMkt5UuZQcvJUbY7Etq3IgU3YPOpaIlF+9nME3gorxeEI0ePPjZWVlwihRkPJuEjXDQg3fxxPia64FZaOAkMw6RVpucQ51MzBSJBybe8dPum8Cdi7bpyDdKnvvDI3TqPFhYmLSo+MIpVHtrNvQeryQmax+CN6WOGlDRftKApkrwUvkGmdkte6fdeEEFQH2RlMmRmJiJIHKMoFCw2iKQAclqZfHMKEyFWE8wWceQV2LvHeQEy3RbM21QALCqTYdkrn4dcx5QX/tssHIglSWeutK1hTKrbAn2yyVlmSfVxKfqiE48cYQSXLbk="
+    If (-not $Obj.kyber768_public) {
+        Throw "server_keys.json missing kyber768_public"
+    }
 
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [String]$ArmAddress = "127.0.0.1:60769",
+    # normalize: trim and remove any whitespace
+    $B64 = ($Obj.kyber768_public.ToString()).Trim()
+    $B64 = ($B64 -replace '\s+', '')
 
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [String]$ArmTokenFile = ".\arm_token.txt",
+    # validate base64 early (so nvclient doesn't fail later)
+    Try { [Void][Convert]::FromBase64String($B64) }
+    Catch { Throw "kyber768_public is not valid base64: $($_.Exception.Message)" }
 
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [Int]$ArmMs = 20000
-    )  # End param
+    Return $B64
+}
 
-If (!(Test-Path -Path .\dist\nvclient.exe)) {
-    go build -o .\dist\nvclient.exe .\cmd\nvclient
-}  # End If
+# Ensure nvclient exists
+If (!(Test-Path -Path $NvClient)) {
+    Write-Information -MessageData "[*] nvclient.exe not found; building it..."
+    If (!(Test-Path -Path ".\dist")) { New-Item -ItemType Directory -Path ".\dist" | Out-Null }
+    go build -o $NvClient .\cmd\nvclient
+}
+If (!(Test-Path -Path $NvClient)) { Throw "nvclient not found at $NvClient" }
 
+# Read kyber pubkey from server_keys.json
+$ServerKyberPubBase64 = Get-ServerKyberPubB64 -Path $ServerKeysFile
+
+# --- ARM (optional) ---
 Try {
+    $ArmHost = $ArmAddress.Split(":")[0]
+    $ArmPort = [int]$ArmAddress.Split(":")[1]
 
-    $ArmHost, $ArmPort = $ArmAddress.Split(":")
-    $ArmPort = [Int]$ArmPort
-
-    # Fast check: if port is listening on local machine
-    $IsListening = Test-NetConnection -ComputerName $ArmHost -Port $ArmPort -InformationLevel Quiet
-
-    If ($IsListening) {
-
+    If (Test-TcpPort -ComputerName $ArmHost -Port $ArmPort -TimeoutMs 300) {
         Write-Information -MessageData "[+] Arm API detected at $ArmAddress"
+
         If (!(Test-Path -Path $ArmTokenFile)) {
             Throw "Arm API is up but token file not found: $ArmTokenFile"
-        }  # End If
+        }
 
-        Write-Information -MessageData "[+] Arming for ${ArmMs}ms"
-        & .\dist\nvclient.exe arm --addr $ArmAddress --token_file $ArmTokenFile --ms $ArmMs
-        If ($LASTEXITCODE -ne 0) {
-            Throw "Arming failed (exit code $LASTEXITCODE)"
-        }  # End If
+        Write-Information -MessageData "[+] Arming for ${ArmMs}ms..."
+        & $NvClient arm --addr $ArmAddress --token_file $ArmTokenFile --ms $ArmMs | Out-Host
+        If ($LASTEXITCODE -ne 0) { Throw "Arming failed (exit code $LASTEXITCODE)" }
     } Else {
         Write-Warning -Message "[!] Arm API not detected at $ArmAddress (continuing without arming)"
-    }  # End If Else
-
+    }
 } Catch {
-    Throw "Arm step skipped/failed: $($Error[0].Exception.Message)"
-}  # End Try Catch
+    Throw "Arm step skipped/failed: $($_.Exception.Message)"
+}
 
-# --- SENDS FRAME ---
+# --- TWO-MAN approve (required If enabled) ---
+If ($TwoManEnabled) {
+    Write-Information -MessageData "[+] Sending TWO-MAN approval control payload..."
+    & $NvClient `
+        -addr $ServerAddr `
+        -device-id $DeviceID `
+        -password $ApproveMagic `
+        -key-hex $KeyHex `
+        -server-kyber-pub-b64 $ServerKyberPubBase64 | Out-Host
+
+    If ($LASTEXITCODE -ne 0) { Throw "Two-Man approve send failed (exit code $LASTEXITCODE)" }
+}
+
+# --- Send real password ---
 Write-Warning -Message "Click into the browser address bar or somewhere to test the typing that will happen"
 Start-Sleep -Seconds 3
-.\dist\nvclient.exe `
-    -addr $Address `
+
+Write-Information -MessageData "[+] Sending encrypted password frame to $ServerAddr..."
+& $NvClient `
+    -addr $ServerAddr `
     -device-id $DeviceID `
     -password $Password `
     -key-hex $KeyHex `
-    -server-kyber-pub-b64 $ServerKyberPubBase64
+    -server-kyber-pub-b64 $ServerKyberPubBase64 | Out-Host
+
+If ($LASTEXITCODE -ne 0) { Throw "Password send failed (exit code $LASTEXITCODE)" }
+
+Write-Information -MessageData "[+] Done."
