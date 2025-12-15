@@ -18,6 +18,19 @@ type ServerConfig struct {
 	DevicesFile       string `json:"devices_file" yaml:"devices_file"`
 	ServerKeysFile    string `json:"server_keys_file" yaml:"server_keys_file"`
 
+	// --------------------
+	// Logging (optional)
+	// --------------------
+	// If LogFile is set, logs go to that file (with rotation).
+	// Else if LogDir is set, logs go to LogDir/novakey.log (with rotation).
+	// If neither is set, logs go to stderr only.
+	LogFile     string `json:"log_file" yaml:"log_file"`
+	LogDir      string `json:"log_dir" yaml:"log_dir"`
+	LogRotateMB int    `json:"log_rotate_mb" yaml:"log_rotate_mb"` // default 10
+	LogKeep     int    `json:"log_keep" yaml:"log_keep"`           // default 10
+	LogStderr   *bool  `json:"log_stderr" yaml:"log_stderr"`       // default true
+	LogRedact   *bool  `json:"log_redact" yaml:"log_redact"`       // default true
+
 	// Arm gate (OFF by default)
 	ArmEnabled         bool  `json:"arm_enabled" yaml:"arm_enabled"`
 	ArmDurationMs      int   `json:"arm_duration_ms" yaml:"arm_duration_ms"`
@@ -37,12 +50,11 @@ type ServerConfig struct {
 	MaxInjectLen  int  `json:"max_inject_len" yaml:"max_inject_len"`
 
 	// Two-man items
-	TwoManEnabled          bool   `json:"two_man_enabled" yaml:"two_man_enabled"`
-	ApproveWindowMs        int    `json:"approve_window_ms" yaml:"approve_window_ms"`
-	ApproveConsumeOnInject *bool  `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
-	ApproveMagic           string `json:"approve_magic" yaml:"approve_magic"`
-    LegacyApproveMagicEnabled bool `json:"legacy_approve_magic_enabled" yaml:"legacy_approve_magic_enabled"`
-
+	TwoManEnabled               bool   `json:"two_man_enabled" yaml:"two_man_enabled"`
+	ApproveWindowMs             int    `json:"approve_window_ms" yaml:"approve_window_ms"`
+	ApproveConsumeOnInject      *bool  `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
+	ApproveMagic                string `json:"approve_magic" yaml:"approve_magic"`
+	LegacyApproveMagicEnabled   bool   `json:"legacy_approve_magic_enabled" yaml:"legacy_approve_magic_enabled"`
 
 	// Target policy (allow/deny of focused app)
 	TargetPolicyEnabled   bool     `json:"target_policy_enabled" yaml:"target_policy_enabled"`
@@ -84,6 +96,11 @@ func loadConfig() error {
 	}
 
 	applyDefaults()
+
+	// IMPORTANT: initialize logging after defaults are applied.
+	// This avoids needing to edit platform mains.
+	initLoggingFromConfig()
+
 	return nil
 }
 
@@ -117,6 +134,22 @@ func applyDefaults() {
 	}
 	if cfg.ServerKeysFile == "" {
 		cfg.ServerKeysFile = "server_keys.json"
+	}
+
+	// Logging defaults
+	if cfg.LogRotateMB == 0 {
+		cfg.LogRotateMB = 10
+	}
+	if cfg.LogKeep == 0 {
+		cfg.LogKeep = 10
+	}
+	if cfg.LogStderr == nil {
+		v := true
+		cfg.LogStderr = &v
+	}
+	if cfg.LogRedact == nil {
+		v := true
+		cfg.LogRedact = &v
 	}
 
 	// Arm defaults
@@ -162,9 +195,6 @@ func applyDefaults() {
 	}
 
 	// Target policy defaults
-	// Default: disabled (no restriction), but if enabled we default to built-in allowlist for safety.
-	// You can explicitly set use_built_in_allowlist:false and provide your own lists.
-	// (No-op if TargetPolicyEnabled is false.)
 	if cfg.TargetPolicyEnabled && !cfg.UseBuiltInAllowlist &&
 		len(cfg.AllowedProcessNames) == 0 && len(cfg.AllowedWindowTitles) == 0 &&
 		len(cfg.DeniedProcessNames) == 0 && len(cfg.DeniedWindowTitles) == 0 {

@@ -22,12 +22,6 @@ func logReqf(id uint64, format string, args ...any) {
 	log.Printf(prefix+format, args...)
 }
 
-// Optional: use for explicitly-auditable events (blocks/denies/arming/etc.)
-func logSecurityf(id uint64, format string, args ...any) {
-	prefix := "[" + formatReqID(id) + "] SECURITY: "
-	log.Printf(prefix+format, args...)
-}
-
 func formatReqID(id uint64) string {
 	return "req:" + itoa64(id)
 }
@@ -62,47 +56,54 @@ func safePreview(s string) string {
 }
 
 // --------------------
-// Global log redaction
+// Log init + redaction
 // --------------------
-//
-// Call initLoggingFromConfig() once after loadConfig() in each OS main().
-// This installs a writer that scrubs secrets from ALL log output.
 
 var (
 	logInitOnce sync.Once
 
 	redactMu sync.RWMutex
-	redactOn = true
 	secrets  = map[string]struct{}{}
 )
 
-// initLoggingFromConfig installs a log writer that redacts sensitive values.
-// It is safe to call multiple times (only first call takes effect).
 func initLoggingFromConfig() {
 	logInitOnce.Do(func() {
-		// Default: redact on (can disable for local debugging)
-		redactOn = envBoolDefault("NOVAKEY_LOG_REDACT", true)
+		outs := selectLogOutputs()
 
-		// Scrub output line-by-line so partial writes don’t bypass redaction.
-		log.SetOutput(newLineSanitizingWriter(os.Stderr))
+		var dst io.Writer
+		switch {
+		case outs.writer != nil && outs.toStderr:
+			dst = io.MultiWriter(os.Stderr, outs.writer)
+		case outs.writer != nil:
+			dst = outs.writer
+		default:
+			dst = os.Stderr
+		}
 
-		// Keep your existing flags if you want; this adds microseconds for debugging.
+		log.SetOutput(newLineSanitizingWriter(dst))
 		log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
-		// Seed known secrets (best-effort, no failures if absent)
 		seedSecretsFromConfig()
 	})
 }
 
+func loggingRedactEnabled() bool {
+	if cfg.LogRedact == nil {
+		return true
+	}
+	return *cfg.LogRedact
+}
+
 func seedSecretsFromConfig() {
-	// Two-man magic (treat as sensitive-adjacent)
+	// Two-man approve magic (never log this raw)
 	magic := cfg.ApproveMagic
 	if magic == "" {
 		magic = "__NOVAKEY_APPROVE__"
 	}
 	addSecret(magic)
 
-	// Arm token (real secret)
+	// If token file already exists, register its contents as a secret.
+	// (Token may be created later by startArmAPI; that's fine.)
 	if cfg.ArmTokenFile != "" {
 		if b, err := os.ReadFile(cfg.ArmTokenFile); err == nil {
 			t := strings.TrimSpace(string(b))
@@ -111,8 +112,6 @@ func seedSecretsFromConfig() {
 			}
 		}
 	}
-
-	// If you add other secrets later (device keys, etc.), add them here.
 }
 
 func addSecret(s string) {
@@ -148,8 +147,7 @@ func (w *lineSanitizingWriter) Write(p []byte) (int, error) {
 		if i < 0 {
 			break
 		}
-
-		line := string(b[:i+1]) // include newline
+		line := string(b[:i+1])
 		w.buf.Next(i + 1)
 
 		out := redactLine(line)
@@ -157,48 +155,35 @@ func (w *lineSanitizingWriter) Write(p []byte) (int, error) {
 			return n, err
 		}
 	}
-
 	return n, nil
 }
 
 func redactLine(line string) string {
+	if !loggingRedactEnabled() {
+		return line
+	}
+
 	redactMu.RLock()
-	on := redactOn
-	// snapshot secrets so we don't hold lock while processing
 	localSecrets := make([]string, 0, len(secrets))
 	for k := range secrets {
 		localSecrets = append(localSecrets, k)
 	}
 	redactMu.RUnlock()
 
-	if !on {
-		return line
-	}
-
 	out := line
-
-	// 1) Exact known secrets
 	for _, sec := range localSecrets {
-		if sec == "" {
-			continue
-		}
-		if strings.Contains(out, sec) {
+		if sec != "" && strings.Contains(out, sec) {
 			out = strings.ReplaceAll(out, sec, "[REDACTED]")
 		}
 	}
 
-	// 2) Heuristic: redact huge base64-ish blobs (Kyber keys, etc.)
 	out = redactLongBlobs(out)
-
-	// 3) Defensive: scrub common key=value hints (future-proofing)
 	out = redactKeyValueHints(out)
-
 	return out
 }
 
+// Redact long base64/hex-ish blobs (like pubkeys) if they ever land in logs.
 func redactLongBlobs(s string) string {
-	// Replace long runs of base64-ish characters.
-	// Intentionally heuristic: better to over-redact than leak.
 	const minLen = 120
 	const blobChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-"
 
@@ -214,7 +199,6 @@ func redactLongBlobs(s string) string {
 			}
 			continue
 		}
-
 		if runStart != -1 {
 			runLen := i - runStart
 			if runLen >= minLen {
@@ -226,7 +210,6 @@ func redactLongBlobs(s string) string {
 		}
 		b.WriteByte(c)
 	}
-
 	if runStart != -1 {
 		runLen := len(s) - runStart
 		if runLen >= minLen {
@@ -235,17 +218,16 @@ func redactLongBlobs(s string) string {
 			b.WriteString(s[runStart:])
 		}
 	}
-
 	return b.String()
 }
 
+// Redact obvious key/value hints.
 func redactKeyValueHints(s string) string {
 	keys := []string{
 		"password=", "pass=", "secret=", "token=", "key_hex=", "kyber=", "aead=",
 	}
 	out := s
 	lo := strings.ToLower(out)
-
 	for _, k := range keys {
 		idx := strings.Index(lo, k)
 		if idx < 0 {
@@ -266,20 +248,5 @@ func redactKeyValueHints(s string) string {
 		}
 	}
 	return out
-}
-
-func envBoolDefault(name string, def bool) bool {
-	v := strings.TrimSpace(os.Getenv(name))
-	if v == "" {
-		return def
-	}
-	switch strings.ToLower(v) {
-	case "1", "true", "yes", "y", "on":
-		return true
-	case "0", "false", "no", "n", "off":
-		return false
-	default:
-		return def
-	}
 }
 

@@ -28,6 +28,7 @@ func startArmAPI() {
 	// Token init (create if missing, validate perms on Unix).
 	if err := initArmTokenFile(cfg.ArmTokenFile); err != nil {
 		log.Printf("[arm] token init failed: %v", err)
+        addSecret(cfg.ArmTokenFile)
 		return
 	}
 

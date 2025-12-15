@@ -3,6 +3,13 @@ max_payload_len: 4096
 max_requests_per_min: 60
 devices_file: "devices.json"
 server_keys_file: "server_keys.json"
+log_dir: "./logs"          # or "/var/log/novakey" on Linux
+# log_stderr: false # Wanted on linux installs
+# log_file: "./logs/novakey.log"   # optional; overrides log_dir if set
+log_rotate_mb: 10
+log_keep: 10
+log_stderr: true
+log_redact: true
 
 allowed_process_names:
   - msedge
@@ -35,20 +42,16 @@ allowed_process_names:
 allowed_window_titles: []
 denied_process_names: []
 denied_window_titles: []
-
 arm_enabled: false
 arm_duration_ms: 20000
 arm_consume_on_inject: true
 allow_clipboard_when_disarmed: true
-
 arm_api_enabled: true
 arm_listen_addr: "127.0.0.1:60769"
 arm_token_file: "arm_token.txt"
 arm_token_header: "X-NovaKey-Token"
-
 allow_newlines: false
 max_inject_len: 256
-
 two_man_enabled: true 
 approve_window_ms: 15000
 approve_consume_on_inject: true
