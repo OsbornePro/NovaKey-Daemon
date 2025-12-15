@@ -5,39 +5,46 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
 )
 
-// trySetClipboard best-effort copies text to the user's clipboard.
-// On Wayland it prefers wl-copy (wl-clipboard). On X11 it prefers xclip.
+// Linux clipboard helper: Wayland -> wl-copy, X11 -> xclip.
+// Return nil on success, error otherwise.
 func trySetClipboard(text string) error {
-	session := strings.ToLower(strings.TrimSpace(os.Getenv("XDG_SESSION_TYPE")))
+	isWayland := os.Getenv("WAYLAND_DISPLAY") != "" || strings.EqualFold(os.Getenv("XDG_SESSION_TYPE"), "wayland")
 
-	// Prefer Wayland-native clipboard tool when on Wayland.
-	if session == "wayland" {
+	if isWayland {
 		if _, err := exec.LookPath("wl-copy"); err == nil {
 			cmd := exec.Command("wl-copy")
 			cmd.Stdin = strings.NewReader(text)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("wl-copy failed: %v (%s)", err, strings.TrimSpace(string(out)))
+			if err := cmd.Run(); err == nil {
+				log.Printf("[clipboard] set via wl-copy (wayland)")
+				return nil
+			} else {
+				log.Printf("[clipboard] wl-copy failed: %v (will try xclip fallback)", err)
 			}
-			return nil
+		} else {
+			log.Printf("[clipboard] wl-copy not found in PATH (will try xclip fallback)")
 		}
-		// Fall through to xclip if wl-copy is missing.
 	}
 
-	// X11 / fallback: xclip.
-	if _, err := exec.LookPath("xclip"); err == nil {
-		cmd := exec.Command("xclip", "-selection", "clipboard")
-		cmd.Stdin = strings.NewReader(text)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("xclip failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	// X11 path: xclip -selection clipboard
+	if _, err := exec.LookPath("xclip"); err != nil {
+		if isWayland {
+			return fmt.Errorf("no clipboard helper available: wl-copy missing/failed and xclip not found")
 		}
-		return nil
+		return fmt.Errorf("xclip not found in PATH: %w", err)
 	}
 
-	return fmt.Errorf("no clipboard tool found (need wl-copy for Wayland or xclip for X11)")
+	cmd := exec.Command("xclip", "-selection", "clipboard")
+	cmd.Stdin = strings.NewReader(text)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("xclip failed: %w", err)
+	}
+	log.Printf("[clipboard] set via xclip")
+	return nil
 }
 

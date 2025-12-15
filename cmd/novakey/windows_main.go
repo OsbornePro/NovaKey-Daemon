@@ -42,6 +42,25 @@ func main() {
 	}
 }
 
+func allowClipboardWhenBlocked() bool {
+	if cfg.AllowClipboardWhenDisarmed == nil {
+		return false
+	}
+	return *cfg.AllowClipboardWhenDisarmed
+}
+
+func boolDeref(ptr *bool, def bool) bool {
+	if ptr == nil {
+		return def
+	}
+	return *ptr
+}
+
+func trySetClipboardWin(text string) error {
+	// setClipboardText lives in inject_windows.go (same package), so we can call it here.
+	return setClipboardText(text)
+}
+
 func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 	defer conn.Close()
 	remote := conn.RemoteAddr().String()
@@ -88,20 +107,22 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 	// --- Filter unsafe injection text (newlines, max len, etc.) ---
 	if err := validateInjectText(password); err != nil {
 		logReqf(reqID, "blocked injection (unsafe text): %v", err)
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboardWin(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+			} else {
+				logReqf(reqID, "clipboard set (unsafe text blocked)")
+			}
+		}
 		return
 	}
-    // --- Process whitelist ---
-    if err := enforceTargetPolicy(); err != nil {
-        logReqf(reqID, "blocked injection (target policy): %v", err)
-        return
-    }
 
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
 	// --- TWO-MAN: require recent approval for this device ---
 	if cfg.TwoManEnabled {
-		consume := *cfg.ApproveConsumeOnInject
+		consume := boolDeref(cfg.ApproveConsumeOnInject, true)
 		if !approvalGate.Consume(deviceID, consume) {
 			until := approvalGate.ApprovedUntil(deviceID)
 			if until.IsZero() {
@@ -109,26 +130,63 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 			} else {
 				logReqf(reqID, "blocked injection (two-man: approval expired at %s)", until.Format(time.RFC3339Nano))
 			}
+
+			if allowClipboardWhenBlocked() {
+				if err2 := trySetClipboardWin(password); err2 != nil {
+					logReqf(reqID, "clipboard set failed: %v", err2)
+				} else {
+					logReqf(reqID, "blocked injection (two-man); clipboard set")
+				}
+			}
 			return
 		}
 		logReqf(reqID, "two-man approval OK; proceeding")
 	}
 
 	// --- ARM GATE ---
-	// Two-man implies arm must also be open.
 	if cfg.ArmEnabled || cfg.TwoManEnabled {
-		ok := armGate.Consume(*cfg.ArmConsumeOnInject)
+		consume := boolDeref(cfg.ArmConsumeOnInject, true)
+		ok := armGate.Consume(consume)
 		if !ok {
 			logReqf(reqID, "blocked injection (not armed)")
+			if allowClipboardWhenBlocked() {
+				if err2 := trySetClipboardWin(password); err2 != nil {
+					logReqf(reqID, "clipboard set failed: %v", err2)
+				} else {
+					logReqf(reqID, "blocked injection (not armed); clipboard set")
+				}
+			}
 			return
 		}
 		logReqf(reqID, "armed gate open; proceeding with injection")
 	}
 
+	// --- TARGET POLICY (allow/deny list) ---
+	if err := enforceTargetPolicy(); err != nil {
+		logReqf(reqID, "blocked injection (target policy): %v", err)
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboardWin(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+			} else {
+				logReqf(reqID, "blocked injection (target policy); clipboard set")
+			}
+		}
+		return
+	}
+
+	// Inject; if injection fails, still optionally set clipboard.
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboardWin(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+			} else {
+				logReqf(reqID, "injection failed; clipboard set")
+			}
+		}
 		return
 	}
 
 	logReqf(reqID, "injection complete")
 }
+
