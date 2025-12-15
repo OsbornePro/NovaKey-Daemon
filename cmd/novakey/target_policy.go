@@ -13,7 +13,8 @@ func enforceTargetPolicy() error {
 		len(cfg.AllowedProcessNames) == 0 &&
 		len(cfg.AllowedWindowTitles) == 0 &&
 		len(cfg.DeniedProcessNames) == 0 &&
-		len(cfg.DeniedWindowTitles) == 0 {
+		len(cfg.DeniedWindowTitles) == 0 &&
+		!cfg.UseBuiltInAllowlist {
 		return nil
 	}
 
@@ -22,15 +23,15 @@ func enforceTargetPolicy() error {
 		return fmt.Errorf("getFocusedTarget: %w", err)
 	}
 
-	proc := canonProc(procRaw)
-	title := norm(titleRaw)
+	// Normalize title once (proc normalization is done inside matchProc)
+	title := normTitle(titleRaw)
 
 	// Denylist first (wins)
-	if matchProc(proc, cfg.DeniedProcessNames) || matchSubstring(title, cfg.DeniedWindowTitles) {
+	if matchProc(procRaw, cfg.DeniedProcessNames) || matchTitle(title, cfg.DeniedWindowTitles) {
 		return fmt.Errorf("focused target denied (proc=%q title=%q)", procRaw, titleRaw)
 	}
 
-	// Compute allowlists: explicit config + optional built-in allowlist
+	// Build effective allowlists: config + optional built-in allowlist
 	allowedProcs := make([]string, 0, len(cfg.AllowedProcessNames)+64)
 	allowedTitles := make([]string, 0, len(cfg.AllowedWindowTitles)+64)
 
@@ -47,16 +48,18 @@ func enforceTargetPolicy() error {
 		return nil
 	}
 
-	if matchProc(proc, allowedProcs) || matchSubstring(title, allowedTitles) {
+	if matchProc(procRaw, allowedProcs) || matchTitle(title, allowedTitles) {
 		return nil
 	}
 
 	return fmt.Errorf("focused target not allowed (proc=%q title=%q)", procRaw, titleRaw)
 }
 
+// --------------------- Built-ins ---------------------
+
 func builtInAllowedProcessNames() []string {
-	// Names are normalized via canonProc(), so include “logical” names;
-	// .exe and full paths are handled automatically.
+	// NOTE: we intentionally list base names (no .exe required).
+	// matchProc() will normalize and handle .exe/.app/path.
 	return []string{
 		// Browsers
 		"msedge", "microsoft edge",
@@ -71,7 +74,7 @@ func builtInAllowedProcessNames() []string {
 		"ecosia",
 		"aloha",
 
-		// Password managers
+		// Password managers (best-effort)
 		"1password",
 		"bitwarden",
 		"lastpass",
@@ -102,53 +105,70 @@ func builtInAllowedWindowTitleHints() []string {
 	}
 }
 
-// canonProc normalizes a process name for matching:
-// - lowercases
-// - strips any directory
-// - strips trailing ".exe"
-func canonProc(s string) string {
+// --------------------- Matching helpers ---------------------
+
+func normTitle(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+func normProc(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""
 	}
 
-	// Strip paths (handles both / and \ via filepath.Base)
+	// If caller gave a path, keep only basename
 	s = filepath.Base(s)
 
 	s = strings.ToLower(strings.TrimSpace(s))
 
-	// Strip ".exe" if present
-	s = strings.TrimSuffix(s, ".exe")
+	// Strip common platform suffixes
+	if strings.HasSuffix(s, ".exe") {
+		s = strings.TrimSuffix(s, ".exe")
+	}
+	if strings.HasSuffix(s, ".app") {
+		s = strings.TrimSuffix(s, ".app")
+	}
 
-	// Collapse internal whitespace (optional, helps "Microsoft Edge" variants)
-	s = strings.Join(strings.Fields(s), " ")
-
-	return s
+	return strings.TrimSpace(s)
 }
 
-func norm(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
-}
-
-func matchProc(procCanon string, list []string) bool {
-	if procCanon == "" || len(list) == 0 {
+func matchProc(procRaw string, list []string) bool {
+	if procRaw == "" || len(list) == 0 {
 		return false
 	}
+
+	pNorm := normProc(procRaw)
+	pRaw := strings.ToLower(strings.TrimSpace(filepath.Base(procRaw)))
+
 	for _, it := range list {
-		if canonProc(it) == procCanon {
+		if strings.TrimSpace(it) == "" {
+			continue
+		}
+		n := normProc(it)
+		r := strings.ToLower(strings.TrimSpace(filepath.Base(it)))
+
+		// Accept:
+		// - base vs base
+		// - base vs base.exe/.app
+		// - literal match if they supplied suffix
+		if n != "" && n == pNorm {
+			return true
+		}
+		if r != "" && r == pRaw {
 			return true
 		}
 	}
 	return false
 }
 
-func matchSubstring(val string, list []string) bool {
-	if val == "" || len(list) == 0 {
+func matchTitle(titleNorm string, list []string) bool {
+	if titleNorm == "" || len(list) == 0 {
 		return false
 	}
 	for _, it := range list {
-		n := norm(it)
-		if n != "" && strings.Contains(val, n) {
+		n := normTitle(it)
+		if n != "" && strings.Contains(titleNorm, n) {
 			return true
 		}
 	}
