@@ -8,10 +8,22 @@ import (
 	"io"
 	"log"
 	"net"
-	"os/exec"
-	"strings"
 	"time"
 )
+
+func allowClipboardWhenBlocked() bool {
+	if cfg.AllowClipboardWhenDisarmed == nil {
+		return false
+	}
+	return *cfg.AllowClipboardWhenDisarmed
+}
+
+func boolDeref(ptr *bool, def bool) bool {
+	if ptr == nil {
+		return def
+	}
+	return *ptr
+}
 
 func main() {
 	if err := loadConfig(); err != nil {
@@ -20,6 +32,8 @@ func main() {
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
+
+	// Arm API (if enabled)
 	startArmAPI()
 
 	listenAddr := cfg.ListenAddr
@@ -42,28 +56,6 @@ func main() {
 		reqID := nextReqID()
 		go handleConnDarwin(reqID, conn, maxLen)
 	}
-}
-
-func allowClipboardWhenBlocked() bool {
-	// config loader should default it to true, but guard anyway
-	if cfg.AllowClipboardWhenDisarmed == nil {
-		return false
-	}
-	return *cfg.AllowClipboardWhenDisarmed
-}
-
-func boolDeref(ptr *bool, def bool) bool {
-	if ptr == nil {
-		return def
-	}
-	return *ptr
-}
-
-// macOS clipboard best-effort: pbcopy
-func trySetClipboardDarwin(text string) error {
-	cmd := exec.Command("pbcopy")
-	cmd.Stdin = strings.NewReader(text)
-	return cmd.Run()
 }
 
 func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
@@ -113,7 +105,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 	if err := validateInjectText(password); err != nil {
 		logReqf(reqID, "blocked injection (unsafe text): %v", err)
 		if allowClipboardWhenBlocked() {
-			if err2 := trySetClipboardDarwin(password); err2 != nil {
+			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
 			} else {
 				logReqf(reqID, "clipboard set (unsafe text blocked)")
@@ -122,6 +114,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
+	// Serialize injection paths
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
@@ -137,7 +130,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 			}
 
 			if allowClipboardWhenBlocked() {
-				if err2 := trySetClipboardDarwin(password); err2 != nil {
+				if err2 := trySetClipboard(password); err2 != nil {
 					logReqf(reqID, "clipboard set failed: %v", err2)
 				} else {
 					logReqf(reqID, "blocked injection (two-man); clipboard set")
@@ -156,7 +149,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		if !ok {
 			logReqf(reqID, "blocked injection (not armed)")
 			if allowClipboardWhenBlocked() {
-				if err2 := trySetClipboardDarwin(password); err2 != nil {
+				if err2 := trySetClipboard(password); err2 != nil {
 					logReqf(reqID, "clipboard set failed: %v", err2)
 				} else {
 					logReqf(reqID, "blocked injection (not armed); clipboard set")
@@ -171,7 +164,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 	if err := enforceTargetPolicy(); err != nil {
 		logReqf(reqID, "blocked injection (target policy): %v", err)
 		if allowClipboardWhenBlocked() {
-			if err2 := trySetClipboardDarwin(password); err2 != nil {
+			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
 			} else {
 				logReqf(reqID, "blocked injection (target policy); clipboard set")
@@ -180,11 +173,10 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// Inject; if injection fails, still optionally set clipboard.
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
 		if allowClipboardWhenBlocked() {
-			if err2 := trySetClipboardDarwin(password); err2 != nil {
+			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
 			} else {
 				logReqf(reqID, "injection failed; clipboard set")

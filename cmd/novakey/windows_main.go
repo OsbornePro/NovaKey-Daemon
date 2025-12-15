@@ -11,6 +11,20 @@ import (
 	"time"
 )
 
+func allowClipboardWhenBlocked() bool {
+	if cfg.AllowClipboardWhenDisarmed == nil {
+		return false
+	}
+	return *cfg.AllowClipboardWhenDisarmed
+}
+
+func boolDeref(ptr *bool, def bool) bool {
+	if ptr == nil {
+		return def
+	}
+	return *ptr
+}
+
 func main() {
 	if err := loadConfig(); err != nil {
 		log.Fatalf("loadConfig failed: %v", err)
@@ -18,6 +32,7 @@ func main() {
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
+
 	startArmAPI()
 
 	listenAddr := cfg.ListenAddr
@@ -40,25 +55,6 @@ func main() {
 		reqID := nextReqID()
 		go handleConnWin(reqID, conn, maxLen)
 	}
-}
-
-func allowClipboardWhenBlocked() bool {
-	if cfg.AllowClipboardWhenDisarmed == nil {
-		return false
-	}
-	return *cfg.AllowClipboardWhenDisarmed
-}
-
-func boolDeref(ptr *bool, def bool) bool {
-	if ptr == nil {
-		return def
-	}
-	return *ptr
-}
-
-func trySetClipboardWin(text string) error {
-	// setClipboardText lives in inject_windows.go (same package), so we can call it here.
-	return setClipboardText(text)
 }
 
 func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
@@ -108,7 +104,7 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 	if err := validateInjectText(password); err != nil {
 		logReqf(reqID, "blocked injection (unsafe text): %v", err)
 		if allowClipboardWhenBlocked() {
-			if err2 := trySetClipboardWin(password); err2 != nil {
+			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
 			} else {
 				logReqf(reqID, "clipboard set (unsafe text blocked)")
@@ -132,7 +128,7 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 			}
 
 			if allowClipboardWhenBlocked() {
-				if err2 := trySetClipboardWin(password); err2 != nil {
+				if err2 := trySetClipboard(password); err2 != nil {
 					logReqf(reqID, "clipboard set failed: %v", err2)
 				} else {
 					logReqf(reqID, "blocked injection (two-man); clipboard set")
@@ -150,7 +146,7 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 		if !ok {
 			logReqf(reqID, "blocked injection (not armed)")
 			if allowClipboardWhenBlocked() {
-				if err2 := trySetClipboardWin(password); err2 != nil {
+				if err2 := trySetClipboard(password); err2 != nil {
 					logReqf(reqID, "clipboard set failed: %v", err2)
 				} else {
 					logReqf(reqID, "blocked injection (not armed); clipboard set")
@@ -165,7 +161,7 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 	if err := enforceTargetPolicy(); err != nil {
 		logReqf(reqID, "blocked injection (target policy): %v", err)
 		if allowClipboardWhenBlocked() {
-			if err2 := trySetClipboardWin(password); err2 != nil {
+			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
 			} else {
 				logReqf(reqID, "blocked injection (target policy); clipboard set")
@@ -174,11 +170,10 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// Inject; if injection fails, still optionally set clipboard.
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
 		if allowClipboardWhenBlocked() {
-			if err2 := trySetClipboardWin(password); err2 != nil {
+			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
 			} else {
 				logReqf(reqID, "injection failed; clipboard set")
