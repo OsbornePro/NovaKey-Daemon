@@ -112,7 +112,7 @@ Function Test-TcpPort {
         [Int]$TimeoutMs = 300
     )
     Try {
-        $C = New-Object System.Net.Sockets.TcpClient
+        $C = New-Object -TypeName System.Net.Sockets.TcpClient
         $Iar = $C.BeginConnect($ComputerName, $Port, $Null, $Null)
         If (-not $Iar.AsyncWaitHandle.WaitOne($TimeoutMs, $False)) { $C.Close(); Return $False }
         $C.EndConnect($Iar) | Out-Null
@@ -125,10 +125,10 @@ Function Get-ServerKyberPubB64 {
     param([Parameter(Mandatory=$True)][String]$Path)
 
     If (!(Test-Path -Path $Path)) {
-        Throw "server keys file not found: $Path"
+        Throw "Server keys file not found: $Path"
     }
 
-    $Raw = Get-Content -Raw -Path $Path
+    $Raw = Get-Content -Path $Path -Raw
     $Obj = $Raw | ConvertFrom-Json
 
     If (-not $Obj.kyber768_public) {
@@ -166,7 +166,7 @@ Try {
             Throw "Arm API is up but token file not found: $ArmTokenFile"
         }
 
-        Write-Information -MessageData "[+] Arming for ${ArmMs}ms..."
+        Write-Information -MessageData "[+] Arming for ${ArmMs}ms"
         & $NvClient arm --addr $ArmAddress --token_file $ArmTokenFile --ms $ArmMs | Out-Host
         If ($LASTEXITCODE -ne 0) { Throw "Arming failed (exit code $LASTEXITCODE)" }
     } Else {
@@ -178,29 +178,19 @@ Try {
 
 # --- TWO-MAN approve (required if enabled) ---
 If ($TwoManEnabled) {
-    If ($UseLegacyApproveMagic) {
-        Write-Information -MessageData "[+] Sending TWO-MAN legacy approve (msgType=1 payload magic)..."
-        & $NvClient approve --legacy_magic --magic $ApproveMagic `
-            -addr $ServerAddr `
-            -device-id $DeviceID `
-            -key-hex $KeyHex `
-            -server-kyber-pub-b64 $ServerKyberPubBase64 | Out-Host
-    } Else {
-        Write-Information -MessageData "[+] Sending TWO-MAN approve (msgType=2 control frame)..."
-        & $NvClient approve `
-            -addr $ServerAddr `
-            -device-id $DeviceID `
-            -key-hex $KeyHex `
-            -server-kyber-pub-b64 $ServerKyberPubBase64 | Out-Host
-    }
-
-    If ($LASTEXITCODE -ne 0) { Throw "Two-Man approve send failed (exit code $LASTEXITCODE)" }
+    Write-Information -MessageData "[+] Sending approve (msgType=2 payload)"
+    & $NvClient approve `
+        -addr $ServerAddr `
+        -device-id $DeviceID `
+        -key-hex $KeyHex `
+        -server-kyber-pub-b64 $ServerKyberPubBase64 | Out-Host
+    If ($LASTEXITCODE -ne 0) { Throw "Approve send failed (exit code $LASTEXITCODE)" }
 }
 
 Write-Warning -Message "Click into the browser address bar or somewhere to test the typing that will happen"
 Start-Sleep -Seconds 3
 
-Write-Information -MessageData "[+] Sending encrypted password frame to $ServerAddr..."
+Write-Information -MessageData "[+] Sending encrypted password frame to $ServerAddr"
 & $NvClient `
     -addr $ServerAddr `
     -device-id $DeviceID `
