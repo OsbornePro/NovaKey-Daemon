@@ -29,6 +29,8 @@ func main() {
 	if err := loadConfig(); err != nil {
 		log.Fatalf("loadConfig failed: %v", err)
 	}
+	initLoggingFromConfig()
+
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
@@ -84,22 +86,26 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// ✅ Message-frame path (supports approve msgType=2)
+	// ✅ Current path only: v3 outer frame -> typed inner message frame.
 	deviceID, msgType, payload, err := decryptMessageFrame(buf)
 	if err != nil {
 		logReqf(reqID, "decryptMessageFrame failed: %v", err)
 		return
 	}
 
-	// --- TWO-MAN approve control ---
-	if cfg.TwoManEnabled && msgType == MsgTypeApprove {
+	// --- TWO-MAN: approval control message (typed) ---
+	if msgType == MsgTypeApprove {
+		if !cfg.TwoManEnabled {
+			logReqf(reqID, "approve message received but two_man_enabled=false; ignoring")
+			return
+		}
 		until := approvalGate.Approve(deviceID, approveWindow())
 		logReqf(reqID, "two-man approve received from device=%q; approved until %s",
 			deviceID, until.Format(time.RFC3339Nano))
 		return
 	}
 
-	// --- Inject payload ---
+	// --- INJECT message ---
 	if msgType != MsgTypeInject {
 		logReqf(reqID, "unknown msgType=%d from device=%q; dropping", msgType, deviceID)
 		return
@@ -108,7 +114,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 	password := string(payload)
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
-	// Unsafe-text filter
+	// Unsafe-text filter (newlines/max length etc)
 	if err := validateInjectText(password); err != nil {
 		logReqf(reqID, "blocked injection (unsafe text): %v", err)
 		if allowClipboardWhenBlocked() {
@@ -121,10 +127,25 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
+	// --- TARGET POLICY (allow/deny list) ---
+	// Do this BEFORE consuming approval/arm windows so a blocked focus can’t burn them.
+	if err := enforceTargetPolicy(); err != nil {
+		logReqf(reqID, "blocked injection (target policy): %v", err)
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboard(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+			} else {
+				logReqf(reqID, "blocked injection (target policy); clipboard set")
+			}
+		}
+		return
+	}
+
+	// Serialize injection paths
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
-	// Two-man gate
+	// --- TWO-MAN: require recent approval for this device ---
 	if cfg.TwoManEnabled {
 		consume := boolDeref(cfg.ApproveConsumeOnInject, true)
 		if !approvalGate.Consume(deviceID, consume) {
@@ -134,6 +155,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 			} else {
 				logReqf(reqID, "blocked injection (two-man: approval expired at %s)", until.Format(time.RFC3339Nano))
 			}
+
 			if allowClipboardWhenBlocked() {
 				if err2 := trySetClipboard(password); err2 != nil {
 					logReqf(reqID, "clipboard set failed: %v", err2)
@@ -146,7 +168,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		logReqf(reqID, "two-man approval OK; proceeding")
 	}
 
-	// Arm gate
+	// --- ARM GATE ---
 	if cfg.ArmEnabled || cfg.TwoManEnabled {
 		consume := boolDeref(cfg.ArmConsumeOnInject, true)
 		if !armGate.Consume(consume) {
@@ -161,19 +183,6 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 			return
 		}
 		logReqf(reqID, "armed gate open; proceeding with injection")
-	}
-
-	// Target policy
-	if err := enforceTargetPolicy(); err != nil {
-		logReqf(reqID, "blocked injection (target policy): %v", err)
-		if allowClipboardWhenBlocked() {
-			if err2 := trySetClipboard(password); err2 != nil {
-				logReqf(reqID, "clipboard set failed: %v", err2)
-			} else {
-				logReqf(reqID, "blocked injection (target policy); clipboard set")
-			}
-		}
-		return
 	}
 
 	// Inject

@@ -29,7 +29,8 @@ func main() {
 	if err := loadConfig(); err != nil {
 		log.Fatalf("loadConfig failed: %v", err)
 	}
-    initLoggingFromConfig()
+	initLoggingFromConfig()
+
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
@@ -54,11 +55,11 @@ func main() {
 			continue
 		}
 		reqID := nextReqID()
-		go handleConn(reqID, conn, maxLen)
+		go handleConnLinux(reqID, conn, maxLen)
 	}
 }
 
-func handleConn(reqID uint64, conn net.Conn, maxLen int) {
+func handleConnLinux(reqID uint64, conn net.Conn, maxLen int) {
 	defer conn.Close()
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
@@ -85,6 +86,7 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
+	// ✅ Current path only: v3 outer frame -> typed inner message frame.
 	deviceID, msgType, payload, err := decryptMessageFrame(buf)
 	if err != nil {
 		logReqf(reqID, "decryptMessageFrame failed: %v", err)
@@ -103,12 +105,15 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
+	// --- INJECT message ---
 	if msgType != MsgTypeInject {
 		logReqf(reqID, "unknown msgType=%d from device=%q; dropping", msgType, deviceID)
 		return
 	}
 
-	password := payload
+	// payload is []byte now; convert once.
+	password := string(payload)
+
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
 	// --- Filter unsafe text (newlines/max length etc) ---
@@ -166,10 +171,10 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 	}
 
 	// --- ARM GATE ---
+	// If either ArmEnabled or TwoManEnabled is set, enforce that we are armed.
 	if cfg.ArmEnabled || cfg.TwoManEnabled {
 		consume := boolDeref(cfg.ArmConsumeOnInject, true)
-		ok := armGate.Consume(consume)
-		if !ok {
+		if !armGate.Consume(consume) {
 			logReqf(reqID, "blocked injection (not armed)")
 			if allowClipboardWhenBlocked() {
 				if err2 := trySetClipboard(password); err2 != nil {
