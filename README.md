@@ -356,6 +356,6 @@ NovaKey-Daemon is licensed under the Apache License, Version 2.0. See `LICENSE.m
 
 ## Contact & Support
 
-* Support: `support@novakey.app`
+* Support: `security@novakey.app`
 * Security disclosures: see `SECURITY.md` (do not open security findings as public issues)
 
