@@ -6,31 +6,52 @@ server_keys_file: "server_keys.json"
 
 allowed_process_names:
   - msedge
-  - microsoft edge
+  - msede.exe
   - chrome
-  - google chrome
+  - chrome.exe
   - chromium
+  - chromium.exe
   - brave
+  - brave.exe
   - firefox
+  - firefox.exe
   - safari
   - opera
+  - opera.exe
   - vivaldi
+  - vivaldi.exe
   - duckduckgo
+  - duckduckgo.exe
   - ecosia
+  - ecosia.exe
   - aloha
+  - aloha.exe
   - 1password
+  - 1password.exe
   - bitwarden
+  - bitwarden.exe
   - lastpass
+  - lastpass.exe
   - dashlane
+  - dashlane.exe
   - keeper
+  - keeper.exe
   - nordpass
+  - nordpass.exe
   - protonpass
+  - protonpass.exe
   - roboform
+  - roboform.exe
   - totalpassword
+  - totalpassword.exe
   - avira
+  - avira.exe
   - norton
+  - norton.exe
   - aura
+  - aura.exe
   - notepad
+  - notepad.exe
   - textedit
   - gedit
   - kate
