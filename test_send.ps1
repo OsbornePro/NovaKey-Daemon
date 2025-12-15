@@ -93,7 +93,10 @@ param(
     [Bool]$TwoManEnabled = $True,
 
     [Parameter(Mandatory=$False)]
-    [String]$ApproveMagic = "__NOVAKEY_APPROVE__"
+    [String]$ApproveMagic = "__NOVAKEY_APPROVE__",
+
+    [Parameter(Mandatory=$False)]
+    [switch]$UseLegacyApproveMagic
 )
 
 Set-StrictMode -Version Latest
@@ -132,11 +135,9 @@ Function Get-ServerKyberPubB64 {
         Throw "server_keys.json missing kyber768_public"
     }
 
-    # normalize: trim and remove any whitespace
     $B64 = ($Obj.kyber768_public.ToString()).Trim()
     $B64 = ($B64 -replace '\s+', '')
 
-    # validate base64 early (so nvclient doesn't fail later)
     Try { [Void][Convert]::FromBase64String($B64) }
     Catch { Throw "kyber768_public is not valid base64: $($_.Exception.Message)" }
 
@@ -151,7 +152,6 @@ If (!(Test-Path -Path $NvClient)) {
 }
 If (!(Test-Path -Path $NvClient)) { Throw "nvclient not found at $NvClient" }
 
-# Read kyber pubkey from server_keys.json
 $ServerKyberPubBase64 = Get-ServerKyberPubB64 -Path $ServerKeysFile
 
 # --- ARM (optional) ---
@@ -176,20 +176,27 @@ Try {
     Throw "Arm step skipped/failed: $($_.Exception.Message)"
 }
 
-# --- TWO-MAN approve (required If enabled) ---
+# --- TWO-MAN approve (required if enabled) ---
 If ($TwoManEnabled) {
-    Write-Information -MessageData "[+] Sending TWO-MAN approval control payload..."
-    & $NvClient `
-        -addr $ServerAddr `
-        -device-id $DeviceID `
-        -password $ApproveMagic `
-        -key-hex $KeyHex `
-        -server-kyber-pub-b64 $ServerKyberPubBase64 | Out-Host
+    If ($UseLegacyApproveMagic) {
+        Write-Information -MessageData "[+] Sending TWO-MAN legacy approve (msgType=1 payload magic)..."
+        & $NvClient approve --legacy_magic --magic $ApproveMagic `
+            -addr $ServerAddr `
+            -device-id $DeviceID `
+            -key-hex $KeyHex `
+            -server-kyber-pub-b64 $ServerKyberPubBase64 | Out-Host
+    } Else {
+        Write-Information -MessageData "[+] Sending TWO-MAN approve (msgType=2 control frame)..."
+        & $NvClient approve `
+            -addr $ServerAddr `
+            -device-id $DeviceID `
+            -key-hex $KeyHex `
+            -server-kyber-pub-b64 $ServerKyberPubBase64 | Out-Host
+    }
 
     If ($LASTEXITCODE -ne 0) { Throw "Two-Man approve send failed (exit code $LASTEXITCODE)" }
 }
 
-# --- Send real password ---
 Write-Warning -Message "Click into the browser address bar or somewhere to test the typing that will happen"
 Start-Sleep -Seconds 3
 
@@ -204,3 +211,4 @@ Write-Information -MessageData "[+] Sending encrypted password frame to $ServerA
 If ($LASTEXITCODE -ne 0) { Throw "Password send failed (exit code $LASTEXITCODE)" }
 
 Write-Information -MessageData "[+] Done."
+

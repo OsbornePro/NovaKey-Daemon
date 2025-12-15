@@ -3,172 +3,131 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
 func enforceTargetPolicy() error {
-	// If policy disabled AND no explicit allow/deny lists => no restriction.
-	if !cfg.TargetPolicyEnabled &&
-		len(cfg.AllowedProcessNames) == 0 &&
-		len(cfg.AllowedWindowTitles) == 0 &&
-		len(cfg.DeniedProcessNames) == 0 &&
-		len(cfg.DeniedWindowTitles) == 0 &&
-		!cfg.UseBuiltInAllowlist {
+	// ✅ Only enforce when explicitly enabled.
+	if !cfg.TargetPolicyEnabled {
 		return nil
 	}
 
-	procRaw, titleRaw, err := getFocusedTarget()
+	proc, title, err := getFocusedTarget()
 	if err != nil {
-		return fmt.Errorf("getFocusedTarget: %w", err)
+		// Preserve your existing error strings (Wayland, etc.)
+		return err
 	}
 
-	// Normalize title once (proc normalization is done inside matchProc)
-	title := normTitle(titleRaw)
+	procNorm := normalizeProcName(proc)
+	titleNorm := strings.ToLower(strings.TrimSpace(title))
 
-	// Denylist first (wins)
-	if matchProc(procRaw, cfg.DeniedProcessNames) || matchTitle(title, cfg.DeniedWindowTitles) {
-		return fmt.Errorf("focused target denied (proc=%q title=%q)", procRaw, titleRaw)
+	// Build normalized allow/deny lists
+	allowProcs := normalizeProcList(cfg.AllowedProcessNames)
+	denyProcs := normalizeProcList(cfg.DeniedProcessNames)
+
+	allowTitles := normalizeTitleList(cfg.AllowedWindowTitles)
+	denyTitles := normalizeTitleList(cfg.DeniedWindowTitles)
+
+	// Deny wins
+	if procNorm != "" && stringInSlice(procNorm, denyProcs) {
+		return fmt.Errorf("focused target denied (proc=%q title=%q)", proc, title)
+	}
+	if titleNorm != "" && titleMatchesAny(titleNorm, denyTitles) {
+		return fmt.Errorf("focused target denied (proc=%q title=%q)", proc, title)
 	}
 
-	// Build effective allowlists: config + optional built-in allowlist
-	allowedProcs := make([]string, 0, len(cfg.AllowedProcessNames)+64)
-	allowedTitles := make([]string, 0, len(cfg.AllowedWindowTitles)+64)
-
-	allowedProcs = append(allowedProcs, cfg.AllowedProcessNames...)
-	allowedTitles = append(allowedTitles, cfg.AllowedWindowTitles...)
-
-	if cfg.UseBuiltInAllowlist {
-		allowedProcs = append(allowedProcs, builtInAllowedProcessNames()...)
-		allowedTitles = append(allowedTitles, builtInAllowedWindowTitleHints()...)
+	// If any allowlist is present, require a match
+	if len(allowProcs) > 0 || len(allowTitles) > 0 {
+		if procNorm != "" && stringInSlice(procNorm, allowProcs) {
+			return nil
+		}
+		if titleNorm != "" && titleMatchesAny(titleNorm, allowTitles) {
+			return nil
+		}
+		return fmt.Errorf("focused target not allowed (proc=%q title=%q)", proc, title)
 	}
 
-	// If allowlists empty => allow (unless denied above)
-	if len(allowedProcs) == 0 && len(allowedTitles) == 0 {
+	// If enabled but no lists were provided, optionally fall back to built-in allowlist.
+	// If UseBuiltInAllowlist is false here, we allow all.
+	if !cfg.UseBuiltInAllowlist {
 		return nil
 	}
 
-	if matchProc(procRaw, allowedProcs) || matchTitle(title, allowedTitles) {
+	builtin := []string{
+		"msedge", "chrome", "chromium", "brave", "firefox", "opera", "vivaldi", "safari",
+		"1password", "bitwarden", "lastpass", "dashlane", "keeper", "nordpass", "protonpass", "roboform",
+		"notepad", "textedit", "gedit", "kate",
+	}
+	builtin = normalizeProcList(builtin)
+
+	if procNorm != "" && stringInSlice(procNorm, builtin) {
 		return nil
 	}
 
-	return fmt.Errorf("focused target not allowed (proc=%q title=%q)", procRaw, titleRaw)
+	return fmt.Errorf("focused target not allowed (proc=%q title=%q)", proc, title)
 }
 
-// --------------------- Built-ins ---------------------
-
-func builtInAllowedProcessNames() []string {
-	// NOTE: we intentionally list base names (no .exe required).
-	// matchProc() will normalize and handle .exe/.app/path.
-	return []string{
-		// Browsers
-		"msedge", "microsoft edge",
-		"chrome", "google chrome",
-		"chromium", "chromium-browser",
-		"brave", "brave-browser", "brave browser",
-		"vivaldi",
-		"opera",
-		"firefox",
-		"safari",
-		"duckduckgo", "duckduckgo browser",
-		"ecosia",
-		"aloha",
-
-		// Password managers (best-effort)
-		"1password",
-		"bitwarden",
-		"lastpass",
-		"dashlane",
-		"keeper",
-		"roboform",
-		"nordpass",
-		"protonpass", "proton pass",
-		"aura",
-		"norton",
-		"avira",
-		"totalpassword",
-		"keepass",
-
-		// Editors for testing
-		"notepad",
-		"textedit",
-		"gedit",
-		"kate",
-	}
-}
-
-func builtInAllowedWindowTitleHints() []string {
-	return []string{
-		"chrome", "chromium", "brave", "firefox", "safari", "edge", "opera", "vivaldi",
-		"1password", "bitwarden", "dashlane", "keeper", "roboform", "nordpass", "proton",
-		"notepad", "textedit",
-	}
-}
-
-// --------------------- Matching helpers ---------------------
-
-func normTitle(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
-}
-
-func normProc(s string) string {
+func normalizeProcName(s string) string {
 	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-
-	// If caller gave a path, keep only basename
-	s = filepath.Base(s)
-
-	s = strings.ToLower(strings.TrimSpace(s))
-
-	// Strip common platform suffixes
+	s = strings.ToLower(s)
+	// strip trailing .exe for Windows proc names
 	if strings.HasSuffix(s, ".exe") {
 		s = strings.TrimSuffix(s, ".exe")
 	}
-	if strings.HasSuffix(s, ".app") {
-		s = strings.TrimSuffix(s, ".app")
-	}
-
-	return strings.TrimSpace(s)
+	return s
 }
 
-func matchProc(procRaw string, list []string) bool {
-	if procRaw == "" || len(list) == 0 {
-		return false
-	}
-
-	pNorm := normProc(procRaw)
-	pRaw := strings.ToLower(strings.TrimSpace(filepath.Base(procRaw)))
-
-	for _, it := range list {
-		if strings.TrimSpace(it) == "" {
+func normalizeProcList(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, x := range in {
+		n := normalizeProcName(x)
+		if n == "" {
 			continue
 		}
-		n := normProc(it)
-		r := strings.ToLower(strings.TrimSpace(filepath.Base(it)))
-
-		// Accept:
-		// - base vs base
-		// - base vs base.exe/.app
-		// - literal match if they supplied suffix
-		if n != "" && n == pNorm {
-			return true
+		if _, ok := seen[n]; ok {
+			continue
 		}
-		if r != "" && r == pRaw {
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
+}
+
+func normalizeTitleList(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, x := range in {
+		n := strings.ToLower(strings.TrimSpace(x))
+		if n == "" {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
+}
+
+func stringInSlice(s string, list []string) bool {
+	for _, x := range list {
+		if s == x {
 			return true
 		}
 	}
 	return false
 }
 
-func matchTitle(titleNorm string, list []string) bool {
-	if titleNorm == "" || len(list) == 0 {
-		return false
-	}
-	for _, it := range list {
-		n := normTitle(it)
-		if n != "" && strings.Contains(titleNorm, n) {
+// Title rules: case-insensitive substring match.
+// (If you want exact match only, change strings.Contains -> ==)
+func titleMatchesAny(titleLower string, patternsLower []string) bool {
+	for _, p := range patternsLower {
+		if p == "" {
+			continue
+		}
+		if strings.Contains(titleLower, p) {
 			return true
 		}
 	}

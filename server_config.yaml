@@ -10,7 +10,8 @@ log_rotate_mb: 10
 log_keep: 10
 log_stderr: true
 log_redact: true
-
+target_policy_enabled: true
+use_built_in_allowlist: false
 allowed_process_names:
   - msedge
   - chrome
