@@ -289,7 +289,3 @@ Platform notes:
 * `cmd/nvpair/` — pairing + device key management
 
 > **NOTE:** Device IDs are sent in plaintext for routing/logging. Do not use sensitive identifiers.
-
-```
-
----
