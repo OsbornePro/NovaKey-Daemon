@@ -1,99 +1,32 @@
+// cmd/novakey/arm_api.go
 package main
 
 import (
 	"crypto/rand"
-	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 )
-
-func ensureArmToken(path string) (string, error) {
-	// If token exists, read it
-	if st, err := os.Stat(path); err == nil {
-		// Refuse weak perms on Unix: must not be readable/writable/executable by group/other.
-		if runtime.GOOS != "windows" {
-			perm := st.Mode().Perm()
-			if (perm & 0o077) != 0 {
-				return "", fmt.Errorf("arm token file has insecure permissions (must be 0600 or stricter): %s (got %04o)", path, perm)
-			}
-		}
-
-		if b, err := os.ReadFile(path); err == nil {
-			t := string(bytesTrimSpace(b))
-			if t == "" {
-				return "", fmt.Errorf("arm token file is empty: %s", path)
-			}
-			return t, nil
-		}
-	}
-
-	// Create a new token
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("rand: %w", err)
-	}
-	tok := base64.RawURLEncoding.EncodeToString(raw)
-
-	// Best-effort restrictive perms on unix; windows will ignore modes.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		return "", fmt.Errorf("create token file: %w", err)
-	}
-	defer f.Close()
-	if _, err := io.WriteString(f, tok+"\n"); err != nil {
-		return "", fmt.Errorf("write token file: %w", err)
-	}
-	return tok, nil
-}
-
-// tiny helper to avoid importing strings for one thing
-func bytesTrimSpace(b []byte) string {
-	// very small trim for \r\n\t space
-	i := 0
-	j := len(b)
-	for i < j {
-		c := b[i]
-		if c == ' ' || c == '\n' || c == '\r' || c == '\t' {
-			i++
-			continue
-		}
-		break
-	}
-	for j > i {
-		c := b[j-1]
-		if c == ' ' || c == '\n' || c == '\r' || c == '\t' {
-			j--
-			continue
-		}
-		break
-	}
-	return string(b[i:j])
-}
 
 func startArmAPI() {
 	if !cfg.ArmAPIEnabled {
-		log.Printf("[arm] arm API disabled")
 		return
 	}
 
-	// Safety: refuse to bind non-loopback
-	host, _, err := net.SplitHostPort(cfg.ArmListenAddr)
-	if err != nil {
-		log.Printf("[arm] invalid arm_listen_addr=%q: %v", cfg.ArmListenAddr, err)
-		return
-	}
-	if host != "127.0.0.1" && host != "::1" && host != "localhost" {
-		log.Printf("[arm] refusing to bind non-loopback address: %s", cfg.ArmListenAddr)
+	// Refuse non-loopback binds.
+	if !isLoopbackListenAddr(cfg.ArmListenAddr) {
+		log.Printf("[arm] refused to start: arm_listen_addr must be loopback (got %q)", cfg.ArmListenAddr)
 		return
 	}
 
-	token, err := ensureArmToken(cfg.ArmTokenFile)
-	if err != nil {
+	// Token init (create if missing, validate perms on Unix).
+	if err := initArmTokenFile(cfg.ArmTokenFile); err != nil {
 		log.Printf("[arm] token init failed: %v", err)
 		return
 	}
@@ -101,17 +34,114 @@ func startArmAPI() {
 	log.Printf("[arm] arm API enabled on http://%s (token file: %s, header: %s)",
 		cfg.ArmListenAddr, cfg.ArmTokenFile, cfg.ArmTokenHeader)
 
-	// IMPORTANT: routes are registered ONLY in buildArmAPIMux to avoid duplicate patterns.
-	mux := buildArmAPIMux(token)
+	mux := armMuxForTests()
 
-	srv := &http.Server{
-		Addr:    cfg.ArmListenAddr,
-		Handler: mux,
-	}
+	// Start serving in background.
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("[arm] ListenAndServe error: %v", err)
+		if err := http.ListenAndServe(cfg.ArmListenAddr, mux); err != nil {
+			log.Printf("[arm] http server stopped: %v", err)
 		}
 	}()
+}
+
+func requireArmToken(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, err := readArmToken(cfg.ArmTokenFile)
+		if err != nil {
+			http.Error(w, "arm token not available", http.StatusInternalServerError)
+			return
+		}
+
+		got := strings.TrimSpace(r.Header.Get(cfg.ArmTokenHeader))
+		if got == "" || got != token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+func initArmTokenFile(path string) error {
+	// If exists, validate perms (Unix) and return.
+	if _, err := os.Stat(path); err == nil {
+		if runtime.GOOS != "windows" {
+			if err := ensureFileMode0600(path); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Create new token and write file 0600 on Unix.
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Errorf("rand: %w", err)
+	}
+	token := hex.EncodeToString(b)
+
+	perm := os.FileMode(0600)
+	if runtime.GOOS == "windows" {
+		perm = 0644 // Windows ACLs differ; keep it readable to the user.
+	}
+
+	if err := os.WriteFile(path, []byte(token+"\n"), perm); err != nil {
+		return fmt.Errorf("write token file: %w", err)
+	}
+
+	// Re-check perms on Unix to catch umask surprises.
+	if runtime.GOOS != "windows" {
+		if err := ensureFileMode0600(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func readArmToken(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	tok := strings.TrimSpace(string(b))
+	if tok == "" {
+		return "", errors.New("empty token")
+	}
+	return tok, nil
+}
+
+func ensureFileMode0600(path string) error {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	mode := fi.Mode().Perm()
+	// Reject group/world readable/writable/executable.
+	if mode&0077 != 0 {
+		return fmt.Errorf("arm token file has insecure permissions (must be 0600 or stricter): %s (got %04o)", path, mode)
+	}
+	return nil
+}
+
+func isLoopbackListenAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip != nil {
+		return ip.IsLoopback()
+	}
+	// If host is a name, resolve and ensure all results are loopback.
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	for _, x := range ips {
+		if !x.IsLoopback() {
+			return false
+		}
+	}
+	return true
 }
 

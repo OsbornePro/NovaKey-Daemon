@@ -1,3 +1,4 @@
+// cmd/novakey/arm_gate.go
 package main
 
 import (
@@ -5,38 +6,58 @@ import (
 	"time"
 )
 
+// ArmGate tracks whether the daemon is locally "armed" until a deadline.
 type ArmGate struct {
-	mu     sync.Mutex
-	until  time.Time
-	lastAt time.Time
+	mu        sync.Mutex
+	armedUntil time.Time
 }
 
-func (g *ArmGate) Arm(d time.Duration) {
+// Global gate instance (used by all platforms)
+var armGate ArmGate
+
+// ArmFor arms the gate until now+dur and returns the expiry time.
+func (g *ArmGate) ArmFor(dur time.Duration) time.Time {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.until = time.Now().Add(d)
-	g.lastAt = time.Now()
+
+	g.armedUntil = time.Now().Add(dur)
+	return g.armedUntil
 }
 
+// Disarm immediately clears the armed state.
+func (g *ArmGate) Disarm() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.armedUntil = time.Time{}
+}
+
+// ArmedUntil returns the current armed-until time (zero if disarmed).
 func (g *ArmGate) ArmedUntil() time.Time {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.until
+	return g.armedUntil
 }
 
-// Consume returns true if armed right now, and (optionally) disarms immediately.
+// Consume returns true if armed and not expired.
+// If consume==true, it disarms after allowing this call.
 func (g *ArmGate) Consume(consume bool) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if time.Now().Before(g.until) {
-		if consume {
-			g.until = time.Time{}
-		}
-		return true
+	if g.armedUntil.IsZero() {
+		return false
 	}
-	return false
-}
+	now := time.Now()
+	if now.After(g.armedUntil) {
+		// expired
+		g.armedUntil = time.Time{}
+		return false
+	}
 
-var armGate ArmGate
+	if consume {
+		g.armedUntil = time.Time{}
+	}
+	return true
+}
 

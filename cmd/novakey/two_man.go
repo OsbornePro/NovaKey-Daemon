@@ -27,6 +27,12 @@ func (g *twoManGate) Approve(deviceID string, d time.Duration) time.Time {
 	return u
 }
 
+// ClearForTests resets two-man approval state (test helper).
+func (g *twoManGate) ClearForTests() {
+	// Reset by replacing with a freshly constructed gate (avoids depending on internal field names).
+	*g = *newTwoManGate()
+}
+
 // Consume returns true if device is currently approved.
 // If consume==true, it clears approval after use.
 func (g *twoManGate) Consume(deviceID string, consume bool) bool {
