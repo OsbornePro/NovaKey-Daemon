@@ -41,6 +41,8 @@ type ServerConfig struct {
 	ApproveWindowMs        int    `json:"approve_window_ms" yaml:"approve_window_ms"`
 	ApproveConsumeOnInject *bool  `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
 	ApproveMagic           string `json:"approve_magic" yaml:"approve_magic"`
+    LegacyApproveMagicEnabled bool `json:"legacy_approve_magic_enabled" yaml:"legacy_approve_magic_enabled"`
+
 
 	// Target policy (allow/deny of focused app)
 	TargetPolicyEnabled   bool     `json:"target_policy_enabled" yaml:"target_policy_enabled"`

@@ -11,6 +11,20 @@ import (
 	"time"
 )
 
+func allowClipboardWhenBlocked() bool {
+	if cfg.AllowClipboardWhenDisarmed == nil {
+		return false
+	}
+	return *cfg.AllowClipboardWhenDisarmed
+}
+
+func boolDeref(ptr *bool, def bool) bool {
+	if ptr == nil {
+		return def
+	}
+	return *ptr
+}
+
 func main() {
 	if err := loadConfig(); err != nil {
 		log.Fatalf("loadConfig failed: %v", err)
@@ -19,7 +33,6 @@ func main() {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
 
-	// Arm API (if enabled)
 	startArmAPI()
 
 	listenAddr := cfg.ListenAddr
@@ -42,21 +55,6 @@ func main() {
 		reqID := nextReqID()
 		go handleConn(reqID, conn, maxLen)
 	}
-}
-
-func allowClipboardWhenBlocked() bool {
-	// config loader should default it to true, but guard anyway
-	if cfg.AllowClipboardWhenDisarmed == nil {
-		return false
-	}
-	return *cfg.AllowClipboardWhenDisarmed
-}
-
-func boolDeref(ptr *bool, def bool) bool {
-	if ptr == nil {
-		return def
-	}
-	return *ptr
 }
 
 func handleConn(reqID uint64, conn net.Conn, maxLen int) {
@@ -86,20 +84,30 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	deviceID, password, err := decryptPasswordFrame(buf)
+	deviceID, msgType, payload, err := decryptMessageFrame(buf)
 	if err != nil {
-		logReqf(reqID, "decryptPasswordFrame failed: %v", err)
+		logReqf(reqID, "decryptMessageFrame failed: %v", err)
 		return
 	}
 
-	// --- TWO-MAN: approval control message ---
-	if cfg.TwoManEnabled && isApproveControlPayload(password) {
+	// --- TWO-MAN: approval control message (typed) ---
+	if msgType == MsgTypeApprove {
+		if !cfg.TwoManEnabled {
+			logReqf(reqID, "approve message received but two_man_enabled=false; ignoring")
+			return
+		}
 		until := approvalGate.Approve(deviceID, approveWindow())
 		logReqf(reqID, "two-man approve received from device=%q; approved until %s",
 			deviceID, until.Format(time.RFC3339Nano))
 		return
 	}
 
+	if msgType != MsgTypeInject {
+		logReqf(reqID, "unknown msgType=%d from device=%q; dropping", msgType, deviceID)
+		return
+	}
+
+	password := payload
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
 	// --- Filter unsafe text (newlines/max length etc) ---
@@ -110,6 +118,20 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 				logReqf(reqID, "clipboard set failed: %v", err2)
 			} else {
 				logReqf(reqID, "clipboard set (unsafe text blocked)")
+			}
+		}
+		return
+	}
+
+	// --- TARGET POLICY (allow/deny list) ---
+	// Do this BEFORE consuming approval/arm windows so a blocked focus can’t burn them.
+	if err := enforceTargetPolicy(); err != nil {
+		logReqf(reqID, "blocked injection (target policy): %v", err)
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboard(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+			} else {
+				logReqf(reqID, "blocked injection (target policy); clipboard set")
 			}
 		}
 		return
@@ -143,7 +165,6 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 	}
 
 	// --- ARM GATE ---
-	// Two-man implies arm must be open too, even if arm_enabled was false.
 	if cfg.ArmEnabled || cfg.TwoManEnabled {
 		consume := boolDeref(cfg.ArmConsumeOnInject, true)
 		ok := armGate.Consume(consume)
@@ -159,20 +180,6 @@ func handleConn(reqID uint64, conn net.Conn, maxLen int) {
 			return
 		}
 		logReqf(reqID, "armed gate open; proceeding with injection")
-	}
-
-	// --- TARGET POLICY (allow/deny list) ---
-	// If policy blocks, still allow clipboard when configured.
-	if err := enforceTargetPolicy(); err != nil {
-		logReqf(reqID, "blocked injection (target policy): %v", err)
-		if allowClipboardWhenBlocked() {
-			if err2 := trySetClipboard(password); err2 != nil {
-				logReqf(reqID, "clipboard set failed: %v", err2)
-			} else {
-				logReqf(reqID, "blocked injection (target policy); clipboard set")
-			}
-		}
-		return
 	}
 
 	// Try to inject; if it fails (Wayland, etc), optionally still set clipboard.

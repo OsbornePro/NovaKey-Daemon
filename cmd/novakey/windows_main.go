@@ -84,20 +84,30 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	deviceID, password, err := decryptPasswordFrame(buf)
+	deviceID, msgType, payload, err := decryptMessageFrame(buf)
 	if err != nil {
-		logReqf(reqID, "decryptPasswordFrame failed: %v", err)
+		logReqf(reqID, "decryptMessageFrame failed: %v", err)
 		return
 	}
 
-	// --- TWO-MAN: approval control message ---
-	if cfg.TwoManEnabled && isApproveControlPayload(password) {
+	// --- TWO-MAN: approval control message (typed) ---
+	if msgType == MsgTypeApprove {
+		if !cfg.TwoManEnabled {
+			logReqf(reqID, "approve message received but two_man_enabled=false; ignoring")
+			return
+		}
 		until := approvalGate.Approve(deviceID, approveWindow())
 		logReqf(reqID, "two-man approve received from device=%q; approved until %s",
 			deviceID, until.Format(time.RFC3339Nano))
 		return
 	}
 
+	if msgType != MsgTypeInject {
+		logReqf(reqID, "unknown msgType=%d from device=%q; dropping", msgType, deviceID)
+		return
+	}
+
+	password := payload
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
 	// --- Filter unsafe injection text (newlines, max len, etc.) ---
@@ -113,6 +123,21 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
+	// --- TARGET POLICY (allow/deny list) ---
+	// Do this BEFORE consuming approval/arm windows so a blocked focus can’t burn them.
+	if err := enforceTargetPolicy(); err != nil {
+		logReqf(reqID, "blocked injection (target policy): %v", err)
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboard(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+			} else {
+				logReqf(reqID, "blocked injection (target policy); clipboard set")
+			}
+		}
+		return
+	}
+
+	// Serialize injection paths
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
@@ -126,7 +151,6 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 			} else {
 				logReqf(reqID, "blocked injection (two-man: approval expired at %s)", until.Format(time.RFC3339Nano))
 			}
-
 			if allowClipboardWhenBlocked() {
 				if err2 := trySetClipboard(password); err2 != nil {
 					logReqf(reqID, "clipboard set failed: %v", err2)
@@ -155,19 +179,6 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 			return
 		}
 		logReqf(reqID, "armed gate open; proceeding with injection")
-	}
-
-	// --- TARGET POLICY (allow/deny list) ---
-	if err := enforceTargetPolicy(); err != nil {
-		logReqf(reqID, "blocked injection (target policy): %v", err)
-		if allowClipboardWhenBlocked() {
-			if err2 := trySetClipboard(password); err2 != nil {
-				logReqf(reqID, "clipboard set failed: %v", err2)
-			} else {
-				logReqf(reqID, "blocked injection (target policy); clipboard set")
-			}
-		}
-		return
 	}
 
 	if err := InjectPasswordToFocusedControl(password); err != nil {
