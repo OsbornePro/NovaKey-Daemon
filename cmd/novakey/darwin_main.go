@@ -67,6 +67,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 	// Helper: write a response exactly once, then return.
 	respond := func(st RespStatus, msg string) {
 		// Best-effort. If client closes early, writeResp will just fail silently.
+		logReqf(reqID, "responding status=%d msg=%q", st, msg)
 		writeResp(conn, st, msg)
 	}
 
