@@ -202,7 +202,8 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 	}
 
 	// --- ARM GATE ---
-	if cfg.ArmEnabled || cfg.TwoManEnabled {
+	// if cfg.ArmEnabled || cfg.TwoManEnabled {
+	if cfg.ArmEnabled {
 		consume := boolDeref(cfg.ArmConsumeOnInject, true)
 		if !armGate.Consume(consume) {
 			logReqf(reqID, "blocked injection (not armed)")
