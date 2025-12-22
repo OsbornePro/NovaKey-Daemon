@@ -10,7 +10,7 @@ log_rotate_mb: 10
 log_keep: 10
 log_stderr: true
 log_redact: true
-target_policy_enabled: true
+target_policy_enabled: false
 use_built_in_allowlist: false
 allowed_process_names:
   - msedge
@@ -56,4 +56,3 @@ max_inject_len: 256
 two_man_enabled: true 
 approve_window_ms: 15000
 approve_consume_on_inject: true
-approve_magic: __NOVAKEY_APPROVE__
