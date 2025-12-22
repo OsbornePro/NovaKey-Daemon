@@ -34,7 +34,7 @@ func main() {
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
-
+	maybeStartPairingBootstrap()
 	startArmAPI()
 
 	listenAddr := cfg.ListenAddr
