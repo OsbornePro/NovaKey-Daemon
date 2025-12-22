@@ -2,8 +2,6 @@
 package main
 
 import (
-	"bytes"
-	"compress/zlib"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -11,208 +9,250 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-// PairQR is what the iOS scanner expects to decode from the QR payload.
-type PairQR struct {
-	PairV              int    `json:"pair_v"`
-	DeviceID           string `json:"device_id"`
-	DeviceKeyHex       string `json:"device_key_hex"`
-	ServerKyberPubB64  string `json:"server_kyber_pub_b64"`
-	ListenPort         int    `json:"listen_port"`
-	IssuedAtUnix       int64  `json:"issued_at_unix"`
-	ExpiresAtUnix      int64  `json:"expires_at_unix"`
+type pairingBlobV3 struct {
+	V               int    `json:"v"`
+	DeviceID        string `json:"device_id"`
+	DeviceKeyHex    string `json:"device_key_hex"`
+	ServerAddr      string `json:"server_addr"`
+	ServerKyberPub  string `json:"server_kyber768_pub"`
+	ExpiresAtUnix   int64  `json:"expires_at_unix"`
 }
 
-// ensureDevicesFileExistsAndShowQR implements:
-// - If devices.json missing => generate a device, write devices.json, show QR.
-func ensureDevicesFileExistsAndShowQR(devicesPath string) error {
-	if devicesPath == "" {
-		devicesPath = defaultDevicesFile
+type pairingState struct {
+	mu        sync.Mutex
+	active    bool
+	token     string
+	deviceID  string
+	deviceKey string // hex, 32 bytes
+	serverAddr string
+	expires   time.Time
+	done      bool
+}
+
+var pairState pairingState
+
+// maybeStartPairingBootstrap starts the QR + pairing HTTP server if devices.json is missing/empty.
+func maybeStartPairingBootstrap() {
+	if isPaired() {
+		return
 	}
 
-	// If devices file already exists, nothing to do.
-	if _, err := os.Stat(devicesPath); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat devices file %q: %w", devicesPath, err)
+	// Only start once
+	pairState.mu.Lock()
+	if pairState.active {
+		pairState.mu.Unlock()
+		return
 	}
+	pairState.active = true
+	pairState.mu.Unlock()
 
-	// Create parent dir if needed.
-	if dir := filepath.Dir(devicesPath); dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("mkdir devices dir: %w", err)
+	host, listenPort := splitHostPortOrDie(cfg.ListenAddr)
+
+	// Pair API port: listenPort + 2 (avoid +1 because your ArmAPI default is 60769)
+	pairPort := listenPort + 2
+	pairBind := fmt.Sprintf("0.0.0.0:%d", pairPort)
+
+	advertiseHost := chooseAdvertiseHost(host)
+	serverAddr := fmt.Sprintf("%s:%d", advertiseHost, listenPort)
+
+	// Generate pending device + token
+	token := randHex(16)
+	deviceID := "ios-" + randHex(8)
+	deviceKeyHex := randHex(32) // 32 bytes => 64 hex chars
+
+	exp := time.Now().Add(5 * time.Minute)
+
+	pairState.mu.Lock()
+	pairState.token = token
+	pairState.deviceID = deviceID
+	pairState.deviceKey = deviceKeyHex
+	pairState.serverAddr = serverAddr
+	pairState.expires = exp
+	pairState.done = false
+	pairState.mu.Unlock()
+
+	// Start HTTP server for the phone to fetch the big blob
+	mux := http.NewServeMux()
+	mux.HandleFunc("/pair/status", handlePairStatus)
+	mux.HandleFunc("/pair/bootstrap", handlePairBootstrap) // GET
+	mux.HandleFunc("/pair/complete", handlePairComplete)   // POST
+
+	go func() {
+		log.Printf("[pair] Pairing API listening on http://%s (advertise host=%s)", pairBind, advertiseHost)
+		if err := http.ListenAndServe(pairBind, mux); err != nil {
+			log.Printf("[pair] pairing HTTP server stopped: %v", err)
 		}
-	}
+	}()
 
-	// Generate device ID + 32-byte key.
-	deviceID, err := randHex(16) // 32 hex chars
+	// Small QR payload (easy to scan)
+	// This is what the phone scans. Then it calls:
+	//   GET http://host:pairPort/pair/bootstrap?token=...
+	qr := fmt.Sprintf("novakey://pair?v=2&host=%s&port=%d&token=%s", advertiseHost, pairPort, token)
+
+	// Write QR to disk + open viewer
+	outDir := "."
+	pngPath, err := writeAndOpenPairQR(outDir, qr)
 	if err != nil {
-		return fmt.Errorf("rand device id: %w", err)
-	}
-	keyHex, err := randHex(32) // 64 hex chars => 32 bytes
-	if err != nil {
-		return fmt.Errorf("rand device key: %w", err)
+		log.Printf("[pair] QR written to %s but viewer open failed: %v", pngPath, err)
+	} else {
+		log.Printf("[pair] Opened QR at %s", pngPath)
 	}
 
-	// Redact these if they ever hit logs.
-	addSecret(deviceID)
-	addSecret(keyHex)
+	log.Printf("[pair] Waiting for phone to fetch bootstrap + complete pairing.")
+	log.Printf("[pair] (expires %s) server_addr=%s device_id=%s", exp.Format(time.RFC3339), serverAddr, deviceID)
+}
 
-	// Determine listen port from cfg.ListenAddr (best effort).
-	listenPort := 60768
-	if _, p, err := net.SplitHostPort(cfg.ListenAddr); err == nil {
-		// p is string port
-		if v, err2 := parsePort(p); err2 == nil && v > 0 {
-			listenPort = v
-		}
+func handlePairStatus(w http.ResponseWriter, r *http.Request) {
+	st := currentPairState()
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"active":   st.active,
+		"done":     st.done,
+		"expires":  st.expires.Unix(),
+		"server":   st.serverAddr,
+	})
+}
+
+func handlePairBootstrap(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
-	// serverEncapKey is set by loadOrCreateServerKeys()
-	if len(serverEncapKey) == 0 {
-		return fmt.Errorf("serverEncapKey empty; server keys not initialized")
+	st := currentPairState()
+	if !st.active || st.token == "" {
+		http.Error(w, "pairing not active", http.StatusNotFound)
+		return
 	}
-	serverKyberPubB64 := base64.StdEncoding.EncodeToString(serverEncapKey)
 
-	blob := newDefaultPairQR(deviceID, keyHex, serverKyberPubB64, listenPort)
-	pairURL, err := buildPairURL(blob)
-	if err != nil {
-		return fmt.Errorf("build pair url: %w", err)
+	got := r.URL.Query().Get("token")
+	if got == "" || got != st.token {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
-	addSecret(pairURL)
+	if time.Now().After(st.expires) {
+		http.Error(w, "expired", http.StatusGone)
+		return
+	}
 
-	// Write devices.json immediately (autosave / simplest UX).
-	dc := devicesConfigFile{
+	// Big blob returned here (device key + Kyber pubkey, etc.)
+	pub := base64.StdEncoding.EncodeToString(serverEncapKey)
+
+	blob := pairingBlobV3{
+		V:              3,
+		DeviceID:       st.deviceID,
+		DeviceKeyHex:   st.deviceKey,
+		ServerAddr:     st.serverAddr,
+		ServerKyberPub: pub,
+		ExpiresAtUnix:  st.expires.Unix(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(&blob)
+}
+
+func handlePairComplete(w http.ResponseWriter, r *http.Request) {
+	// The phone calls this after it has successfully saved the pairing info.
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	st := currentPairState()
+	got := r.URL.Query().Get("token")
+	if got == "" || got != st.token {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if time.Now().After(st.expires) {
+		http.Error(w, "expired", http.StatusGone)
+		return
+	}
+
+	// Write devices.json
+	if err := writeDevicesFile(cfg.DevicesFile, st.deviceID, st.deviceKey); err != nil {
+		http.Error(w, "write devices failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Reload into memory so daemon starts accepting requests immediately
+	if err := reloadDevicesFromDisk(); err != nil {
+		http.Error(w, "reload devices failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pairState.mu.Lock()
+	pairState.done = true
+	pairState.mu.Unlock()
+
+	_, _ = w.Write([]byte("ok\n"))
+	log.Printf("[pair] pairing complete; devices.json written and loaded (device_id=%s)", st.deviceID)
+}
+
+func currentPairState() pairingState {
+	pairState.mu.Lock()
+	defer pairState.mu.Unlock()
+	return pairState
+}
+
+func writeDevicesFile(path string, deviceID string, deviceKeyHex string) error {
+	if strings.TrimSpace(path) == "" {
+		path = "devices.json"
+	}
+
+	// Minimal file compatible with your existing loader.
+	out := struct {
+		Devices []deviceConfig `json:"devices"`
+	}{
 		Devices: []deviceConfig{
-			{ID: deviceID, KeyHex: keyHex},
+			{ID: deviceID, KeyHex: deviceKeyHex},
 		},
 	}
-	j, err := json.MarshalIndent(&dc, "", "  ")
+
+	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal devices file: %w", err)
+		return err
 	}
 
-	tmp := devicesPath + ".tmp"
-	perm := os.FileMode(0o600)
+	tmp := path + ".tmp"
+	perm := os.FileMode(0600)
 	if runtime.GOOS == "windows" {
-		perm = 0o644
-	}
-	if err := os.WriteFile(tmp, j, perm); err != nil {
-		return fmt.Errorf("write tmp devices file: %w", err)
-	}
-	if err := os.Rename(tmp, devicesPath); err != nil {
-		return fmt.Errorf("rename tmp devices file: %w", err)
+		perm = 0644
 	}
 
-	absDev, _ := filepath.Abs(devicesPath)
-	log.Printf("[pair] %s was missing; created a new device and wrote %s", filepath.Base(devicesPath), absDev)
-
-	// Where to put the QR PNG
-	outDir := pairingOutputDir()
-	pngPath, openErr := writeAndOpenQRPNG(outDir, pairURL)
-
-	absQR, _ := filepath.Abs(pngPath)
-	log.Printf("[pair] QR code written to %s", absQR)
-	log.Printf("[pair] Scan the QR with the NovaKey iOS app to add this device.")
-	log.Printf("[pair] (Treat the QR as a secret; it contains the device key.)")
-
-	// Not fatal if viewer can't open.
-	if openErr != nil {
-		log.Printf("[pair] NOTE: failed to open image viewer automatically: %v", openErr)
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
 	}
-
-	return nil
+	return os.Rename(tmp, path)
 }
 
-func pairingOutputDir() string {
-	// Prefer cache dir; fall back to current directory.
-	if d, err := os.UserCacheDir(); err == nil && d != "" {
-		return filepath.Join(d, "novakey")
-	}
-	return "."
-}
-
-func randHex(nBytes int) (string, error) {
-	b := make([]byte, nBytes)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-func parsePort(s string) (int, error) {
-	// tiny int parser without strconv
-	n := 0
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c < '0' || c > '9' {
-			return 0, fmt.Errorf("non-digit in port")
-		}
-		n = n*10 + int(c-'0')
-		if n > 65535 {
-			return 0, fmt.Errorf("port too large")
-		}
-	}
-	return n, nil
-}
-
-func newDefaultPairQR(deviceID, deviceKeyHex, serverKyberPubB64 string, listenPort int) PairQR {
-	now := time.Now()
-	return PairQR{
-		PairV:             1,
-		DeviceID:          deviceID,
-		DeviceKeyHex:      deviceKeyHex,
-		ServerKyberPubB64: serverKyberPubB64,
-		ListenPort:        listenPort,
-		IssuedAtUnix:      now.Unix(),
-		ExpiresAtUnix:     now.Add(2 * time.Minute).Unix(),
-	}
-}
-
-func buildPairURL(blob PairQR) (string, error) {
-	raw, err := json.Marshal(blob)
-	if err != nil {
-		return "", err
-	}
-
-	var buf bytes.Buffer
-	zw := zlib.NewWriter(&buf)
-	if _, err := zw.Write(raw); err != nil {
-		_ = zw.Close()
-		return "", err
-	}
-	if err := zw.Close(); err != nil {
-		return "", err
-	}
-
-	data := base64.RawURLEncoding.EncodeToString(buf.Bytes())
-	return fmt.Sprintf("novakey://pair?v=1&data=%s", data), nil
-}
-
-func writeAndOpenQRPNG(outDir string, payload string) (string, error) {
+func writeAndOpenPairQR(outDir string, payload string) (string, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", err
 	}
-
 	pngPath := filepath.Join(outDir, "novakey-pair.png")
 
-	// 512px is plenty for this size payload.
-	if err := qrcode.WriteFile(payload, qrcode.Medium, 512, pngPath); err != nil {
+	// Keep it easy to scan.
+	// With the small payload, this will be very low density.
+	if err := qrcode.WriteFile(payload, qrcode.Low, 512, pngPath); err != nil {
 		return "", err
 	}
 
 	if err := openDefault(pngPath); err != nil {
-		// Not fatal: file exists; user can open manually.
-		return pngPath, fmt.Errorf("wrote %s but failed to open viewer: %w", pngPath, err)
+		return pngPath, err
 	}
-
 	return pngPath, nil
 }
 
@@ -225,4 +265,71 @@ func openDefault(path string) error {
 	default:
 		return exec.Command("xdg-open", path).Start()
 	}
+}
+
+func splitHostPortOrDie(addr string) (string, int) {
+	h, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		// allow "60768" style? not expected in your config, but be defensive
+		if n, err2 := strconv.Atoi(addr); err2 == nil {
+			return "127.0.0.1", n
+		}
+		log.Fatalf("invalid listen_addr %q: %v", addr, err)
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil {
+		log.Fatalf("invalid listen_addr port %q: %v", addr, err)
+	}
+	return h, n
+}
+
+func chooseAdvertiseHost(listenHost string) string {
+	h := strings.TrimSpace(listenHost)
+	if h == "" {
+		return firstNonLoopbackIPv4OrLocalhost()
+	}
+	if h == "0.0.0.0" || h == "127.0.0.1" || h == "::" || h == "::1" || strings.EqualFold(h, "localhost") {
+		return firstNonLoopbackIPv4OrLocalhost()
+	}
+	return h
+}
+
+func firstNonLoopbackIPv4OrLocalhost() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "127.0.0.1"
+	}
+	for _, iface := range ifaces {
+		if (iface.Flags & net.FlagUp) == 0 {
+			continue
+		}
+		if (iface.Flags & net.FlagLoopback) != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue
+			}
+			return ip.String()
+		}
+	}
+	return "127.0.0.1"
+}
+
+func randHex(nBytes int) string {
+	b := make([]byte, nBytes)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
