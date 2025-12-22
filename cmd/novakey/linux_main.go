@@ -65,6 +65,7 @@ func handleConnLinux(reqID uint64, conn net.Conn, maxLen int) {
 	logReqf(reqID, "connection opened from %s", remote)
 
 	respond := func(st RespStatus, msg string) {
+		logReqf(reqID, "responding status=%d msg=%q", st, msg)
 		writeResp(conn, st, msg)
 	}
 
