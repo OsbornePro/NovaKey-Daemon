@@ -128,7 +128,7 @@ case "$TARGET" in
 
             CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
-                -o "dist/${FILENAME:-NovaKey-darwin-$ARCH}" ./cmd/novakey
+                -o "dist/${FILENAME:-novakey-darwin-$ARCH}" ./cmd/novakey
 
             CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
