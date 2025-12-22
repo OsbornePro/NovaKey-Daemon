@@ -203,7 +203,8 @@ func handleConnLinux(reqID uint64, conn net.Conn, maxLen int) {
 
 	// --- ARM GATE ---
 	// If either ArmEnabled or TwoManEnabled is set, enforce that we are armed.
-	if cfg.ArmEnabled || cfg.TwoManEnabled {
+	// if cfg.ArmEnabled || cfg.TwoManEnabled {
+	if cfg.ArmEnabled {
 		consume := boolDeref(cfg.ArmConsumeOnInject, true)
 		if !armGate.Consume(consume) {
 			logReqf(reqID, "blocked injection (not armed)")
