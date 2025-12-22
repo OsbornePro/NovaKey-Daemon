@@ -44,11 +44,6 @@ type devicesConfigFile struct {
 	Devices []deviceConfig `json:"devices"`
 }
 
-// For v3 we do NOT store a long-lived AEAD per device.
-// We derive a fresh AEAD key per message from:
-//
-//   HKDF-SHA256( ikm = kemShared, salt = deviceStaticKey, info = "NovaKey v3 AEAD key" )
-//
 // deviceState holds the static per-device secret.
 type deviceState struct {
 	id        string
@@ -71,6 +66,10 @@ type rateWindow struct {
 }
 
 // initCrypto loads server Kyber keys and per-device static keys.
+//
+// NEW behavior:
+// - If devices.json is missing, we generate a device, write devices.json,
+//   and display a QR code for the iOS app to scan.
 func initCrypto() error {
 	// 1) Load or create server Kyber keys (fills serverDecapKey / serverEncapKey).
 	if err := loadOrCreateServerKeys(cfg.ServerKeysFile); err != nil {
@@ -84,6 +83,11 @@ func initCrypto() error {
 	path := cfg.DevicesFile
 	if path == "" {
 		path = defaultDevicesFile
+	}
+
+	// If missing, bootstrap pairing by generating devices.json + showing QR.
+	if err := ensureDevicesFileExistsAndShowQR(path); err != nil {
+		return fmt.Errorf("pairing bootstrap failed: %w", err)
 	}
 
 	data, err := os.ReadFile(path)
@@ -137,14 +141,7 @@ func deriveAEADKey(deviceKey, sharedKem []byte) ([]byte, error) {
 	return key, nil
 }
 
-// decryptMessageFrame decrypts a v3 outer frame and returns a typed *inner* message:
-//
-// - If the decrypted plaintext after timestamp begins with a v1 typed message frame
-//   (from message_frame.go), it decodes it and returns MsgTypeInject/MsgTypeApprove.
-// - Otherwise it treats plaintext[8:] as a legacy password string and returns MsgTypeInject.
-//
-// NOTE: Your nvclient now ALWAYS sends typed inner frames. This function is what makes
-// macOS/Linux/Windows all interpret those correctly.
+// decryptMessageFrame decrypts a v3 outer frame and returns a typed *inner* message.
 func decryptMessageFrame(frame []byte) (deviceID string, msgType uint8, payload []byte, err error) {
 	devID, plaintext, nonce, err := decryptOuterV3(frame)
 	if err != nil {
@@ -177,13 +174,6 @@ func decryptMessageFrame(frame []byte) (deviceID string, msgType uint8, payload 
 	return devID, MsgTypeInject, body, nil
 }
 
-// decryptPasswordFrame parses and decrypts a v3 frame payload and returns (deviceID, password).
-//
-// Kept for compatibility with main loops that still operate on "password strings" and
-// magic approve payloads.
-//
-// If a typed approve message is received, we return approve_magic so the existing
-// isApproveControlPayload(password) path continues to work unchanged.
 func decryptPasswordFrame(frame []byte) (string, string, error) {
 	dev, mt, pl, err := decryptMessageFrame(frame)
 	if err != nil {
@@ -204,23 +194,6 @@ func approveMagicDefault() string {
 }
 
 // decryptOuterV3 performs outer v3 parsing, KEM decapsulation, AEAD open.
-// It returns (deviceID, plaintext, nonce, error).
-//
-// v3 frame layout:
-//
-//   [0]                 = version (0x03)
-//   [1]                 = msgType (MUST be 0x01 for outer password frame)
-//   [2]                 = idLen
-//   [3 : 3+idLen]       = deviceID
-//   [..]                = kemCtLen(u16be) || kemCt || nonce || ciphertext
-//
-// Plaintext layout (after AEAD decrypt):
-//
-//   [0:8]   = timestamp (u64be unix seconds)
-//   [8:...] = body (typed inner frame OR legacy password string)
-//
-// AEAD AAD (header) is everything up to the start of the nonce:
-//   header = version || msgType || idLen || deviceID || kemCtLen || kemCt
 func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 	if len(frame) < 3 {
 		return "", nil, nil, fmt.Errorf("frame too short: %d", len(frame))
@@ -357,4 +330,3 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 
 	return nil
 }
-
