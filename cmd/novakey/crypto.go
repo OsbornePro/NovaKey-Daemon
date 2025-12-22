@@ -6,8 +6,10 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -33,6 +35,8 @@ const (
 
 	maxRequestsPerDevicePerMin = 60 // per-device rate limit
 )
+
+var ErrNotPaired = errors.New("not paired (devices file missing/empty)")
 
 // devices.json format
 type deviceConfig struct {
@@ -65,56 +69,89 @@ type rateWindow struct {
 	count       int
 }
 
-// initCrypto loads server Kyber keys and per-device static keys.
-//
-// NEW behavior:
-// - If devices.json is missing, we generate a device, write devices.json,
-//   and display a QR code for the iOS app to scan.
+// initCrypto loads/creates server Kyber keys and attempts to load devices.json.
+// IMPORTANT: If devices.json is missing, we DO NOT fail hard anymore.
+// We start "unpaired" (devices map empty) so the pairing bootstrap can run.
 func initCrypto() error {
-	// 1) Load or create server Kyber keys (fills serverDecapKey / serverEncapKey).
+	// 1) Load or create server Kyber keys.
 	if err := loadOrCreateServerKeys(cfg.ServerKeysFile); err != nil {
 		return fmt.Errorf("loading server Kyber keys: %w", err)
 	}
-	if serverDecapKey == nil {
-		return fmt.Errorf("serverDecapKey is nil after loadOrCreateServerKeys")
+	if serverDecapKey == nil || len(serverEncapKey) == 0 {
+		return fmt.Errorf("server keys not initialized")
 	}
 
-	// 2) Load per-device static keys from devices.json.
+	// 2) Try load per-device static keys.
 	path := cfg.DevicesFile
 	if path == "" {
 		path = defaultDevicesFile
 	}
 
-	// If missing, bootstrap pairing by generating devices.json + showing QR.
-	if err := ensureDevicesFileExistsAndShowQR(path); err != nil {
-		return fmt.Errorf("pairing bootstrap failed: %w", err)
+	m, err := loadDevicesFromFile(path)
+	if err != nil {
+		// If missing or empty, keep running but mark as unpaired.
+		if errors.Is(err, ErrNotPaired) {
+			devices = make(map[string]deviceState)
+			log.Printf("[pair] %v (will start pairing bootstrap)", err)
+			return nil
+		}
+		return err
 	}
 
+	devices = m
+	absPath, _ := filepath.Abs(path)
+	log.Printf("Loaded %d device keys from %s", len(devices), absPath)
+	return nil
+}
+
+func isPaired() bool {
+	return devices != nil && len(devices) > 0
+}
+
+// reloadDevicesFromDisk re-reads devices.json after pairing completes.
+func reloadDevicesFromDisk() error {
+	path := cfg.DevicesFile
+	if path == "" {
+		path = defaultDevicesFile
+	}
+	m, err := loadDevicesFromFile(path)
+	if err != nil {
+		return err
+	}
+	devices = m
+	absPath, _ := filepath.Abs(path)
+	log.Printf("[pair] reloaded %d device keys from %s", len(devices), absPath)
+	return nil
+}
+
+func loadDevicesFromFile(path string) (map[string]deviceState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("reading devices file %q: %w", path, err)
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: %s not found", ErrNotPaired, path)
+		}
+		return nil, fmt.Errorf("reading devices file %q: %w", path, err)
 	}
 
 	var dc devicesConfigFile
 	if err := json.Unmarshal(data, &dc); err != nil {
-		return fmt.Errorf("parsing devices file %q: %w", path, err)
+		return nil, fmt.Errorf("parsing devices file %q: %w", path, err)
 	}
-
 	if len(dc.Devices) == 0 {
-		return fmt.Errorf("devices file %q has no devices", path)
+		return nil, fmt.Errorf("%w: %s has no devices", ErrNotPaired, path)
 	}
 
 	m := make(map[string]deviceState, len(dc.Devices))
 	for _, d := range dc.Devices {
 		if d.ID == "" {
-			return fmt.Errorf("device with empty id in %q", path)
+			return nil, fmt.Errorf("device with empty id in %q", path)
 		}
 		keyBytes, err := hex.DecodeString(d.KeyHex)
 		if err != nil {
-			return fmt.Errorf("device %q: invalid key_hex: %w", d.ID, err)
+			return nil, fmt.Errorf("device %q: invalid key_hex: %w", d.ID, err)
 		}
 		if len(keyBytes) != chacha20poly1305.KeySize {
-			return fmt.Errorf("device %q: key must be %d bytes, got %d",
+			return nil, fmt.Errorf("device %q: key must be %d bytes, got %d",
 				d.ID, chacha20poly1305.KeySize, len(keyBytes))
 		}
 
@@ -123,12 +160,7 @@ func initCrypto() error {
 			staticKey: keyBytes,
 		}
 	}
-
-	devices = m
-
-	absPath, _ := filepath.Abs(path)
-	fmt.Printf("Loaded %d device keys from %s\n", len(devices), absPath)
-	return nil
+	return m, nil
 }
 
 // deriveAEADKey derives a per-message AEAD key from the KEM shared key and the device static key.
@@ -174,26 +206,6 @@ func decryptMessageFrame(frame []byte) (deviceID string, msgType uint8, payload 
 	return devID, MsgTypeInject, body, nil
 }
 
-func decryptPasswordFrame(frame []byte) (string, string, error) {
-	dev, mt, pl, err := decryptMessageFrame(frame)
-	if err != nil {
-		return "", "", err
-	}
-
-	if mt == MsgTypeApprove {
-		return dev, approveMagicDefault(), nil
-	}
-	return dev, string(pl), nil
-}
-
-func approveMagicDefault() string {
-	if cfg.ApproveMagic != "" {
-		return cfg.ApproveMagic
-	}
-	return "__NOVAKEY_APPROVE__"
-}
-
-// decryptOuterV3 performs outer v3 parsing, KEM decapsulation, AEAD open.
 func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 	if len(frame) < 3 {
 		return "", nil, nil, fmt.Errorf("frame too short: %d", len(frame))
@@ -276,7 +288,6 @@ func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 	return deviceID, plaintext, nonce, nil
 }
 
-// validateFreshnessAndRate enforces timestamp window, replay protection, and rate limiting.
 func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	now := time.Now().Unix()
 
@@ -292,7 +303,6 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	replayMu.Lock()
 	defer replayMu.Unlock()
 
-	// Replay protection
 	m, ok := replayCache[deviceID]
 	if !ok {
 		m = make(map[string]int64)
@@ -309,7 +319,6 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 		}
 	}
 
-	// Rate limiting
 	rw := rateState[deviceID]
 	if now-rw.windowStart >= 60 || rw.windowStart == 0 {
 		rw.windowStart = now
