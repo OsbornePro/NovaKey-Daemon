@@ -1,47 +1,49 @@
+#Requires -Version 3.0
 #Requires -RunAsAdministrator
 $ErrorActionPreference = "Stop"
+$InformationPreference = "Continue"
 
 $ServiceName    = "NovaKey"
-$DisplayName    = "NovaKey Secure Typing Service"
-$Description    = "NovaKey secure local password transfer service"
+$DisplayName    = "NovaKey Service"
+$Description    = "NovaKey secure secret transfer service"
 
-$ExeName        = "novakey-service.exe"
-$SourceExe      = Join-Path $PSScriptRoot $ExeName
-$InstallDir     = "C:\Program Files\NovaKey"
-$TargetExe      = Join-Path $InstallDir $ExeName
-$LogDir         = Join-Path $InstallDir "logs"
+$ExeName        = "novakey-windows-amd64.exe"
+$SourceExe      = Join-Path -Path $PSScriptRoot -ChildPath $ExeName
+$InstallDir     = "$($env:ProgramFiles)\NovaKey"
+$TargetExe      = Join-Path -Path $InstallDir -ChildPath $ExeName
+$LogDir         = Join-Path -Path $InstallDir -ChildPath "logs"
 
 $FirewallRule   = "NovaKey TCP Listener"
 $ListenPort     = 60768
 
-Write-Host "[*] Installing NovaKey (Windows)"
+Write-Output -InputObject "[*] Installing NovaKey (Windows)"
 
 # ------------------------------------------------------------
 # Preconditions
 # ------------------------------------------------------------
-if (-not (Test-Path $SourceExe)) {
-    Write-Error "novakey-service.exe not found in installer directory"
+If (-NOT (Test-Path -Path $SourceExe)) {
+    Throw "[x] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') novakey-service.exe not found in installer directory"
 }
 
 # ------------------------------------------------------------
 # Create install directories
 # ------------------------------------------------------------
-Write-Host "[*] Creating install directories"
+Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Creating install directories"
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 # ------------------------------------------------------------
 # Install binary
 # ------------------------------------------------------------
-Write-Host "[*] Installing service binary"
-Copy-Item $SourceExe $TargetExe -Force
+Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Installing service binary"
+Copy-Item -Path $SourceExe -Destination $TargetExe -Force
 
 # ------------------------------------------------------------
 # Remove existing service if present
 # ------------------------------------------------------------
-if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
-    Write-Host "[*] Existing service found – removing"
-    Stop-Service $ServiceName -Force
+If (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+    Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Existing service found – removing"
+    Stop-Service -Name $ServiceName -Force
     sc.exe delete $ServiceName | Out-Null
     Start-Sleep -Seconds 2
 }
@@ -49,7 +51,7 @@ if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
 # ------------------------------------------------------------
 # Create service with virtual service account (least privilege)
 # ------------------------------------------------------------
-Write-Host "[*] Creating Windows service"
+Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Creating Windows service"
 
 sc.exe create $ServiceName `
     binPath= "`"$TargetExe`"" `
@@ -62,12 +64,12 @@ sc.exe description $ServiceName "$Description" | Out-Null
 # ------------------------------------------------------------
 # Set filesystem ACLs (service SID only)
 # ------------------------------------------------------------
-Write-Host "[*] Setting directory permissions"
+Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Setting directory permissions"
 
-$acl = Get-Acl $InstallDir
-$acl.SetAccessRuleProtection($true, $false)
+$Acl = Get-Acl -Path $InstallDir
+$Acl.SetAccessRuleProtection($True, $False)
 
-$ruleService = New-Object System.Security.AccessControl.FileSystemAccessRule(
+$RuleService = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule(
     "NT SERVICE\$ServiceName",
     "Modify",
     "ContainerInherit,ObjectInherit",
@@ -75,7 +77,7 @@ $ruleService = New-Object System.Security.AccessControl.FileSystemAccessRule(
     "Allow"
 )
 
-$ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule(
+$RuleAdmins = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule(
     "Administrators",
     "FullControl",
     "ContainerInherit,ObjectInherit",
@@ -83,7 +85,7 @@ $ruleAdmins = New-Object System.Security.AccessControl.FileSystemAccessRule(
     "Allow"
 )
 
-$ruleUsers = New-Object System.Security.AccessControl.FileSystemAccessRule(
+$RuleUsers = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule(
     "Users",
     "ReadAndExecute",
     "ContainerInherit,ObjectInherit",
@@ -91,17 +93,17 @@ $ruleUsers = New-Object System.Security.AccessControl.FileSystemAccessRule(
     "Allow"
 )
 
-$acl.SetAccessRule($ruleService)
-$acl.AddAccessRule($ruleAdmins)
-$acl.AddAccessRule($ruleUsers)
-Set-Acl $InstallDir $acl
+$Acl.SetAccessRule($ruleService)
+$Acl.AddAccessRule($ruleAdmins)
+$Acl.AddAccessRule($ruleUsers)
+Set-Acl -Path $InstallDir -AclObject $Acl
 
 # ------------------------------------------------------------
 # Firewall rule (IPv4 TCP)
 # ------------------------------------------------------------
-Write-Host "[*] Configuring firewall rule"
+Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Configuring firewall rule"
 
-if (-not (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
+If (-NOT (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule `
         -DisplayName $FirewallRule `
         -Direction Inbound `
@@ -115,12 +117,11 @@ if (-not (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyCo
 # ------------------------------------------------------------
 # Start service
 # ------------------------------------------------------------
-Write-Host "[*] Starting service"
-Start-Service $ServiceName
+Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Starting service"
+Start-Service -Name $ServiceName
 
-Write-Host
-Write-Host "[✓] NovaKey installed successfully"
-Write-Host "    Service Name : $ServiceName"
-Write-Host "    Install Dir  : $InstallDir"
-Write-Host "    Port         : $ListenPort (IPv4)"
-Write-Host
+Write-Output -InputObject "[✓] NovaKey installed successfully"
+Write-Output -InputObject "    Service Name : $ServiceName"
+Write-Output -InputObject "    Install Dir  : $InstallDir"
+Write-Output -InputObject "    Port         : $ListenPort (IPv4)"
+Write-Output -InputObject " "
