@@ -41,6 +41,7 @@ We want feedback on:
 
 * [Overview](#overview)
 * [Current Capabilities](#current-capabilities)
+* [Installers](#installers)
 * [Command-line Tools](#command-line-tools)
   * [`novakey` – the daemon](#novakey--the-daemon)
   * [`nvclient` – reference/test client](#nvclient--referencetest-client)
@@ -95,6 +96,174 @@ Protocol version is **v3**.
 | ✅ | Target policy allow/deny lists |
 | ✅ | Config via YAML (preferred) or JSON fallback |
 | ✅ | Configurable logging to file w/ rotation + redaction |
+
+---
+
+## Installers
+
+### Linux Installer
+
+The `Installers/install-linux.sh` script performs a full system-level installation of **NovaKey-Daemon** on Linux systems using `systemd`. It is intended to be run as root (`sudo`) from the repository root.
+
+#### What the installer does
+
+**1. Creates a dedicated service user**
+
+* Creates a system user named `novakey` (no login shell, no home directory).
+* The daemon always runs as this unprivileged user.
+
+**2. Installs the NovaKey daemon binary**
+
+* Copies the built binary from:
+
+  ```
+  ./dist/novakey-linux-amd64
+  ```
+
+  to:
+
+  ```
+  /usr/local/bin/novakey-linux-amd64
+  ```
+
+**3. Sets up filesystem layout**
+The installer creates and configures the following directories:
+
+* **Configuration**
+
+  ```
+  /etc/novakey/
+  ```
+
+  * Owned by `root:novakey`
+  * Readable by the service
+  * Contains `server_config.yaml`
+  * May contain `devices.json` if provided
+
+* **Runtime / state**
+
+  ```
+  /var/lib/novakey/
+  ```
+
+  * Owned by `novakey`
+  * Used as the daemon working directory
+  * Holds runtime-generated files such as:
+
+    * `server_keys.json` (auto-generated on first run)
+    * `devices.json` (created after first pairing)
+    * logs when `log_dir` is relative (e.g. `./logs`)
+
+* **Logs**
+
+  * The installer reads `log_dir` from `server_config.yaml`
+  * If `log_dir` is relative (e.g. `./logs`), logs go to:
+
+    ```
+    /var/lib/novakey/logs/
+    ```
+  * If `log_dir` is absolute (e.g. `/var/log/novakey`), that directory is created and permitted
+  * The installer ensures the log directory exists and is writable by `novakey`
+
+**4. Installs configuration**
+
+* Copies `server_config.yaml` to:
+
+  ```
+  /etc/novakey/server_config.yaml
+  ```
+
+  and also into:
+
+  ```
+  /var/lib/novakey/server_config.yaml
+  ```
+
+  so relative paths in the config resolve correctly.
+* If `devices.json` exists in the repo, it is installed.
+* If `devices.json` does **not** exist, it is intentionally **not created** — this allows NovaKey to display a QR code on first startup for initial pairing.
+
+**5. systemd service**
+
+* Installs:
+
+  ```
+  /etc/systemd/system/novakey.service
+  ```
+* The service:
+
+  * Runs as user/group `novakey`
+  * Uses `/var/lib/novakey` as `WorkingDirectory`
+  * Automatically creates the configured log directory before startup
+  * Restarts on failure
+  * Uses strong systemd hardening (`ProtectSystem=strict`, `NoNewPrivileges`, etc.)
+
+You can manage the service with:
+
+```bash
+sudo systemctl status novakey
+sudo systemctl restart novakey
+sudo journalctl -u novakey -f
+```
+
+**6. Firewall configuration**
+
+* If `firewalld` is present:
+
+  * Installs a service definition:
+
+    ```
+    /etc/firewalld/services/novakey.xml
+    ```
+  * Opens TCP port `60768`
+  * Will not re-add the rule if it already exists
+
+#### What the installer does NOT do
+
+* It does not create `devices.json` unless you supply one. this file is generated automatically by the daemon on first run.
+* It does not require `server_keys.json`; this file is generated automatically by the daemon on first run.
+* It does not overwrite existing firewall rules or paired devices unless explicitly provided.
+
+#### Where to modify behavior
+
+* **Listening address / ports / limits**
+  Edit:
+
+  ```
+  /etc/novakey/server_config.yaml
+  ```
+
+* **Logging location**
+
+  * Change `log_dir` in `server_config.yaml`
+  * Re-run the installer or restart the service
+
+* **Paired devices**
+
+  ```
+  /var/lib/novakey/devices.json
+  ```
+
+* **Server cryptographic identity**
+
+  ```
+  /var/lib/novakey/server_keys.json
+  ```
+
+* **systemd behavior**
+
+  ```
+  /etc/systemd/system/novakey.service
+  ```
+
+After modifying the service file:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart novakey
+```
+
+This installer is safe to re-run and is designed to be idempotent for existing installations.
 
 ---
 
