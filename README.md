@@ -1,5 +1,7 @@
 # 🔐 NovaKey-Daemon by OsbornePro
 
+### If you try downloading this and something does not work at the moment bare with me as I am writing the install scripts for Windows and MacOS still. The Linunx install script is written, tested, and verified works
+
 **NovaKey-Daemon** is a lightweight, cross-platform Go agent that turns your computer into a secure, authenticated password-injection endpoint.
 
 It’s designed for a world where you don’t want to type high-value secrets (master passwords, recovery keys, etc.) on your desktop keyboard:
