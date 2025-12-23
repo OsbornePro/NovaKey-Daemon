@@ -42,6 +42,8 @@ We want feedback on:
 * [Overview](#overview)
 * [Current Capabilities](#current-capabilities)
 * [Installers](#installers)
+  * [Linux Installer](#linux-installer)
+  * [Windows Installer](#windows-installer)
 * [Command-line Tools](#command-line-tools)
   * [`novakey` – the daemon](#novakey--the-daemon)
   * [`nvclient` – reference/test client](#nvclient--referencetest-client)
