@@ -44,6 +44,7 @@ We want feedback on:
 * [Installers](#installers)
   * [Linux Installer](#linux-installer)
   * [Windows Installer](#windows-installer)
+  * [macOS Installer](#macos-installer)
 * [Command-line Tools](#command-line-tools)
   * [`novakey` – the daemon](#novakey--the-daemon)
   * [`nvclient` – reference/test client](#nvclient--referencetest-client)
@@ -442,6 +443,139 @@ Restart-Service -Name NovaKey
   * Rule name: *NovaKey TCP Listener*
 
 The Windows installer is designed to be **idempotent** and safe to re-run on an existing installation.
+
+### macOS Installer
+
+The macOS installer script installs **NovaKey-Daemon** as a system-wide background service using **LaunchDaemons**. It must be run with `sudo` because it writes to system locations under `/Library` and installs the daemon binary into `/usr/local/bin`.
+
+#### What the installer does
+
+**1. Installs the NovaKey daemon binary**
+
+* Copies the daemon binary from the current directory:
+
+  ```
+  ./novakey-service
+  ```
+
+  to:
+
+  ```
+  /usr/local/bin/novakey-service
+  ```
+
+**2. Creates the application support layout**
+The installer creates NovaKey’s system support directory:
+
+* **Application Support**
+
+  ```
+  /Library/Application Support/NovaKey/
+  ```
+* **Logs**
+
+  ```
+  /Library/Application Support/NovaKey/logs/
+  ```
+
+Permissions are set to:
+
+* Ownership: `root:wheel`
+* Mode: `755` (readable by all users)
+
+**3. Installs a LaunchDaemon**
+The installer writes a LaunchDaemon plist to:
+
+```
+/Library/LaunchDaemons/com.osbornepro.novakey.plist
+```
+
+The LaunchDaemon:
+
+* Runs at boot (`RunAtLoad`)
+* Is kept alive and restarted automatically (`KeepAlive`)
+* Executes:
+
+  ```
+  /usr/local/bin/novakey-service
+  ```
+* Writes stdout/stderr to:
+
+  ```
+  /Library/Application Support/NovaKey/logs/out.log
+  /Library/Application Support/NovaKey/logs/err.log
+  ```
+
+**4. Loads (or reloads) the service**
+
+* Unloads any existing instance of the plist (if present)
+* Loads the new plist into `launchd`
+
+You can manage the service with:
+
+```bash
+sudo launchctl list | grep com.osbornepro.novakey
+sudo launchctl unload /Library/LaunchDaemons/com.osbornepro.novakey.plist
+sudo launchctl load /Library/LaunchDaemons/com.osbornepro.novakey.plist
+```
+
+To inspect logs:
+
+```bash
+sudo tail -f "/Library/Application Support/NovaKey/logs/out.log"
+sudo tail -f "/Library/Application Support/NovaKey/logs/err.log"
+```
+
+#### Configuration and runtime behavior
+
+* The daemon is started by `launchd` with no additional arguments.
+* Any runtime-generated files (keys, pairing devices, logs) are expected to be written to locations configured inside the daemon (or defaults compiled into it).
+* The LaunchDaemon captures stdout/stderr into dedicated log files so failures can be diagnosed without an interactive session.
+
+#### What you must configure on macOS (required for typing)
+
+macOS restricts synthetic input and requires explicit user approval.
+
+You must grant permissions to the NovaKey daemon host process:
+
+* **Accessibility**
+
+  * System Settings → Privacy & Security → Accessibility
+* **Input Monitoring**
+
+  * System Settings → Privacy & Security → Input Monitoring
+
+Without these permissions, the daemon may accept requests but fail to inject keystrokes into the focused application.
+
+#### Where to modify behavior
+
+* **LaunchDaemon settings (auto-restart, arguments, log paths)**
+
+  ```
+  /Library/LaunchDaemons/com.osbornepro.novakey.plist
+  ```
+
+  After editing:
+
+  ```bash
+  sudo launchctl unload /Library/LaunchDaemons/com.osbornepro.novakey.plist
+  sudo launchctl load /Library/LaunchDaemons/com.osbornepro.novakey.plist
+  ```
+
+* **Installed binary**
+
+  ```
+  /usr/local/bin/novakey-service
+  ```
+
+* **Log files**
+
+  ```
+  /Library/Application Support/NovaKey/logs/out.log
+  /Library/Application Support/NovaKey/logs/err.log
+  ```
+
+The macOS installer is safe to re-run and will overwrite the installed plist and binary, then reload the service.
 
 ---
 
