@@ -156,12 +156,15 @@ if command -v firewall-cmd >/dev/null 2>&1; then
   echo "[*] Setting firewalld service rule (if available)"
   install -d -m 0755 /etc/firewalld/services
 
+  PAIR_PORT=$((LISTEN_PORT + 2))
+
   cat > "$FW_FILE" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <service>
     <short>novakey</short>
     <description>NovaKey Service</description>
     <port protocol="tcp" port="$LISTEN_PORT"/>
+    <port protocol="tcp" port="$PAIR_PORT"/>
 </service>
 EOF
   chmod 0644 "$FW_FILE"
