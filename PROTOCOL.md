@@ -289,3 +289,125 @@ Platform notes:
 * `cmd/nvpair/` — pairing + device key management
 
 > **NOTE:** Device IDs are sent in plaintext for routing/logging. Do not use sensitive identifiers.
+
+
+## Packet Architectural Diagrams
+
+### Outer TCP Frame
+
+```mermaid
+graph TD
+  A[Outer TCP frame] --> B[u16 length]
+  A --> C[Payload bytes]
+```
+
+### v3 Payload Layout
+
+```mermaid
+graph TD
+  P[v3 payload] --> V[byte0 version=3]
+  P --> T[byte1 outerType=1]
+  P --> L[byte2 idLen]
+  P --> D[deviceID bytes]
+
+  D --> H[H=3+idLen]
+  H --> KL[kemCtLen u16]
+  KL --> KC[kemCt bytes]
+
+  KC --> K[K=H+2+kemCtLen]
+  K --> N[nonce 24 bytes]
+  N --> CT[ciphertext bytes]
+```
+
+### AAD Coverage
+
+```mermaid
+graph LR
+  A[AAD = header through kemCt] --> B[XChaCha20-Poly1305 Seal/Open uses AAD]
+```
+
+### Plaintext Inside AEAD
+
+```mermaid
+graph TD
+  P0[plaintext after AEAD open] --> TS[bytes 0-7: timestamp u64 BE]
+  P0 --> IN[bytes 8-end: inner frame bytes]
+```
+
+### Inner Frame v1 Layout
+
+```mermaid
+graph TD
+  I[Inner frame v1] --> IV[byte0 innerVersion=1]
+  I --> MT[byte1 msgType 1 inject 2 approve]
+  I --> DL[bytes2-3 deviceIDLen u16]
+  I --> PL[bytes4-7 payloadLen u32]
+  I --> DID[deviceID UTF8 bytes]
+  I --> PAY[payload UTF8 bytes]
+```
+
+### Code → meaning
+
+```mermaid
+graph TD
+  S[Status u8] --> OK[0x00 ok]
+  S --> NA[0x01 notArmed]
+  S --> AP[0x02 needsApprove]
+  S --> NP[0x03 notPaired]
+  S --> BR[0x04 badRequest]
+  S --> BT[0x05 badTimestamp]
+  S --> RE[0x06 replay]
+  S --> RL[0x07 rateLimit]
+  S --> CF[0x08 cryptoFail]
+  S --> IE[0x7F internalError]
+```
+
+### Client handling decision tree
+
+```mermaid
+graph TD
+  R[Response] --> Q{Status}
+
+  Q -->|0x00| A0[Success]
+  Q -->|0x01| A1[Not armed]
+  Q -->|0x02| A2[Approve then retry]
+  Q -->|0x03| A3[Re-pair]
+  Q -->|0x04| A4[Check versions]
+  Q -->|0x05| A5[Sync clocks]
+  Q -->|0x06| A6[Retry once]
+  Q -->|0x07| A7[Wait then retry]
+  Q -->|0x08| A8[Re-pair likely]
+  Q -->|0x7F| A9[Check daemon logs]
+```
+
+### Practical Client Handling
+
+```mermaid
+graph TD
+  R[Response received] --> Q{Status}
+
+  Q -->|0x00| A0[Success]
+  Q -->|0x01| A1[Not armed]
+  Q -->|0x02| A2[Approve then retry inject]
+  Q -->|0x03| A3[Not paired re pair]
+  Q -->|0x04| A4[Bad request check versions]
+  Q -->|0x05| A5[Clock skew sync time]
+  Q -->|0x06| A6[Replay detected retry once]
+  Q -->|0x07| A7[Rate limited wait]
+  Q -->|0x08| A8[Crypto fail re pair likely]
+  Q -->|0x7F| A9[Internal error check logs]
+```
+
+```mermaid
+graph TD
+  R[Response received] --> Q{Status}
+
+  Q -->|0x02| A2[Needs approve]
+  A2 --> B1[If auto approve enabled]
+  B1 --> B2[Send approve]
+  B2 --> B3[Retry inject]
+  A2 --> C1[If auto approve disabled]
+  C1 --> C2[Prompt user to approve]
+```
+
+---
