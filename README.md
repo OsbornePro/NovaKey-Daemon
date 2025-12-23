@@ -21,11 +21,15 @@ NovaKey-Daemon v3 uses **ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305** with p
 In addition, NovaKey supports safety controls:
 
 * arming (“push-to-type”)
+
 * two-man approval gating (per-device approve window)
+
 * injection safety rules (`allow_newlines`, `max_inject_len`)
+
 * target policy allow/deny lists
 
 * Protocol format: `PROTOCOL.md`
+
 * Security model: `SECURITY.md`
 
 We want feedback on:
@@ -42,10 +46,12 @@ We want feedback on:
 * [Overview](#overview)
 * [Current Capabilities](#current-capabilities)
 * [Installers](#installers)
+
   * [Linux Installer](#linux-installer)
   * [Windows Installer](#windows-installer)
   * [macOS Installer](#macos-installer)
 * [Command-line Tools](#command-line-tools)
+
   * [`novakey` – the daemon](#novakey--the-daemon)
   * [`nvclient` – reference/test client](#nvclient--referencetest-client)
   * [`nvpair` – device pairing & key management](#nvpair--device-pairing--key-management)
@@ -83,22 +89,22 @@ Protocol version is **v3**.
 
 ## Current Capabilities
 
-| ✅ | Capability |
-| - | ---------- |
-| ✅ | Cross-platform daemon for Linux / macOS / Windows |
-| ✅ | ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305 transport |
-| ✅ | Per-device keys in `devices.json` |
+| ✅ | Capability                                                    |
+| - | ------------------------------------------------------------- |
+| ✅ | Cross-platform daemon for Linux / macOS / Windows             |
+| ✅ | ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305 transport      |
+| ✅ | Per-device keys in `devices.json`                             |
 | ✅ | Server keys in `server_keys.json` (auto-generated if missing) |
-| ✅ | Timestamp freshness validation |
-| ✅ | Nonce replay protection |
-| ✅ | Per-device rate limiting |
-| ✅ | Optional arming gate (“push-to-type”) |
-| ✅ | Optional two-man mode (arm + device approval required) |
-| ✅ | Local-only Arm API with token auth |
-| ✅ | Injection safety (`allow_newlines`, `max_inject_len`) |
-| ✅ | Target policy allow/deny lists |
-| ✅ | Config via YAML (preferred) or JSON fallback |
-| ✅ | Configurable logging to file w/ rotation + redaction |
+| ✅ | Timestamp freshness validation                                |
+| ✅ | Nonce replay protection                                       |
+| ✅ | Per-device rate limiting                                      |
+| ✅ | Optional arming gate (“push-to-type”)                         |
+| ✅ | Optional two-man mode (arm + device approval required)        |
+| ✅ | Local-only Arm API with token auth                            |
+| ✅ | Injection safety (`allow_newlines`, `max_inject_len`)         |
+| ✅ | Target policy allow/deny lists                                |
+| ✅ | Config via YAML (preferred) or JSON fallback                  |
+| ✅ | Configurable logging to file w/ rotation + redaction          |
 
 ---
 
@@ -106,8 +112,9 @@ Protocol version is **v3**.
 
 ### Linux Installer
 
-The `Installers/install-linux.sh` script performs a full system-level installation of **NovaKey-Daemon** on Linux systems using `systemd`. 
+The `Installers/install-linux.sh` script performs a full system-level installation of **NovaKey-Daemon** on Linux systems using `systemd`.
 It is intended to be run as root (`sudo`) from the repository root.
+
 ```bash
 git clone https://github.com/OsbornePro/NovaKey-Daemon.git
 cd NovaKey-Daemon*
@@ -135,8 +142,31 @@ sudo ./Installers/install-linux.sh
   /usr/local/bin/novakey-linux-amd64
   ```
 
-**3. Sets up filesystem layout**
-The installer creates and configures the following directories:
+**3. Installs configuration**
+
+* Installs `server_config.yaml` to:
+
+  ```
+  /etc/novakey/server_config.yaml
+  ```
+
+  and also copies it to:
+
+  ```
+  /var/lib/novakey/server_config.yaml
+  ```
+
+* If `devices.json` exists in the repo at install time, it is installed to:
+
+  ```
+  /etc/novakey/devices.json
+  ```
+
+* If `devices.json` does **not** exist, the installer intentionally does **not** create it (pairing mode on first start).
+
+**4. Sets up filesystem layout**
+
+Creates:
 
 * **Configuration**
 
@@ -144,53 +174,31 @@ The installer creates and configures the following directories:
   /etc/novakey/
   ```
 
-  * Owned by `root:novakey`
-  * Readable by the service
-  * Contains `server_config.yaml`
-  * May contain `devices.json` if provided
+  * Owned by `root:novakey` (750)
+  * Config files readable by the service group
 
-* **Runtime / state**
+* **Runtime / state (WorkingDirectory)**
 
   ```
   /var/lib/novakey/
   ```
 
-  * Owned by `novakey`
+  * Owned by `novakey` (700)
   * Used as the daemon working directory
-  * Holds runtime-generated files such as:
-
-    * `server_keys.json` (auto-generated on first run)
-    * `devices.json` (created after first pairing)
-    * logs when `log_dir` is relative (e.g. `./logs`)
 
 * **Logs**
 
-  * The installer reads `log_dir` from `server_config.yaml`
-  * If `log_dir` is relative (e.g. `./logs`), logs go to:
+  The installer reads `log_dir` from `server_config.yaml` (best-effort):
+
+  * If `log_dir` is relative (e.g. `./logs`), it resolves under the working directory:
 
     ```
     /var/lib/novakey/logs/
     ```
+
   * If `log_dir` is absolute (e.g. `/var/log/novakey`), that directory is created and permitted
-  * The installer ensures the log directory exists and is writable by `novakey`
 
-**4. Installs configuration**
-
-* Copies `server_config.yaml` to:
-
-  ```
-  /etc/novakey/server_config.yaml
-  ```
-
-  and also into:
-
-  ```
-  /var/lib/novakey/server_config.yaml
-  ```
-
-  so relative paths in the config resolve correctly.
-* If `devices.json` exists in the repo, it is installed.
-* If `devices.json` does **not** exist, it is intentionally **not created** — this allows NovaKey to display a QR code on first startup for initial pairing.
+  The resolved log directory is created and owned by `novakey`.
 
 **5. systemd service**
 
@@ -199,13 +207,30 @@ The installer creates and configures the following directories:
   ```
   /etc/systemd/system/novakey.service
   ```
+
 * The service:
 
   * Runs as user/group `novakey`
+
   * Uses `/var/lib/novakey` as `WorkingDirectory`
-  * Automatically creates the configured log directory before startup
+
+  * Creates + permissions the resolved log directory before startup (`ExecStartPre`)
+
+  * Starts with:
+
+    ```
+    /usr/local/bin/novakey-linux-amd64 --config /etc/novakey/server_config.yaml
+    ```
+
   * Restarts on failure
-  * Uses strong systemd hardening (`ProtectSystem=strict`, `NoNewPrivileges`, etc.)
+
+  * Uses systemd hardening (`ProtectSystem=strict`, `NoNewPrivileges`, `LockPersonality`, `MemoryDenyWriteExecute`, etc.)
+
+  * Allows writes only to:
+
+    * `/var/lib/novakey`
+    * `/etc/novakey`
+    * the resolved `log_dir` path
 
 You can manage the service with:
 
@@ -224,19 +249,20 @@ sudo journalctl -u novakey -f
     ```
     /etc/firewalld/services/novakey.xml
     ```
+
+  * Enables the service if not already enabled
+
   * Opens TCP port `60768`
-  * Will not re-add the rule if it already exists
 
 #### What the installer does NOT do
 
-* It does not create `devices.json` unless you supply one. this file is generated automatically by the daemon on first run.
-* It does not require `server_keys.json`; this file is generated automatically by the daemon on first run.
-* It does not overwrite existing firewall rules or paired devices unless explicitly provided.
+* It does not require `server_keys.json`; the daemon generates it automatically on first run if missing.
+* It does not create `devices.json` unless you supply one; if absent, pairing mode is used on first start.
+* It does not re-add the firewall rule if it already exists.
 
 #### Where to modify behavior
 
 * **Listening address / ports / limits**
-  Edit:
 
   ```
   /etc/novakey/server_config.yaml
@@ -245,19 +271,29 @@ sudo journalctl -u novakey -f
 * **Logging location**
 
   * Change `log_dir` in `server_config.yaml`
-  * Re-run the installer or restart the service
+  * Restart the service:
+
+    ```bash
+    sudo systemctl restart novakey
+    ```
 
 * **Paired devices**
 
-  ```
-  /var/lib/novakey/devices.json
-  ```
+  * If `devices_file` is relative (default), it resolves under `WorkingDirectory`:
+
+    ```
+    /var/lib/novakey/devices.json
+    ```
+
+  * If you set an absolute `devices_file`, it will be wherever you specify.
 
 * **Server cryptographic identity**
 
-  ```
-  /var/lib/novakey/server_keys.json
-  ```
+  * If `server_keys_file` is relative (default), it resolves under `WorkingDirectory`:
+
+    ```
+    /var/lib/novakey/server_keys.json
+    ```
 
 * **systemd behavior**
 
@@ -272,11 +308,13 @@ sudo systemctl daemon-reload
 sudo systemctl restart novakey
 ```
 
-This installer is safe to re-run and is designed to be idempotent for existing installations.
+This installer is designed to be safe to re-run on an existing installation.
+
+---
 
 ### Windows Installer
 
-The Windows installer script installs **NovaKey-Daemon** as a hardened Windows Service using native Windows facilities. 
+The Windows installer script installs **NovaKey-Daemon** as a hardened Windows Service using native Windows facilities.
 It must be run from an **elevated PowerShell session** (*Administrator*).
 
 ```powershell
@@ -290,10 +328,10 @@ Set-Location -Path "$env:USERPROFILE\Downloads\NovaKey-Daemon-main"
 
 **1. Installs the NovaKey daemon binary**
 
-* Copies the executable from the installer directory:
+* Copies the executable from:
 
   ```
-  .\dist\novakey-windows-amd64.exe
+  .\Installers\dist\novakey-windows-amd64.exe
   ```
 
   to:
@@ -303,7 +341,8 @@ Set-Location -Path "$env:USERPROFILE\Downloads\NovaKey-Daemon-main"
   ```
 
 **2. Creates the installation layout**
-The installer creates the following directories:
+
+Creates:
 
 * **Program directory**
 
@@ -311,20 +350,15 @@ The installer creates the following directories:
   C:\Program Files\NovaKey\
   ```
 
-  * Contains the NovaKey executable
-  * Contains runtime-generated files (*keys, devices, logs*)
-
 * **Logs directory**
 
   ```
   C:\Program Files\NovaKey\logs\
   ```
 
-  * Used when `log_dir` is set to a relative path in `server_config.yaml`
-
 **3. Creates a Windows Service**
 
-* Creates a Windows service named:
+* Service name:
 
   ```
   NovaKey
@@ -336,36 +370,35 @@ The installer creates the following directories:
   NovaKey Service
   ```
 
-* Description:
-
-  ```
-  NovaKey secure secret transfer service
-  ```
-
 * The service:
 
   * Starts automatically at boot
+
   * Runs as a **virtual service account**:
 
     ```
     NT SERVICE\NovaKey
     ```
+
   * Does **not** run as Administrator or LocalSystem
 
 **4. Applies least-privilege filesystem permissions**
-The installer locks down the install directory so that:
+
+Locks down `C:\Program Files\NovaKey\` so that:
 
 * `NT SERVICE\NovaKey`
 
-  * Has **Modify** permissions (required for logs, keys, pairing data)
+  * Has **Modify** permissions (required for logs and runtime state)
+
 * `Administrators`
 
   * Have **Full Control**
+
 * `Users`
 
   * Have **Read & Execute** only
 
-Inheritance is disabled to prevent accidental permission leaks from parent directories.
+Inheritance is disabled to prevent accidental permission leaks.
 
 **5. Firewall configuration**
 
@@ -374,11 +407,13 @@ Inheritance is disabled to prevent accidental permission leaks from parent direc
   ```
   NovaKey TCP Listener
   ```
+
 * Allows inbound **TCP** traffic on port:
 
   ```
   60768
   ```
+
 * The rule is only added if it does not already exist.
 
 **6. Service lifecycle**
@@ -388,7 +423,8 @@ Inheritance is disabled to prevent accidental permission leaks from parent direc
   * It is stopped
   * Deleted
   * Re-created cleanly
-* The service is started automatically at the end of installation.
+
+* The service is started at the end of installation.
 
 You can manage the service with:
 
@@ -401,54 +437,36 @@ Restart-Service -Name NovaKey
 
 #### Configuration and runtime behavior
 
-* The daemon reads `server_config.yaml` from its working directory.
-* Relative paths in the configuration (such as `devices.json`, `server_keys.json`, or `./logs`) resolve relative to:
-
-  ```
-  C:\Program Files\NovaKey\
-  ```
-* If `devices.json` does **not** exist on first start:
-
-  * NovaKey enters pairing mode
-  * A QR code is displayed for initial device pairing
-* `server_keys.json` is generated automatically on first run if missing.
+* The installer creates an install directory and log directory, but does not install `server_config.yaml` or `devices.json` by default.
+* Runtime files and relative paths typically resolve relative to the process working directory; for predictable behavior, use absolute paths in `server_config.yaml` or ensure the service is launched with explicit config arguments.
 
 #### Where to modify behavior
-
-* **Listening address, limits, logging**
-
-  * Edit `server_config.yaml` in the install directory
-
-* **Paired devices**
-
-  ```
-  C:\Program Files\NovaKey\devices.json
-  ```
-
-* **Server cryptographic identity**
-
-  ```
-  C:\Program Files\NovaKey\server_keys.json
-  ```
-
-* **Logs**
-
-  ```
-  C:\Program Files\NovaKey\logs\
-  ```
 
 * **Firewall rule**
 
   * Managed via Windows Defender Firewall (`wf.msc`)
   * Rule name: *NovaKey TCP Listener*
 
-The Windows installer is designed to be **idempotent** and safe to re-run on an existing installation.
+* **Service**
+
+  * Managed via Services (`services.msc`)
+  * Service name: *NovaKey*
+
+---
 
 ### macOS Installer
 
 The macOS installer deploys NovaKey-Daemon as a **system LaunchDaemon** and runs it with **least privilege** using a dedicated service account.
 
-### What it installs
+#### How to run
+
+Run from the repository root:
+
+```bash
+sudo ./Installers/install-macos.sh
+```
+
+#### What it installs
 
 **Binary**
 
@@ -458,62 +476,84 @@ The macOS installer deploys NovaKey-Daemon as a **system LaunchDaemon** and runs
 
 **Application Support layout**
 
-* Creates:
+Creates:
 
-  * `/Library/Application Support/NovaKey/`
-  * `/Library/Application Support/NovaKey/config/` (configuration)
-  * `/Library/Application Support/NovaKey/data/` (runtime working directory)
-  * Logs directory is derived from `log_dir` in `server_config.yaml`:
+* `/Library/Application Support/NovaKey/`
+* `/Library/Application Support/NovaKey/config/` (configuration)
+* `/Library/Application Support/NovaKey/data/` (runtime working directory)
 
-    * If `log_dir` is relative (e.g. `./logs`), it resolves under:
+**Logging directory**
 
-      * `/Library/Application Support/NovaKey/data/logs`
-    * If `log_dir` is absolute (e.g. `/var/log/novakey`), it uses that path.
+The installer reads `log_dir` from `server_config.yaml` (best-effort) and resolves it as follows:
+
+* If `log_dir` is relative (e.g. `./logs`), it resolves under the daemon `WorkingDirectory`:
+
+  * `/Library/Application Support/NovaKey/data/logs`
+
+* If `log_dir` is absolute (e.g. `/var/log/novakey`), it uses that absolute path.
+
+The resolved log directory is created and owned by the service user.
 
 **LaunchDaemon**
 
-* Installs:
+Installs:
 
-  * `/Library/LaunchDaemons/com.osbornepro.novakey.plist`
-* The daemon is started with:
+* `/Library/LaunchDaemons/com.osbornepro.novakey.plist`
 
-  * `/usr/local/bin/novakey --config /Library/Application Support/NovaKey/config/server_config.yaml`
-* The daemon’s `WorkingDirectory` is set to:
+Starts the daemon with:
+
+* `/usr/local/bin/novakey --config /Library/Application Support/NovaKey/config/server_config.yaml`
+
+Sets:
+
+* `WorkingDirectory` to:
 
   * `/Library/Application Support/NovaKey/data`
 
-### Security model and permissions
+Routes stdout/stderr to the resolved `log_dir`:
+
+* `out.log`
+* `err.log`
+
+#### Security model and permissions
 
 **Dedicated service user**
 
 * Creates a system user and group:
 
   * `novakey:novakey`
+
 * Runs the LaunchDaemon as:
 
   * `novakey:novakey` (not root)
 
 **Filesystem permissions**
 
-* Root-owned (read-only for service):
+* Root-owned:
 
   * `/usr/local/bin/novakey` → `root:wheel` (755)
+  * `/Library/Application Support/NovaKey/` → `root:wheel` (755)
+  * `/Library/Application Support/NovaKey/config/` → `root:wheel` (755)
+
+* Config files readable by the daemon (group readable), writable only by root:
+
   * `/Library/Application Support/NovaKey/config/server_config.yaml` → `root:novakey` (640)
   * `/Library/Application Support/NovaKey/config/devices.json` (if installed) → `root:novakey` (640)
+
 * Service-owned (writable only by the daemon):
 
-  * `/Library/Application Support/NovaKey/data` → `novakey:novakey` (700)
-  * Log directory (derived from `log_dir`) → `novakey:novakey` (700)
+  * `/Library/Application Support/NovaKey/data/` → `novakey:novakey` (700)
+  * resolved `log_dir` path → `novakey:novakey` (700)
 
-### Pairing behavior (`devices.json`)
+#### Pairing behavior (`devices.json`)
 
 * If `devices.json` is **not** present in the repo when installing, the installer **does not create it**.
-* On first start, the daemon will enter pairing mode and **display a QR code** to bootstrap the first device.
+* On first start, the daemon will enter pairing mode and display a QR code to bootstrap the first device.
 * If `devices.json` *is* provided, it is installed to:
 
   * `/Library/Application Support/NovaKey/config/devices.json`
 
-### Service management
+#### Service management
 
 Check service status:
 
@@ -536,7 +576,7 @@ sudo tail -f "/Library/Application Support/NovaKey/data/logs/out.log"
 sudo tail -f "/Library/Application Support/NovaKey/data/logs/err.log"
 ```
 
-### macOS permissions required for typing
+#### macOS permissions required for typing
 
 NovaKey requires OS permission to inject keystrokes:
 
