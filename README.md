@@ -103,7 +103,13 @@ Protocol version is **v3**.
 
 ### Linux Installer
 
-The `Installers/install-linux.sh` script performs a full system-level installation of **NovaKey-Daemon** on Linux systems using `systemd`. It is intended to be run as root (`sudo`) from the repository root.
+The `Installers/install-linux.sh` script performs a full system-level installation of **NovaKey-Daemon** on Linux systems using `systemd`. 
+It is intended to be run as root (`sudo`) from the repository root.
+```bash
+git clone https://github.com/OsbornePro/NovaKey-Daemon.git
+cd NovaKey-Daemon*
+sudo ./Installers/install-linux.sh
+```
 
 #### What the installer does
 
