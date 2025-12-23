@@ -8,7 +8,7 @@ $DisplayName    = "NovaKey Service"
 $Description    = "NovaKey secure secret transfer service"
 
 $ExeName        = "novakey-windows-amd64.exe"
-$SourceExe      = Join-Path -Path $PSScriptRoot -ChildPath $ExeName
+$SourceExe      = Join-Path -Path "$($PSScriptRoot)\dist" -ChildPath $ExeName
 $InstallDir     = "$($env:ProgramFiles)\NovaKey"
 $TargetExe      = Join-Path -Path $InstallDir -ChildPath $ExeName
 $LogDir         = Join-Path -Path $InstallDir -ChildPath "logs"
