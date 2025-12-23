@@ -11,6 +11,9 @@
 # Test binary, built with `go test -c`
 *.test
 *.dev
+arm_token.txt
+server_keys.json
+devices.json
 
 # Ignore the generated QR image
 novakey-pair.png
