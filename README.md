@@ -1,7 +1,16 @@
 # 🔐 NovaKey-Daemon by OsbornePro
 
-### If you try downloading this and something does not work at the moment bare with me as I am writing the install scripts for Windows and MacOS still. The Linunx install script is written, tested, and verified works
+I recently created the iOS application (*not yet publicly available*) and updated the daemon to generate a QR code when `devices.json` does not exist.
+I highly recommend using my `Installers` scripts when setting up the service for your own use as it will save you time and setup your envrionment in the most secure way possible.
 
+| File / Script                          | Status       |
+|----------------------------------------|--------------|
+| build.ps1                              | Working      |
+| build.sh1                              | Working      |
+| Installers/install-windows.ps1         | Working      |
+| Installers/install-linux.sh            | Working      |
+| Installers/install-macos.sh            | In progress  |
+  
 **NovaKey-Daemon** is a lightweight, cross-platform Go agent that turns your computer into a secure, authenticated password-injection endpoint.
 
 It’s designed for a world where you don’t want to type high-value secrets (master passwords, recovery keys, etc.) on your desktop keyboard:
