@@ -271,6 +271,176 @@ sudo systemctl restart novakey
 
 This installer is safe to re-run and is designed to be idempotent for existing installations.
 
+### Windows Installer
+
+The Windows installer script installs **NovaKey-Daemon** as a hardened Windows Service using native Windows facilities. 
+It must be run from an **elevated PowerShell session** (*Administrator*).
+
+```powershell
+Set-Location -Path "$env:USERPROFILE\Downloads\"
+Expand-Archive -Path "$env:USERPROFILE\Downloads\NovaKey-Daemon-main.zip" -DestinationPath .
+Set-Location -Path "$env:USERPROFILE\Downloads\NovaKey-Daemon-main"
+.\Installers\install-windows.ps1
+```
+
+#### What the installer does
+
+**1. Installs the NovaKey daemon binary**
+
+* Copies the executable from the installer directory:
+
+  ```
+  .\dist\novakey-windows-amd64.exe
+  ```
+
+  to:
+
+  ```
+  C:\Program Files\NovaKey\novakey-windows-amd64.exe
+  ```
+
+**2. Creates the installation layout**
+The installer creates the following directories:
+
+* **Program directory**
+
+  ```
+  C:\Program Files\NovaKey\
+  ```
+
+  * Contains the NovaKey executable
+  * Contains runtime-generated files (*keys, devices, logs*)
+
+* **Logs directory**
+
+  ```
+  C:\Program Files\NovaKey\logs\
+  ```
+
+  * Used when `log_dir` is set to a relative path in `server_config.yaml`
+
+**3. Creates a Windows Service**
+
+* Creates a Windows service named:
+
+  ```
+  NovaKey
+  ```
+
+* Display name:
+
+  ```
+  NovaKey Service
+  ```
+
+* Description:
+
+  ```
+  NovaKey secure secret transfer service
+  ```
+
+* The service:
+
+  * Starts automatically at boot
+  * Runs as a **virtual service account**:
+
+    ```
+    NT SERVICE\NovaKey
+    ```
+  * Does **not** run as Administrator or LocalSystem
+
+**4. Applies least-privilege filesystem permissions**
+The installer locks down the install directory so that:
+
+* `NT SERVICE\NovaKey`
+
+  * Has **Modify** permissions (required for logs, keys, pairing data)
+* `Administrators`
+
+  * Have **Full Control**
+* `Users`
+
+  * Have **Read & Execute** only
+
+Inheritance is disabled to prevent accidental permission leaks from parent directories.
+
+**5. Firewall configuration**
+
+* Creates a Windows Defender Firewall rule named:
+
+  ```
+  NovaKey TCP Listener
+  ```
+* Allows inbound **TCP** traffic on port:
+
+  ```
+  60768
+  ```
+* The rule is only added if it does not already exist.
+
+**6. Service lifecycle**
+
+* If an existing NovaKey service is found:
+
+  * It is stopped
+  * Deleted
+  * Re-created cleanly
+* The service is started automatically at the end of installation.
+
+You can manage the service with:
+
+```powershell
+Get-Service -Name NovaKey
+Start-Service -Name NovaKey
+Stop-Service -Name NovaKey
+Restart-Service -Name NovaKey
+```
+
+#### Configuration and runtime behavior
+
+* The daemon reads `server_config.yaml` from its working directory.
+* Relative paths in the configuration (such as `devices.json`, `server_keys.json`, or `./logs`) resolve relative to:
+
+  ```
+  C:\Program Files\NovaKey\
+  ```
+* If `devices.json` does **not** exist on first start:
+
+  * NovaKey enters pairing mode
+  * A QR code is displayed for initial device pairing
+* `server_keys.json` is generated automatically on first run if missing.
+
+#### Where to modify behavior
+
+* **Listening address, limits, logging**
+
+  * Edit `server_config.yaml` in the install directory
+
+* **Paired devices**
+
+  ```
+  C:\Program Files\NovaKey\devices.json
+  ```
+
+* **Server cryptographic identity**
+
+  ```
+  C:\Program Files\NovaKey\server_keys.json
+  ```
+
+* **Logs**
+
+  ```
+  C:\Program Files\NovaKey\logs\
+  ```
+
+* **Firewall rule**
+
+  * Managed via Windows Defender Firewall (`wf.msc`)
+  * Rule name: *NovaKey TCP Listener*
+
+The Windows installer is designed to be **idempotent** and safe to re-run on an existing installation.
+
 ---
 
 ## Command-line Tools
