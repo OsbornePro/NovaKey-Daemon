@@ -1,127 +1,109 @@
-#Requires -Version 3.0
-#Requires -RunAsAdministrator
+#Requires -Version 5.1
 $ErrorActionPreference = "Stop"
 $InformationPreference = "Continue"
 
-$ServiceName    = "NovaKey"
-$DisplayName    = "NovaKey Service"
-$Description    = "NovaKey secure secret transfer service"
+# NovaKey Windows installer (per-user, Scheduled Task)
+# - Installs binary + config under %LOCALAPPDATA%\NovaKey
+# - Creates a Scheduled Task that runs at user logon (and can be started immediately)
+# - Runs as the current user (so UI automation / focused typing can work)
+# - Adds an optional firewall rule (requires admin; if not admin, it will skip)
+# - Does NOT create devices.json if missing (pairing bootstrap should handle it)
 
-$ExeName        = "novakey-windows-amd64.exe"
-$SourceExe      = Join-Path -Path "$($PSScriptRoot)\dist" -ChildPath $ExeName
-$InstallDir     = "$($env:ProgramFiles)\NovaKey"
-$TargetExe      = Join-Path -Path $InstallDir -ChildPath $ExeName
-$LogDir         = Join-Path -Path $InstallDir -ChildPath "logs"
+$TaskName     = "NovaKey"
+$TaskDesc     = "NovaKey secure secret transfer service (per-user)"
+$ExeName      = "novakey-windows-amd64.exe"
 
-$FirewallRule   = "NovaKey TCP Listener"
-$ListenPort     = 60768
+$RepoRoot     = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$SourceExe    = Join-Path $RepoRoot "dist\$ExeName"
+$SourceYaml   = Join-Path $RepoRoot "server_config.yaml"
+$SourceDevices= Join-Path $RepoRoot "devices.json"   # optional
 
-Write-Output -InputObject "[*] Installing NovaKey (Windows)"
+$InstallDir   = Join-Path $env:LOCALAPPDATA "NovaKey"
+$TargetExe    = Join-Path $InstallDir $ExeName
+$LogDir       = Join-Path $InstallDir "logs"
+$ConfigPath   = Join-Path $InstallDir "server_config.yaml"
 
-# ------------------------------------------------------------
+$FirewallRule = "NovaKey TCP Listener (Per-User)"
+$ListenPort   = 60768
+
+Write-Output "[*] Installing NovaKey (Windows) as a per-user Scheduled Task"
+
 # Preconditions
-# ------------------------------------------------------------
-If (-NOT (Test-Path -Path $SourceExe)) {
-    Throw "[x] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') novakey-service.exe not found in installer directory"
-}
+if (-not (Test-Path $SourceExe))   { throw "[!] Missing binary: $SourceExe" }
+if (-not (Test-Path $SourceYaml))  { throw "[!] Missing config: $SourceYaml" }
 
-# ------------------------------------------------------------
-# Create install directories
-# ------------------------------------------------------------
-Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Creating install directories"
+Write-Information "[*] RepoRoot    : $RepoRoot"
+Write-Information "[*] InstallDir  : $InstallDir"
+Write-Information "[*] Binary      : $TargetExe"
+Write-Information "[*] Config      : $ConfigPath"
+
+# Create install dirs
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
-# ------------------------------------------------------------
-# Install binary
-# ------------------------------------------------------------
-Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Installing service binary"
+# Install binary + config
 Copy-Item -Path $SourceExe -Destination $TargetExe -Force
+Copy-Item -Path $SourceYaml -Destination $ConfigPath -Force
 
-# ------------------------------------------------------------
-# Remove existing service if present
-# ------------------------------------------------------------
-If (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
-    Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Existing service found – removing"
-    Stop-Service -Name $ServiceName -Force
-    sc.exe delete $ServiceName | Out-Null
-    Start-Sleep -Seconds 2
+# devices.json: install if present; otherwise do NOT create it
+if (Test-Path $SourceDevices) {
+    Copy-Item -Path $SourceDevices -Destination (Join-Path $InstallDir "devices.json") -Force
+} else {
+    $maybe = Join-Path $InstallDir "devices.json"
+    if (Test-Path $maybe) { Remove-Item -Force $maybe }
 }
 
-# ------------------------------------------------------------
-# Create service with virtual service account (least privilege)
-# ------------------------------------------------------------
-Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Creating Windows service"
+# Build task action:
+# Working directory is InstallDir so relative paths in YAML resolve (devices.json, server_keys.json, ./logs)
+$Action  = New-ScheduledTaskAction -Execute $TargetExe -Argument "--config `"$ConfigPath`"" -WorkingDirectory $InstallDir
+$Trigger = New-ScheduledTaskTrigger -AtLogOn
+$Principal = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -LogonType Interactive -RunLevel LeastPrivilege
+$Settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 0) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 
-sc.exe create $ServiceName `
-    binPath= "`"$TargetExe`"" `
-    start= auto `
-    DisplayName= "`"$DisplayName`"" `
-    obj= "NT SERVICE\$ServiceName" | Out-Null
+# Remove existing task if present
+try {
+    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    }
+} catch {}
 
-sc.exe description $ServiceName "$Description" | Out-Null
+Write-Information "[*] Creating Scheduled Task: $TaskName"
+Register-ScheduledTask -TaskName $TaskName -Description $TaskDesc -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings | Out-Null
 
-# ------------------------------------------------------------
-# Set filesystem ACLs (service SID only)
-# ------------------------------------------------------------
-Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Setting directory permissions"
+# Try to start immediately
+Write-Information "[*] Starting task now"
+Start-ScheduledTask -TaskName $TaskName
 
-$Acl = Get-Acl -Path $InstallDir
-$Acl.SetAccessRuleProtection($True, $False)
+# Firewall rule (best-effort; requires admin)
+$IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-$RuleService = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule(
-    "NT SERVICE\$ServiceName",
-    "Modify",
-    "ContainerInherit,ObjectInherit",
-    "None",
-    "Allow"
-)
-
-$RuleAdmins = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule(
-    "Administrators",
-    "FullControl",
-    "ContainerInherit,ObjectInherit",
-    "None",
-    "Allow"
-)
-
-$RuleUsers = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule(
-    "Users",
-    "ReadAndExecute",
-    "ContainerInherit,ObjectInherit",
-    "None",
-    "Allow"
-)
-
-$Acl.SetAccessRule($ruleService)
-$Acl.AddAccessRule($ruleAdmins)
-$Acl.AddAccessRule($ruleUsers)
-Set-Acl -Path $InstallDir -AclObject $Acl
-
-# ------------------------------------------------------------
-# Firewall rule (IPv4 TCP)
-# ------------------------------------------------------------
-Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Configuring firewall rule"
-
-If (-NOT (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule `
-        -DisplayName $FirewallRule `
-        -Direction Inbound `
-        -Protocol TCP `
-        -LocalPort $ListenPort `
-        -Action Allow `
-        -Profile Any `
-        | Out-Null
+if ($IsAdmin) {
+    Write-Information "[*] Configuring firewall rule (admin)"
+    if (-not (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule `
+            -DisplayName $FirewallRule `
+            -Direction Inbound `
+            -Protocol TCP `
+            -LocalPort $ListenPort `
+            -Action Allow `
+            -Profile Any | Out-Null
+    }
+} else {
+    Write-Information "[*] Skipping firewall rule (not running as Administrator)"
 }
 
-# ------------------------------------------------------------
-# Start service
-# ------------------------------------------------------------
-Write-Information -MessageData "[*] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Starting service"
-Start-Service -Name $ServiceName
+Write-Output ""
+Write-Output "[✓] NovaKey installed (per-user)"
+Write-Output "    User       : $env:USERNAME"
+Write-Output "    InstallDir : $InstallDir"
+Write-Output "    Binary     : $TargetExe"
+Write-Output "    Config     : $ConfigPath"
+Write-Output "    Logs       : $LogDir"
+Write-Output "    Task       : $TaskName"
+Write-Output ""
+Write-Output "To manage:"
+Write-Output "  schtasks /Query /TN $TaskName /V /FO LIST"
+Write-Output "  schtasks /Run /TN $TaskName"
+Write-Output "  schtasks /End /TN $TaskName"
 
-Write-Output -InputObject "[✓] NovaKey installed successfully"
-Write-Output -InputObject "    Service Name : $ServiceName"
-Write-Output -InputObject "    Install Dir  : $InstallDir"
-Write-Output -InputObject "    Port         : $ListenPort (IPv4)"
-Write-Output -InputObject " "
