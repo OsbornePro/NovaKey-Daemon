@@ -1,7 +1,9 @@
 # 🔐 NovaKey-Daemon by OsbornePro
 
 I recently created the iOS application (*not yet publicly available*) and updated the daemon to generate a QR code when `devices.json` does not exist.
-I highly recommend using my `Installers` scripts when setting up the service for your own use as it will save you time and setup your envrionment in the most secure way possible.
+I highly recommend using my `Installers` scripts when setting up the service for your own use as it will save you time and setup your envrionment in the most secure way possible.  
+
+> **ISSUE** I can successfully send secrets from the iOS application to the NovaKey-Daemon listener on Linux and Windows devices. However, macOS is preventing the daemon from responding to the actual application on my phone while the iPhone simulator in Xcode works without issue. This is likely because I am still in the development phase. I do not know what I missed that prevents this from working on Apple computers.
 
 | File / Script                          | Status       |
 |----------------------------------------|--------------|
