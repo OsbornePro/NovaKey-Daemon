@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // saveDevicesToDisk writes devices as a DPAPI-wrapped JSON file.
@@ -26,8 +27,14 @@ func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 		return fmt.Errorf("marshal dpapi wrapper: %w", err)
 	}
 
+	// Ensure parent dir exists
+	dir := filepath.Dir(path)
+	if dir != "" && dir != "." {
+		_ = os.MkdirAll(dir, 0o700)
+	}
+
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0600); err != nil {
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
