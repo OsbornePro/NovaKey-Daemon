@@ -10,23 +10,14 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-type dpapiFile struct {
-	V       int    `json:"v"`
-	DPAPIB64 string `json:"dpapi_b64"`
-}
-
 func dpapiProtect(plaintext []byte) ([]byte, error) {
 	if len(plaintext) == 0 {
 		return nil, fmt.Errorf("dpapiProtect: empty plaintext")
 	}
 
-	in := windows.DataBlob{
-		Size: uint32(len(plaintext)),
-		Data: &plaintext[0],
-	}
+	in := windows.DataBlob{Size: uint32(len(plaintext)), Data: &plaintext[0]}
 	var out windows.DataBlob
 
-	// nil optional entropy is fine; you can add app-specific entropy later if desired.
 	if err := windows.CryptProtectData(&in, nil, nil, 0, nil, 0, &out); err != nil {
 		return nil, fmt.Errorf("CryptProtectData: %w", err)
 	}
@@ -43,10 +34,7 @@ func dpapiUnprotect(ciphertext []byte) ([]byte, error) {
 		return nil, fmt.Errorf("dpapiUnprotect: empty ciphertext")
 	}
 
-	in := windows.DataBlob{
-		Size: uint32(len(ciphertext)),
-		Data: &ciphertext[0],
-	}
+	in := windows.DataBlob{Size: uint32(len(ciphertext)), Data: &ciphertext[0]}
 	var out windows.DataBlob
 
 	if err := windows.CryptUnprotectData(&in, nil, nil, 0, nil, 0, &out); err != nil {
@@ -60,5 +48,5 @@ func dpapiUnprotect(ciphertext []byte) ([]byte, error) {
 	return cp, nil
 }
 
-func dpapiEncode(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
-func dpapiDecode(s string) ([]byte, error) { return base64.StdEncoding.DecodeString(s) }
+func dpapiEncode(b []byte) string              { return base64.StdEncoding.EncodeToString(b) }
+func dpapiDecode(s string) ([]byte, error)     { return base64.StdEncoding.DecodeString(s) }
