@@ -1,3 +1,4 @@
+// cmd/novakey/pairing_bootstrap.go
 package main
 
 import (
@@ -42,6 +43,18 @@ type pairingState struct {
 
 	// for cleanup
 	qrPngPath string
+}
+
+// IMPORTANT: snapshot type (no mutex) to avoid copying sync.Mutex
+type pairingSnapshot struct {
+	active     bool
+	token      string
+	deviceID   string
+	deviceKey  string
+	serverAddr string
+	expires    time.Time
+	done       bool
+	qrPngPath  string
 }
 
 var pairState pairingState
@@ -108,6 +121,7 @@ func maybeStartPairingBootstrap() {
 	// Write QR to disk + open viewer
 	outDir := "."
 	pngPath, err := writeAndOpenPairQR(outDir, qr)
+
 	pairState.mu.Lock()
 	pairState.qrPngPath = pngPath
 	pairState.mu.Unlock()
@@ -124,6 +138,7 @@ func maybeStartPairingBootstrap() {
 
 func handlePairStatus(w http.ResponseWriter, r *http.Request) {
 	st := currentPairState()
+	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"active":  st.active,
 		"done":    st.done,
@@ -202,7 +217,7 @@ func handlePairComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark complete
+	// Mark complete + fetch QR path for cleanup
 	pairState.mu.Lock()
 	pairState.done = true
 	qrPath := pairState.qrPngPath
@@ -217,10 +232,21 @@ func handlePairComplete(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[pair] pairing complete; devices saved + loaded (device_id=%s)", st.deviceID)
 }
 
-func currentPairState() pairingState {
+// currentPairState returns a mutex-free snapshot (avoids copying sync.Mutex).
+func currentPairState() pairingSnapshot {
 	pairState.mu.Lock()
 	defer pairState.mu.Unlock()
-	return pairState
+
+	return pairingSnapshot{
+		active:     pairState.active,
+		token:      pairState.token,
+		deviceID:   pairState.deviceID,
+		deviceKey:  pairState.deviceKey,
+		serverAddr: pairState.serverAddr,
+		expires:    pairState.expires,
+		done:       pairState.done,
+		qrPngPath:  pairState.qrPngPath,
+	}
 }
 
 func writeDevicesFile(path, deviceID, deviceKeyHex string) error {
