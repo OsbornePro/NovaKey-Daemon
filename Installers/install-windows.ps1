@@ -135,7 +135,7 @@ If ($IsAdmin) {
 }
 
 Write-Output -InputObject ""
-Write-Output -InputObject "[✓] NovaKey installed (per-user)"
+Write-Output -InputObject "[-] NovaKey installed (per-user)"
 Write-Output -InputObject "    User        : $CurrentUserFull"
 Write-Output -InputObject "    InstallDir  : $InstallDir"
 Write-Output -InputObject "    Binary      : $TargetExe"
