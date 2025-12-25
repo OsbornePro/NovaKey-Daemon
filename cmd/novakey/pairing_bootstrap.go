@@ -212,31 +212,15 @@ func writeDevicesFile(path string, deviceID string, deviceKeyHex string) error {
 		path = "devices.json"
 	}
 
-	// Minimal file compatible with your existing loader.
-	out := struct {
-		Devices []deviceConfig `json:"devices"`
-	}{
+	out := devicesConfigFile{
 		Devices: []deviceConfig{
 			{ID: deviceID, KeyHex: deviceKeyHex},
 		},
 	}
 
-	data, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmp := path + ".tmp"
-	perm := os.FileMode(0600)
-	if runtime.GOOS == "windows" {
-		perm = 0644
-	}
-
-	if err := os.WriteFile(tmp, data, perm); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return saveDevicesToDisk(path, out)
 }
+
 
 func writeAndOpenPairQR(outDir string, payload string) (string, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
