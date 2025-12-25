@@ -5,16 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
-	
+
 	"filippo.io/mlkem768"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
@@ -38,7 +36,7 @@ const (
 
 var ErrNotPaired = errors.New("not paired (devices file missing/empty)")
 
-// devices.json format
+// devices.json format (inner payload; plaintext on unix, DPAPI-wrapped on Windows)
 type deviceConfig struct {
 	ID     string `json:"id"`
 	KeyHex string `json:"key_hex"` // 32-byte per-device static key (hex)
@@ -51,7 +49,7 @@ type devicesConfigFile struct {
 // deviceState holds the static per-device secret.
 type deviceState struct {
 	id        string
-	staticKey []byte // 32 bytes from devices.json
+	staticKey []byte // 32 bytes
 }
 
 var devices map[string]deviceState
@@ -69,11 +67,9 @@ type rateWindow struct {
 	count       int
 }
 
-// initCrypto loads/creates server Kyber keys and attempts to load devices.json.
-// IMPORTANT: If devices.json is missing, we DO NOT fail hard anymore.
-// We start "unpaired" (devices map empty) so the pairing bootstrap can run.
+// initCrypto loads/creates server Kyber keys and attempts to load devices.
+// If devices file is missing/empty, we start "unpaired" so pairing bootstrap can run.
 func initCrypto() error {
-	// 1) Load or create server Kyber keys.
 	if err := loadOrCreateServerKeys(cfg.ServerKeysFile); err != nil {
 		return fmt.Errorf("loading server Kyber keys: %w", err)
 	}
@@ -81,15 +77,13 @@ func initCrypto() error {
 		return fmt.Errorf("server keys not initialized")
 	}
 
-	// 2) Try load per-device static keys.
 	path := cfg.DevicesFile
 	if path == "" {
 		path = defaultDevicesFile
 	}
 
-	m, err := loadDevicesFromFile(path)
+	m, err := loadDevicesFromDisk(path) // OS-specific implementation
 	if err != nil {
-		// If missing or empty, keep running but mark as unpaired.
 		if errors.Is(err, ErrNotPaired) {
 			devices = make(map[string]deviceState)
 			log.Printf("[pair] %v (will start pairing bootstrap)", err)
@@ -108,13 +102,14 @@ func isPaired() bool {
 	return devices != nil && len(devices) > 0
 }
 
-// reloadDevicesFromDisk re-reads devices.json after pairing completes.
+// reloadDevicesFromDisk re-reads devices after pairing completes.
 func reloadDevicesFromDisk() error {
 	path := cfg.DevicesFile
 	if path == "" {
 		path = defaultDevicesFile
 	}
-	m, err := loadDevicesFromFile(path)
+
+	m, err := loadDevicesFromDisk(path)
 	if err != nil {
 		return err
 	}
@@ -124,19 +119,8 @@ func reloadDevicesFromDisk() error {
 	return nil
 }
 
-func loadDevicesFromFile(path string) (map[string]deviceState, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s not found", ErrNotPaired, path)
-		}
-		return nil, fmt.Errorf("reading devices file %q: %w", path, err)
-	}
-
-	var dc devicesConfigFile
-	if err := json.Unmarshal(data, &dc); err != nil {
-		return nil, fmt.Errorf("parsing devices file %q: %w", path, err)
-	}
+// buildDevicesMap turns the parsed devicesConfigFile into runtime deviceState map.
+func buildDevicesMap(dc devicesConfigFile, path string) (map[string]deviceState, error) {
 	if len(dc.Devices) == 0 {
 		return nil, fmt.Errorf("%w: %s has no devices", ErrNotPaired, path)
 	}
@@ -338,51 +322,4 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	}
 
 	return nil
-}
-
-func loadDevicesFromFileWindows(path string) (map[string]deviceState, error) {
-	// 1) Read outer wrapper
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var wrap dpapiFile
-	if err := json.Unmarshal(b, &wrap); err != nil {
-		return nil, fmt.Errorf("parse dpapi wrapper: %w", err)
-	}
-	if wrap.V != 1 || wrap.DPAPIB64 == "" {
-		return nil, fmt.Errorf("invalid dpapi wrapper")
-	}
-
-	// 2) Decode + unprotect
-	ct, err := dpapiDecode(wrap.DPAPIB64)
-	if err != nil {
-		return nil, fmt.Errorf("base64 decode dpapi blob: %w", err)
-	}
-	pt, err := dpapiUnprotect(ct)
-	if err != nil {
-		return nil, fmt.Errorf("dpapi unprotect: %w", err)
-	}
-
-	// 3) pt is JSON of devicesConfigFile
-	var dc devicesConfigFile
-	if err := json.Unmarshal(pt, &dc); err != nil {
-		return nil, fmt.Errorf("parse devices json inside dpapi: %w", err)
-	}
-
-	return buildDevicesMap(dc, path)
-}
-
-func buildDevicesMap(dc devicesConfigFile, path string) (map[string]deviceState, error) {
-	if len(dc.Devices) == 0 {
-		return nil, fmt.Errorf("%w: %s has no devices", ErrNotPaired, path)
-	}
-
-	m := make(map[string]deviceState, len(dc.Devices))
-	for _, d := range dc.Devices {
-		// (same checks you already have)
-		...
-	}
-	return m, nil
 }
