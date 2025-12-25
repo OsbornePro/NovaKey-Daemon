@@ -84,15 +84,17 @@ mkdir -p dist
 # ----------------------------- Build -----------------------------
 case "$TARGET" in
     windows)
-        log "Building novakey/nvpair/nvclient for windows/amd64"
+        log "Building novakey for windows/amd64"
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-          go build -trimpath -ldflags="$LDFLAGS" \
+          go build -trimpath -ldflags="$LDFLAGS -H=windowsgui" \
             -o "dist/${FILENAME:-NovaKey.exe}" ./cmd/novakey
-
+            
+        log "Building nvpair for windows/amd64"
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
           go build -trimpath -ldflags="$LDFLAGS" \
             -o "dist/nvpair-windows-amd64.exe" ./cmd/nvpair
-
+            
+        log "Building nvclient for windows/amd64"
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
           go build -trimpath -ldflags="$LDFLAGS" \
             -o "dist/nvclient-windows-amd64.exe" ./cmd/nvclient
@@ -100,16 +102,17 @@ case "$TARGET" in
 
     linux)
         for ARCH in amd64 arm64; do
-            log "Building novakey/nvpair/nvclient for linux/$ARCH"
-
+            log "Building novakey for linux/$ARCH"
             CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
                 -o "dist/${FILENAME:-novakey-linux-$ARCH}" ./cmd/novakey
-
+            
+            log "Building nvpair for linux/$ARCH"
             CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
                 -o "dist/nvpair-linux-$ARCH" ./cmd/nvpair
-
+                
+            log "Building nvclient for linux/$ARCH"
             CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
                 -o "dist/nvclient-linux-$ARCH" ./cmd/nvclient
@@ -124,16 +127,17 @@ case "$TARGET" in
         fi
 
         for ARCH in amd64 arm64; do
-            log "Building novakey/nvpair/nvclient for darwin/$ARCH"
-
+            log "Building novakey for darwin/$ARCH"
             CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
                 -o "dist/${FILENAME:-novakey-darwin-$ARCH}" ./cmd/novakey
-
+                
+            log "Building nvpair for darwin/$ARCH"
             CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
                 -o "dist/nvpair-darwin-$ARCH" ./cmd/nvpair
-
+                
+            log "Building nvclient for darwin/$ARCH"
             CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
                 -o "dist/nvclient-darwin-$ARCH" ./cmd/nvclient
