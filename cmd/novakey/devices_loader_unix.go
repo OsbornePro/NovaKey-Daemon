@@ -3,15 +3,21 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// loadDevicesFromDisk on Unix:
-// - If file is sealed wrapper => decrypt via keyring key and load
-// - Else treat as legacy plaintext JSON and best-effort migrate to sealed
+type sealedDevicesFileV1 struct {
+	V        int    `json:"v"`
+	Alg      string `json:"alg"` // "xchacha20poly1305"
+	NonceB64 string `json:"nonce_b64"`
+	CtB64    string `json:"ct_b64"`
+}
+
 func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -24,28 +30,50 @@ func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 	// Try sealed wrapper first.
 	var wrap sealedDevicesFileV1
 	if err := json.Unmarshal(data, &wrap); err == nil &&
-		wrap.V == 1 && wrap.Alg == "xchacha20poly1305" &&
-		wrap.NonceB64 != "" && wrap.CtB64 != "" {
+		wrap.V == 1 &&
+		wrap.Alg == "xchacha20poly1305" &&
+		wrap.NonceB64 != "" &&
+		wrap.CtB64 != "" {
 		return loadDevicesFromSealedWrapper(path, &wrap)
 	}
 
-	// Legacy plaintext JSON.
+	// Legacy plaintext JSON (will be migrated by saveDevicesToDisk when pairing completes).
 	var dc devicesConfigFile
 	if err := json.Unmarshal(data, &dc); err != nil {
 		return nil, fmt.Errorf("parsing devices file %q: %w", path, err)
 	}
+	return buildDevicesMap(dc, path)
+}
 
-	m, err := buildDevicesMap(dc, path)
+func loadDevicesFromSealedWrapper(path string, wrap *sealedDevicesFileV1) (map[string]deviceState, error) {
+	key, err := getOrCreateDevicesKey()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("keyring unavailable for sealed devices file: %w", err)
 	}
 
-	// Best-effort migrate plaintext -> sealed (overwrite same path).
-	if err := saveDevicesToDisk(path, dc); err == nil {
-		log.Printf("[pair] migrated plaintext devices file to sealed format (%s)", path)
-	} else {
-		log.Printf("[pair] could not migrate devices file to sealed format: %v", err)
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, fmt.Errorf("NewX: %w", err)
 	}
 
-	return m, nil
+	nonce, err := base64.StdEncoding.DecodeString(wrap.NonceB64)
+	if err != nil {
+		return nil, fmt.Errorf("decode nonce_b64: %w", err)
+	}
+	ct, err := base64.StdEncoding.DecodeString(wrap.CtB64)
+	if err != nil {
+		return nil, fmt.Errorf("decode ct_b64: %w", err)
+	}
+
+	aad := []byte("NovaKey devices v1")
+	pt, err := aead.Open(nil, nonce, ct, aad)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt sealed devices file: %w", err)
+	}
+
+	var dc devicesConfigFile
+	if err := json.Unmarshal(pt, &dc); err != nil {
+		return nil, fmt.Errorf("parse devices json inside sealed wrapper: %w", err)
+	}
+	return buildDevicesMap(dc, path)
 }
