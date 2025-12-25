@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
+	
 	"filippo.io/mlkem768"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
@@ -338,4 +338,51 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	}
 
 	return nil
+}
+
+func loadDevicesFromFileWindows(path string) (map[string]deviceState, error) {
+	// 1) Read outer wrapper
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var wrap dpapiFile
+	if err := json.Unmarshal(b, &wrap); err != nil {
+		return nil, fmt.Errorf("parse dpapi wrapper: %w", err)
+	}
+	if wrap.V != 1 || wrap.DPAPIB64 == "" {
+		return nil, fmt.Errorf("invalid dpapi wrapper")
+	}
+
+	// 2) Decode + unprotect
+	ct, err := dpapiDecode(wrap.DPAPIB64)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode dpapi blob: %w", err)
+	}
+	pt, err := dpapiUnprotect(ct)
+	if err != nil {
+		return nil, fmt.Errorf("dpapi unprotect: %w", err)
+	}
+
+	// 3) pt is JSON of devicesConfigFile
+	var dc devicesConfigFile
+	if err := json.Unmarshal(pt, &dc); err != nil {
+		return nil, fmt.Errorf("parse devices json inside dpapi: %w", err)
+	}
+
+	return buildDevicesMap(dc, path)
+}
+
+func buildDevicesMap(dc devicesConfigFile, path string) (map[string]deviceState, error) {
+	if len(dc.Devices) == 0 {
+		return nil, fmt.Errorf("%w: %s has no devices", ErrNotPaired, path)
+	}
+
+	m := make(map[string]deviceState, len(dc.Devices))
+	for _, d := range dc.Devices {
+		// (same checks you already have)
+		...
+	}
+	return m, nil
 }
