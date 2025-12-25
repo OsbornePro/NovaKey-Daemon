@@ -25,7 +25,7 @@ Please **do not** open public GitHub issues for security problems.
 
 Email:
 * `security@novakey.app`
-* or `robert@osbornepro.com` if needed
+* or `rosborne@osbornepro.com` if needed
 * My PGP key can be obtained from [HERE](https://downloads.osbornepro.com/publickey.asc)
 
 If you need encrypted comms, include “PGP” in your email and we’ll coordinate.
