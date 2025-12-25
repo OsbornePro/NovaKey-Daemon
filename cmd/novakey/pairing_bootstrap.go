@@ -1,4 +1,3 @@
-// cmd/novakey/pairing_bootstrap.go
 package main
 
 import (
@@ -41,7 +40,7 @@ type pairingState struct {
 	expires    time.Time
 	done       bool
 
-	// where we wrote the QR so we can delete it after success (best-effort)
+	// for cleanup
 	qrPngPath string
 }
 
@@ -85,6 +84,7 @@ func maybeStartPairingBootstrap() {
 	pairState.serverAddr = serverAddr
 	pairState.expires = exp
 	pairState.done = false
+	pairState.qrPngPath = ""
 	pairState.mu.Unlock()
 
 	// Start HTTP server for the phone to fetch the big blob
@@ -101,6 +101,8 @@ func maybeStartPairingBootstrap() {
 	}()
 
 	// Small QR payload (easy to scan)
+	// Phone scans -> calls:
+	//   GET http://host:pairPort/pair/bootstrap?token=...
 	qr := fmt.Sprintf("novakey://pair?v=2&host=%s&port=%d&token=%s", advertiseHost, pairPort, token)
 
 	// Write QR to disk + open viewer
@@ -152,6 +154,7 @@ func handlePairBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Big blob returned here (device key + Kyber pubkey, etc.)
 	pub := base64.StdEncoding.EncodeToString(serverEncapKey)
 
 	blob := pairingBlobV3{
@@ -168,6 +171,7 @@ func handlePairBootstrap(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePairComplete(w http.ResponseWriter, r *http.Request) {
+	// Phone calls this after it has successfully saved pairing info.
 	if r.Method != "POST" {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -184,7 +188,9 @@ func handlePairComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write devices via OS-specific store (DPAPI on Windows, sealed/keyring on Unix)
+	// Save devices using OS-specific store:
+	// - Windows: DPAPI wrapper
+	// - macOS/Linux: keyring-sealed (or fallback)
 	if err := writeDevicesFile(cfg.DevicesFile, st.deviceID, st.deviceKey); err != nil {
 		http.Error(w, "write devices failed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -196,17 +202,19 @@ func handlePairComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Best-effort delete QR image now that pairing is complete
-	if st.qrPngPath != "" {
-		_ = os.Remove(st.qrPngPath)
-	}
-
+	// Mark complete
 	pairState.mu.Lock()
 	pairState.done = true
+	qrPath := pairState.qrPngPath
 	pairState.mu.Unlock()
 
+	// Best-effort: delete QR png after pairing finishes.
+	if qrPath != "" {
+		_ = os.Remove(qrPath)
+	}
+
 	_, _ = w.Write([]byte("ok\n"))
-	log.Printf("[pair] pairing complete; devices written + loaded (device_id=%s)", st.deviceID)
+	log.Printf("[pair] pairing complete; devices saved + loaded (device_id=%s)", st.deviceID)
 }
 
 func currentPairState() pairingState {
@@ -215,8 +223,7 @@ func currentPairState() pairingState {
 	return pairState
 }
 
-// writeDevicesFile is OS-agnostic: it delegates to saveDevicesToDisk(), which is OS-specific.
-func writeDevicesFile(path string, deviceID string, deviceKeyHex string) error {
+func writeDevicesFile(path, deviceID, deviceKeyHex string) error {
 	if strings.TrimSpace(path) == "" {
 		path = "devices.json"
 	}
@@ -228,16 +235,16 @@ func writeDevicesFile(path string, deviceID string, deviceKeyHex string) error {
 	return saveDevicesToDisk(path, out)
 }
 
-func writeAndOpenPairQR(outDir string, payload string) (string, error) {
+func writeAndOpenPairQR(outDir, payload string) (string, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", err
 	}
 	pngPath := filepath.Join(outDir, "novakey-pair.png")
 
+	// Low density, easy scan
 	if err := qrcode.WriteFile(payload, qrcode.Low, 512, pngPath); err != nil {
 		return "", err
 	}
-
 	if err := openDefault(pngPath); err != nil {
 		return pngPath, err
 	}
