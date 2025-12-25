@@ -19,43 +19,36 @@ import (
 )
 
 const (
-	// Outer transport protocol (current)
 	protocolVersion = 3
-
-	// Outer msgType (must remain 1; approve/inject is inside the decrypted body)
 	msgTypePassword = 1
 
 	defaultDevicesFile = "devices.json"
 
-	maxClockSkewSec = 120 // allow up to ±120 seconds clock skew
-	maxMsgAgeSec    = 300 // reject messages older than 5 minutes
-	replayCacheTTL  = 600 // keep seen nonces for 10 minutes
+	maxClockSkewSec = 120
+	maxMsgAgeSec    = 300
+	replayCacheTTL  = 600
 
-	maxRequestsPerDevicePerMin = 60 // per-device rate limit
+	maxRequestsPerDevicePerMin = 60
 )
 
 var ErrNotPaired = errors.New("not paired (devices file missing/empty)")
 
-// devices.json format (inner payload; plaintext on unix, DPAPI-wrapped on Windows)
 type deviceConfig struct {
 	ID     string `json:"id"`
-	KeyHex string `json:"key_hex"` // 32-byte per-device static key (hex)
+	KeyHex string `json:"key_hex"` // 32 bytes hex
 }
 
 type devicesConfigFile struct {
 	Devices []deviceConfig `json:"devices"`
 }
 
-// deviceState holds the static per-device secret.
 type deviceState struct {
 	id        string
-	staticKey []byte // 32 bytes
+	staticKey []byte
 }
 
 var devices map[string]deviceState
 
-// replayCache: deviceID -> nonceHex -> timestamp
-// rateState:  deviceID -> rateWindow
 var (
 	replayMu    sync.Mutex
 	replayCache = make(map[string]map[string]int64)
@@ -67,8 +60,6 @@ type rateWindow struct {
 	count       int
 }
 
-// initCrypto loads/creates server Kyber keys and attempts to load devices.
-// If devices file is missing/empty, we start "unpaired" so pairing bootstrap can run.
 func initCrypto() error {
 	if err := loadOrCreateServerKeys(cfg.ServerKeysFile); err != nil {
 		return fmt.Errorf("loading server Kyber keys: %w", err)
@@ -82,7 +73,7 @@ func initCrypto() error {
 		path = defaultDevicesFile
 	}
 
-	m, err := loadDevicesFromDisk(path) // OS-specific implementation
+	m, err := loadDevicesFromDisk(path) // OS-specific implementation (separate files)
 	if err != nil {
 		if errors.Is(err, ErrNotPaired) {
 			devices = make(map[string]deviceState)
@@ -102,13 +93,11 @@ func isPaired() bool {
 	return devices != nil && len(devices) > 0
 }
 
-// reloadDevicesFromDisk re-reads devices after pairing completes.
 func reloadDevicesFromDisk() error {
 	path := cfg.DevicesFile
 	if path == "" {
 		path = defaultDevicesFile
 	}
-
 	m, err := loadDevicesFromDisk(path)
 	if err != nil {
 		return err
@@ -119,7 +108,6 @@ func reloadDevicesFromDisk() error {
 	return nil
 }
 
-// buildDevicesMap turns the parsed devicesConfigFile into runtime deviceState map.
 func buildDevicesMap(dc devicesConfigFile, path string) (map[string]deviceState, error) {
 	if len(dc.Devices) == 0 {
 		return nil, fmt.Errorf("%w: %s has no devices", ErrNotPaired, path)
@@ -138,16 +126,11 @@ func buildDevicesMap(dc devicesConfigFile, path string) (map[string]deviceState,
 			return nil, fmt.Errorf("device %q: key must be %d bytes, got %d",
 				d.ID, chacha20poly1305.KeySize, len(keyBytes))
 		}
-
-		m[d.ID] = deviceState{
-			id:        d.ID,
-			staticKey: keyBytes,
-		}
+		m[d.ID] = deviceState{id: d.ID, staticKey: keyBytes}
 	}
 	return m, nil
 }
 
-// deriveAEADKey derives a per-message AEAD key from the KEM shared key and the device static key.
 func deriveAEADKey(deviceKey, sharedKem []byte) ([]byte, error) {
 	h := hkdf.New(sha256.New, sharedKem, deviceKey, []byte("NovaKey v3 AEAD key"))
 	key := make([]byte, chacha20poly1305.KeySize)
@@ -157,7 +140,6 @@ func deriveAEADKey(deviceKey, sharedKem []byte) ([]byte, error) {
 	return key, nil
 }
 
-// decryptMessageFrame decrypts a v3 outer frame and returns a typed *inner* message.
 func decryptMessageFrame(frame []byte) (deviceID string, msgType uint8, payload []byte, err error) {
 	devID, plaintext, nonce, err := decryptOuterV3(frame)
 	if err != nil {
@@ -174,7 +156,6 @@ func decryptMessageFrame(frame []byte) (deviceID string, msgType uint8, payload 
 
 	body := plaintext[8:]
 
-	// Typed inner frame?
 	if len(body) >= 1 && body[0] == byte(frameVersionV1) {
 		innerDev, innerType, innerPayload, derr := decodeMessageFrame(body)
 		if derr != nil {
@@ -186,7 +167,6 @@ func decryptMessageFrame(frame []byte) (deviceID string, msgType uint8, payload 
 		return devID, innerType, innerPayload, nil
 	}
 
-	// Legacy: timestamp + UTF-8 password string
 	return devID, MsgTypeInject, body, nil
 }
 
@@ -221,7 +201,7 @@ func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 		return "", nil, nil, fmt.Errorf("serverDecapKey is nil")
 	}
 
-	headerBaseEnd := 3 + idLen // start of kemCtLen
+	headerBaseEnd := 3 + idLen
 	if len(frame) < headerBaseEnd+2 {
 		return "", nil, nil, fmt.Errorf("frame too short for kemCtLen")
 	}
@@ -234,11 +214,11 @@ func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 	kemStart := headerBaseEnd + 2
 	kemEnd := kemStart + kemCtLen
 	if len(frame) < kemEnd {
-		return "", nil, nil, fmt.Errorf("frame too short for kemCt (len=%d)", kemCtLen)
+		return "", nil, nil, fmt.Errorf("frame too short for kemCt")
 	}
 
 	kemCt := frame[kemStart:kemEnd]
-	header := frame[:kemEnd] // AAD
+	header := frame[:kemEnd]
 
 	sharedKem, err := mlkem768.Decapsulate(serverDecapKey, kemCt)
 	if err != nil {
@@ -252,7 +232,7 @@ func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 
 	aead, err := chacha20poly1305.NewX(aeadKey)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("NewX with derived key failed: %w", err)
+		return "", nil, nil, fmt.Errorf("NewX failed: %w", err)
 	}
 
 	rest := frame[kemEnd:]
@@ -268,7 +248,6 @@ func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("AEAD.Open failed for device %q: %w", deviceID, err)
 	}
-
 	return deviceID, plaintext, nonce, nil
 }
 
@@ -317,9 +296,8 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 		limit = cfg.MaxRequestsPerMin
 	}
 	if rw.count > limit {
-		return fmt.Errorf("rate limit exceeded for device %q: %d requests in current window (limit=%d)",
+		return fmt.Errorf("rate limit exceeded for device %q: %d requests in window (limit=%d)",
 			deviceID, rw.count, limit)
 	}
-
 	return nil
 }
