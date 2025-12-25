@@ -28,41 +28,8 @@ type sealedDevicesFileV1 struct {
 	CtB64    string `json:"ct_b64"`
 }
 
-func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s not found", ErrNotPaired, path)
-		}
-		return nil, fmt.Errorf("reading devices file %q: %w", path, err)
-	}
-
-	var wrap sealedDevicesFileV1
-	if err := json.Unmarshal(data, &wrap); err == nil &&
-		wrap.V == 1 && wrap.Alg == "xchacha20poly1305" &&
-		wrap.NonceB64 != "" && wrap.CtB64 != "" {
-		return loadDevicesFromSealedWrapper(path, &wrap)
-	}
-
-	// Legacy plaintext
-	var dc devicesConfigFile
-	if err := json.Unmarshal(data, &dc); err != nil {
-		return nil, fmt.Errorf("parsing devices file %q: %w", path, err)
-	}
-	m, err := buildDevicesMap(dc, path)
-	if err != nil {
-		return nil, err
-	}
-
-	// Best-effort migrate plaintext -> sealed
-	if err := saveDevicesToDisk(path, dc); err == nil {
-		log.Printf("[pair] migrated plaintext devices file to sealed format (%s)", path)
-	} else {
-		log.Printf("[pair] could not migrate devices file to sealed format: %v", err)
-	}
-	return m, nil
-}
-
+// saveDevicesToDisk on Unix writes a sealed wrapper if keyring is available.
+// If keyring isn’t available (headless), it falls back to plaintext JSON with 0600 perms.
 func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 	pt, err := json.MarshalIndent(&dc, "", "  ")
 	if err != nil {
@@ -81,7 +48,7 @@ func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 		return fmt.Errorf("NewX: %w", err)
 	}
 
-	nonce := make([]byte, aead.NonceSize())
+	nonce := make([]byte, aead.NonceSize()) // 24 bytes for XChaCha20-Poly1305
 	if _, err := rand.Read(nonce); err != nil {
 		return fmt.Errorf("rand nonce: %w", err)
 	}
@@ -137,6 +104,7 @@ func loadDevicesFromSealedWrapper(path string, wrap *sealedDevicesFileV1) (map[s
 }
 
 func getOrCreateDevicesKey() ([]byte, error) {
+	// Stored value = base64(32 bytes)
 	s, err := keyring.Get(keyringServiceDevices, keyringAccountDevices)
 	if err == nil && s != "" {
 		b, derr := base64.StdEncoding.DecodeString(s)
@@ -149,6 +117,7 @@ func getOrCreateDevicesKey() ([]byte, error) {
 		return b, nil
 	}
 
+	// If not found, create it.
 	key := make([]byte, chacha20poly1305.KeySize)
 	if _, rerr := rand.Read(key); rerr != nil {
 		return nil, fmt.Errorf("rand devices key: %w", rerr)
