@@ -188,9 +188,19 @@ The `Installers/install-windows.ps1` script installs **NovaKey-Daemon** as a **p
 
 Run from an elevated PowerShell prompt:
 ```powershell
+# Download the repo from GitHub
 Set-Location -Path "$env:USERPROFILE\Downloads\"
 Expand-Archive -Path "NovaKey-Daemon-main.zip" -DestinationPath .
 Set-Location -Path "NovaKey-Daemon-main"
+
+# Required to unblock scripts downloaded from the internet
+Unblock-File -Path .\Installers\install-windows.ps1
+
+# If your execution policy is set to restricted it wont run.
+# Microsoft recommends using RemoteSigned
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned
+
+# Run install script
 .\Installers\install-windows.ps1
 ```
 
