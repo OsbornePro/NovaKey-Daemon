@@ -23,28 +23,31 @@ import (
 )
 
 type pairingBlobV3 struct {
-	V               int    `json:"v"`
-	DeviceID        string `json:"device_id"`
-	DeviceKeyHex    string `json:"device_key_hex"`
-	ServerAddr      string `json:"server_addr"`
-	ServerKyberPub  string `json:"server_kyber768_pub"`
-	ExpiresAtUnix   int64  `json:"expires_at_unix"`
+	V              int    `json:"v"`
+	DeviceID       string `json:"device_id"`
+	DeviceKeyHex   string `json:"device_key_hex"`
+	ServerAddr     string `json:"server_addr"`
+	ServerKyberPub string `json:"server_kyber768_pub"`
+	ExpiresAtUnix  int64  `json:"expires_at_unix"`
 }
 
 type pairingState struct {
-	mu        sync.Mutex
-	active    bool
-	token     string
-	deviceID  string
-	deviceKey string // hex, 32 bytes
+	mu         sync.Mutex
+	active     bool
+	token      string
+	deviceID   string
+	deviceKey  string // hex, 32 bytes
 	serverAddr string
-	expires   time.Time
-	done      bool
+	expires    time.Time
+	done       bool
+
+	// where we wrote the QR so we can delete it after success (best-effort)
+	qrPngPath string
 }
 
 var pairState pairingState
 
-// maybeStartPairingBootstrap starts the QR + pairing HTTP server if devices.json is missing/empty.
+// maybeStartPairingBootstrap starts the QR + pairing HTTP server if devices file is missing/empty.
 func maybeStartPairingBootstrap() {
 	if isPaired() {
 		return
@@ -61,7 +64,7 @@ func maybeStartPairingBootstrap() {
 
 	host, listenPort := splitHostPortOrDie(cfg.ListenAddr)
 
-	// Pair API port: listenPort + 2 (avoid +1 because your ArmAPI default is 60769)
+	// Pair API port: listenPort + 2 (avoid +1 because ArmAPI default is 60769)
 	pairPort := listenPort + 2
 	pairBind := fmt.Sprintf("0.0.0.0:%d", pairPort)
 
@@ -98,13 +101,15 @@ func maybeStartPairingBootstrap() {
 	}()
 
 	// Small QR payload (easy to scan)
-	// This is what the phone scans. Then it calls:
-	//   GET http://host:pairPort/pair/bootstrap?token=...
 	qr := fmt.Sprintf("novakey://pair?v=2&host=%s&port=%d&token=%s", advertiseHost, pairPort, token)
 
 	// Write QR to disk + open viewer
 	outDir := "."
 	pngPath, err := writeAndOpenPairQR(outDir, qr)
+	pairState.mu.Lock()
+	pairState.qrPngPath = pngPath
+	pairState.mu.Unlock()
+
 	if err != nil {
 		log.Printf("[pair] QR written to %s but viewer open failed: %v", pngPath, err)
 	} else {
@@ -118,10 +123,10 @@ func maybeStartPairingBootstrap() {
 func handlePairStatus(w http.ResponseWriter, r *http.Request) {
 	st := currentPairState()
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"active":   st.active,
-		"done":     st.done,
-		"expires":  st.expires.Unix(),
-		"server":   st.serverAddr,
+		"active":  st.active,
+		"done":    st.done,
+		"expires": st.expires.Unix(),
+		"server":  st.serverAddr,
 	})
 }
 
@@ -147,7 +152,6 @@ func handlePairBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Big blob returned here (device key + Kyber pubkey, etc.)
 	pub := base64.StdEncoding.EncodeToString(serverEncapKey)
 
 	blob := pairingBlobV3{
@@ -164,7 +168,6 @@ func handlePairBootstrap(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePairComplete(w http.ResponseWriter, r *http.Request) {
-	// The phone calls this after it has successfully saved the pairing info.
 	if r.Method != "POST" {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -181,7 +184,7 @@ func handlePairComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write devices.json
+	// Write devices via OS-specific store (DPAPI on Windows, sealed/keyring on Unix)
 	if err := writeDevicesFile(cfg.DevicesFile, st.deviceID, st.deviceKey); err != nil {
 		http.Error(w, "write devices failed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -193,12 +196,17 @@ func handlePairComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Best-effort delete QR image now that pairing is complete
+	if st.qrPngPath != "" {
+		_ = os.Remove(st.qrPngPath)
+	}
+
 	pairState.mu.Lock()
 	pairState.done = true
 	pairState.mu.Unlock()
 
 	_, _ = w.Write([]byte("ok\n"))
-	log.Printf("[pair] pairing complete; devices.json written and loaded (device_id=%s)", st.deviceID)
+	log.Printf("[pair] pairing complete; devices written + loaded (device_id=%s)", st.deviceID)
 }
 
 func currentPairState() pairingState {
@@ -207,20 +215,18 @@ func currentPairState() pairingState {
 	return pairState
 }
 
+// writeDevicesFile is OS-agnostic: it delegates to saveDevicesToDisk(), which is OS-specific.
 func writeDevicesFile(path string, deviceID string, deviceKeyHex string) error {
 	if strings.TrimSpace(path) == "" {
 		path = "devices.json"
 	}
-
 	out := devicesConfigFile{
 		Devices: []deviceConfig{
 			{ID: deviceID, KeyHex: deviceKeyHex},
 		},
 	}
-
 	return saveDevicesToDisk(path, out)
 }
-
 
 func writeAndOpenPairQR(outDir string, payload string) (string, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
@@ -228,8 +234,6 @@ func writeAndOpenPairQR(outDir string, payload string) (string, error) {
 	}
 	pngPath := filepath.Join(outDir, "novakey-pair.png")
 
-	// Keep it easy to scan.
-	// With the small payload, this will be very low density.
 	if err := qrcode.WriteFile(payload, qrcode.Low, 512, pngPath); err != nil {
 		return "", err
 	}
@@ -254,7 +258,6 @@ func openDefault(path string) error {
 func splitHostPortOrDie(addr string) (string, int) {
 	h, p, err := net.SplitHostPort(addr)
 	if err != nil {
-		// allow "60768" style? not expected in your config, but be defensive
 		if n, err2 := strconv.Atoi(addr); err2 == nil {
 			return "127.0.0.1", n
 		}
