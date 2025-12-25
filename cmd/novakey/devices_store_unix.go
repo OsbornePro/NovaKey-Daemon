@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -30,7 +29,6 @@ type sealedDevicesFileV1 struct {
 }
 
 func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
-	// Prefer sealed file if it exists.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -39,13 +37,14 @@ func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 		return nil, fmt.Errorf("reading devices file %q: %w", path, err)
 	}
 
-	// Try sealed wrapper first.
 	var wrap sealedDevicesFileV1
-	if err := json.Unmarshal(data, &wrap); err == nil && wrap.V == 1 && wrap.Alg == "xchacha20poly1305" && wrap.NonceB64 != "" && wrap.CtB64 != "" {
+	if err := json.Unmarshal(data, &wrap); err == nil &&
+		wrap.V == 1 && wrap.Alg == "xchacha20poly1305" &&
+		wrap.NonceB64 != "" && wrap.CtB64 != "" {
 		return loadDevicesFromSealedWrapper(path, &wrap)
 	}
 
-	// Fallback: plaintext JSON (legacy).
+	// Legacy plaintext
 	var dc devicesConfigFile
 	if err := json.Unmarshal(data, &dc); err != nil {
 		return nil, fmt.Errorf("parsing devices file %q: %w", path, err)
@@ -55,19 +54,16 @@ func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 		return nil, err
 	}
 
-	// Best-effort auto-migrate plaintext -> sealed on unix.
+	// Best-effort migrate plaintext -> sealed
 	if err := saveDevicesToDisk(path, dc); err == nil {
-		// Optionally delete plaintext original (same path, now overwritten by saveDevicesToDisk).
 		log.Printf("[pair] migrated plaintext devices file to sealed format (%s)", path)
 	} else {
 		log.Printf("[pair] could not migrate devices file to sealed format: %v", err)
 	}
-
 	return m, nil
 }
 
 func saveDevicesToDisk(path string, dc devicesConfigFile) error {
-	// Serialize JSON plaintext
 	pt, err := json.MarshalIndent(&dc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal devices json: %w", err)
@@ -75,9 +71,9 @@ func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 
 	key, err := getOrCreateDevicesKey()
 	if err != nil {
-		// If we cannot access keyring (headless), fall back to strict-perms plaintext.
-		log.Printf("[warn] keyring unavailable (%v); falling back to plaintext devices file with 0600 perms", err)
-		return writePlaintextDevicesWith0600(path, pt)
+		// Headless Linux fallback (no unlocked keyring)
+		log.Printf("[warn] keyring unavailable (%v); falling back to plaintext with 0600", err)
+		return atomicWrite0600(path, pt)
 	}
 
 	aead, err := chacha20poly1305.NewX(key)
@@ -85,12 +81,11 @@ func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 		return fmt.Errorf("NewX: %w", err)
 	}
 
-	nonce := make([]byte, aead.NonceSize()) // 24 bytes
+	nonce := make([]byte, aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return fmt.Errorf("rand nonce: %w", err)
 	}
 
-	// AAD ties ciphertext to this “purpose” (not secret).
 	aad := []byte("NovaKey devices v1")
 	ct := aead.Seal(nil, nonce, pt, aad)
 
@@ -105,7 +100,6 @@ func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 	if err != nil {
 		return fmt.Errorf("marshal sealed wrapper: %w", err)
 	}
-
 	return atomicWrite0600(path, out)
 }
 
@@ -143,7 +137,6 @@ func loadDevicesFromSealedWrapper(path string, wrap *sealedDevicesFileV1) (map[s
 }
 
 func getOrCreateDevicesKey() ([]byte, error) {
-	// Stored value = base64(32 bytes)
 	s, err := keyring.Get(keyringServiceDevices, keyringAccountDevices)
 	if err == nil && s != "" {
 		b, derr := base64.StdEncoding.DecodeString(s)
@@ -156,8 +149,6 @@ func getOrCreateDevicesKey() ([]byte, error) {
 		return b, nil
 	}
 
-	// If not found, create it.
-	// go-keyring returns a sentinel error on “not found”, but it differs by platform, so treat any error as “maybe missing”.
 	key := make([]byte, chacha20poly1305.KeySize)
 	if _, rerr := rand.Read(key); rerr != nil {
 		return nil, fmt.Errorf("rand devices key: %w", rerr)
@@ -170,17 +161,11 @@ func getOrCreateDevicesKey() ([]byte, error) {
 	return key, nil
 }
 
-func writePlaintextDevicesWith0600(path string, data []byte) error {
-	return atomicWrite0600(path, data)
-}
-
 func atomicWrite0600(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		// 0700 because we’re storing secrets nearby
 		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
-
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", tmp, err)
@@ -191,43 +176,3 @@ func atomicWrite0600(path string, data []byte) error {
 	}
 	return nil
 }
-
-// buildDevicesMap is shared by Windows + Unix.
-// Keep the strict checks you already had.
-func buildDevicesMap(dc devicesConfigFile, path string) (map[string]deviceState, error) {
-	if len(dc.Devices) == 0 {
-		return nil, fmt.Errorf("%w: %s has no devices", ErrNotPaired, path)
-	}
-
-	m := make(map[string]deviceState, len(dc.Devices))
-	for _, d := range dc.Devices {
-		if d.ID == "" {
-			return nil, fmt.Errorf("device with empty id in %q", path)
-		}
-		keyBytes, err := hexDecode32(d.KeyHex, d.ID)
-		if err != nil {
-			return nil, err
-		}
-		m[d.ID] = deviceState{id: d.ID, staticKey: keyBytes}
-	}
-	return m, nil
-}
-
-// helper: keep crypto.go clean; avoid importing hex there if you prefer
-func hexDecode32(keyHex string, deviceID string) ([]byte, error) {
-	b, err := hexDecode(keyHex)
-	if err != nil {
-		return nil, fmt.Errorf("device %q: invalid key_hex: %w", deviceID, err)
-	}
-	if len(b) != chacha20poly1305.KeySize {
-		return nil, fmt.Errorf("device %q: key must be %d bytes, got %d", deviceID, chacha20poly1305.KeySize, len(b))
-	}
-	return b, nil
-}
-
-// split to keep imports stable in your tree (since you already use encoding/hex elsewhere)
-func hexDecode(s string) ([]byte, error) { return hex.DecodeString(s) }
-
-// compile-time guard: if the hex package disappears from your build tags, you'll catch it
-var _ = errors.New
-
