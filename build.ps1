@@ -104,11 +104,12 @@ Switch ($Target) {
         If ($OutName.Length -eq 0) { $OutName = "novakey-windows-amd64.exe" }
         If ($OutName -notmatch '\.exe$') { $OutName += ".exe" }
         $Output = Join-Path -Path $DistDir -ChildPath $OutName
+        $GuiLdFlags = "$LdFlags -H=windowsgui"
         ForEach ($Arch in @("amd64")) { #, "arm64")) {
 
             $env:GOARCH = $Arch
             Write-Information -MessageData "[-] $OutName go build (windows/$Arch)"
-            go build -trimpath -ldflags $LdFlags -o $Output "./cmd/novakey"
+            go build -trimpath -ldflags $GuiLdFlags -o $Output "./cmd/novakey"
 
             Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvpair go build (windows/$Arch)"
             go build -o ".\dist\nvpair-windows-$Arch.exe" ".\cmd\nvpair"
