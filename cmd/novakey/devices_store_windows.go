@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-// saveDevicesToDisk writes devicesConfigFile as a DPAPI-wrapped JSON file (atomic write).
+// saveDevicesToDisk writes devices as a DPAPI-wrapped JSON file.
 func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 	pt, err := json.MarshalIndent(&dc, "", "  ")
 	if err != nil {
@@ -27,7 +27,7 @@ func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 	}
 
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+	if err := os.WriteFile(tmp, out, 0600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
