@@ -47,7 +47,11 @@ type deviceState struct {
 	staticKey []byte
 }
 
-var devices map[string]deviceState
+// Protect devices map (pairing reload swaps it).
+var (
+	devicesMu sync.RWMutex
+	devices   map[string]deviceState
+)
 
 var (
 	replayMu    sync.Mutex
@@ -76,20 +80,28 @@ func initCrypto() error {
 	m, err := loadDevicesFromDisk(path) // OS-specific implementation (separate files)
 	if err != nil {
 		if errors.Is(err, ErrNotPaired) {
+			devicesMu.Lock()
 			devices = make(map[string]deviceState)
+			devicesMu.Unlock()
+
 			log.Printf("[pair] %v (will start pairing bootstrap)", err)
 			return nil
 		}
 		return err
 	}
 
+	devicesMu.Lock()
 	devices = m
+	devicesMu.Unlock()
+
 	absPath, _ := filepath.Abs(path)
-	log.Printf("Loaded %d device keys from %s", len(devices), absPath)
+	log.Printf("Loaded %d device keys from %s", len(m), absPath)
 	return nil
 }
 
 func isPaired() bool {
+	devicesMu.RLock()
+	defer devicesMu.RUnlock()
 	return devices != nil && len(devices) > 0
 }
 
@@ -98,13 +110,18 @@ func reloadDevicesFromDisk() error {
 	if path == "" {
 		path = defaultDevicesFile
 	}
+
 	m, err := loadDevicesFromDisk(path)
 	if err != nil {
 		return err
 	}
+
+	devicesMu.Lock()
 	devices = m
+	devicesMu.Unlock()
+
 	absPath, _ := filepath.Abs(path)
-	log.Printf("[pair] reloaded %d device keys from %s", len(devices), absPath)
+	log.Printf("[pair] reloaded %d device keys from %s", len(m), absPath)
 	return nil
 }
 
@@ -190,10 +207,14 @@ func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 	}
 	deviceID := string(frame[3 : 3+idLen])
 
+	// Snapshot device state under RLock
+	devicesMu.RLock()
+	dev, ok := devices[deviceID]
+	devicesMu.RUnlock()
+
 	if devices == nil {
 		return "", nil, nil, fmt.Errorf("crypto not initialized (devices map nil)")
 	}
-	dev, ok := devices[deviceID]
 	if !ok {
 		return "", nil, nil, fmt.Errorf("unknown deviceID: %q", deviceID)
 	}
