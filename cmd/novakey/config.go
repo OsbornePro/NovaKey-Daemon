@@ -36,7 +36,8 @@ type ServerConfig struct {
 	ArmDurationMs      int   `json:"arm_duration_ms" yaml:"arm_duration_ms"`
 	ArmConsumeOnInject *bool `json:"arm_consume_on_inject" yaml:"arm_consume_on_inject"`
 
-	// When blocked (disarmed / two-man missing), allow clipboard copy? Default true, can be set false.
+	// When blocked (disarmed / two-man missing), allow clipboard copy?
+	// Default FALSE (safer). Can be set true explicitly in config.
 	AllowClipboardWhenDisarmed *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
 
 	// Local-only arming endpoint (OFF by default)
@@ -50,19 +51,19 @@ type ServerConfig struct {
 	MaxInjectLen  int  `json:"max_inject_len" yaml:"max_inject_len"`
 
 	// Two-man items
-	TwoManEnabled               bool   `json:"two_man_enabled" yaml:"two_man_enabled"`
-	ApproveWindowMs             int    `json:"approve_window_ms" yaml:"approve_window_ms"`
-	ApproveConsumeOnInject      *bool  `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
-	ApproveMagic                string `json:"approve_magic" yaml:"approve_magic"`
-	LegacyApproveMagicEnabled   bool   `json:"legacy_approve_magic_enabled" yaml:"legacy_approve_magic_enabled"`
+	TwoManEnabled             bool   `json:"two_man_enabled" yaml:"two_man_enabled"`
+	ApproveWindowMs           int    `json:"approve_window_ms" yaml:"approve_window_ms"`
+	ApproveConsumeOnInject    *bool  `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
+	ApproveMagic              string `json:"approve_magic" yaml:"approve_magic"`
+	LegacyApproveMagicEnabled bool   `json:"legacy_approve_magic_enabled" yaml:"legacy_approve_magic_enabled"`
 
 	// Target policy (allow/deny of focused app)
-	TargetPolicyEnabled   bool     `json:"target_policy_enabled" yaml:"target_policy_enabled"`
-	UseBuiltInAllowlist   bool     `json:"use_built_in_allowlist" yaml:"use_built_in_allowlist"`
-	AllowedProcessNames   []string `json:"allowed_process_names" yaml:"allowed_process_names"`
-	AllowedWindowTitles   []string `json:"allowed_window_titles" yaml:"allowed_window_titles"`
-	DeniedProcessNames    []string `json:"denied_process_names" yaml:"denied_process_names"`
-	DeniedWindowTitles    []string `json:"denied_window_titles" yaml:"denied_window_titles"`
+	TargetPolicyEnabled bool     `json:"target_policy_enabled" yaml:"target_policy_enabled"`
+	UseBuiltInAllowlist bool     `json:"use_built_in_allowlist" yaml:"use_built_in_allowlist"`
+	AllowedProcessNames []string `json:"allowed_process_names" yaml:"allowed_process_names"`
+	AllowedWindowTitles []string `json:"allowed_window_titles" yaml:"allowed_window_titles"`
+	DeniedProcessNames  []string `json:"denied_process_names" yaml:"denied_process_names"`
+	DeniedWindowTitles  []string `json:"denied_window_titles" yaml:"denied_window_titles"`
 }
 
 var cfg ServerConfig
@@ -160,8 +161,10 @@ func applyDefaults() {
 		v := true
 		cfg.ArmConsumeOnInject = &v
 	}
+
+	// ✅ CHANGE: default to false instead of true
 	if cfg.AllowClipboardWhenDisarmed == nil {
-		v := true
+		v := false
 		cfg.AllowClipboardWhenDisarmed = &v
 	}
 
@@ -201,4 +204,3 @@ func applyDefaults() {
 		cfg.UseBuiltInAllowlist = true
 	}
 }
-
