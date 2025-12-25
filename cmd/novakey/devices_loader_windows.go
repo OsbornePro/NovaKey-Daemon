@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,39 +12,34 @@ import (
 	"strings"
 )
 
-// loadDevicesFromDisk on Windows expects cfg.DevicesFile to point to the DPAPI-wrapped JSON.
-//
-// Migration behavior:
-// - Tries DPAPI file first (prefers *.dpapi.json sibling even if cfg points to devices.json)
-// - If DPAPI file missing, tries plaintext devices.json, then writes DPAPI file and deletes plaintext.
+type dpapiFile struct {
+	V        int    `json:"v"`
+	DPAPIB64 string `json:"dpapi_b64"`
+}
+
+// loadDevicesFromDisk on Windows loads a DPAPI-wrapped devices file.
+// Migration: if DPAPI file missing but plaintext devices.json exists, it will encrypt+replace.
 func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 	prefer := preferDPAPIPath(path)
 
-	// 1) Try DPAPI-wrapped file first
 	m, err := loadDevicesFromDPAPIFile(prefer)
 	if err == nil {
 		return m, nil
 	}
 
-	// 2) If "not paired" (missing/empty), try plaintext migration
+	// If dpapi file missing: attempt migration from plaintext.
 	if errors.Is(err, ErrNotPaired) {
-		plain := derivePlainPath(path)
+		plain := path
+		if strings.HasSuffix(strings.ToLower(plain), ".dpapi.json") {
+			plain = strings.TrimSuffix(plain, ".dpapi.json") + ".json"
+		}
 
-		dc, pm, perr := loadDevicesConfigFromPlainJSON(plain)
+		pm, perr := loadDevicesFromPlainJSON(plain)
 		if perr == nil {
-			// write DPAPI wrapper to preferred path
-			if werr := saveDevicesToDisk(prefer, dc); werr == nil {
-				_ = os.Remove(plain)
-			}
-			return pm, nil
+			_ = writeDevicesDPAPIFile(prefer, pm)
+			_ = os.Remove(plain)
+			return loadDevicesFromDPAPIFile(prefer)
 		}
-
-		// If plaintext also missing/empty, stay "not paired"
-		if errors.Is(perr, ErrNotPaired) {
-			return nil, fmt.Errorf("%w: %s not found", ErrNotPaired, prefer)
-		}
-
-		// Otherwise return original DPAPI error (more relevant)
 		return nil, err
 	}
 
@@ -59,14 +55,6 @@ func preferDPAPIPath(path string) string {
 		return strings.TrimSuffix(path, filepath.Ext(path)) + ".dpapi.json"
 	}
 	return path + ".dpapi.json"
-}
-
-func derivePlainPath(path string) string {
-	plain := path
-	if strings.HasSuffix(strings.ToLower(plain), ".dpapi.json") {
-		plain = strings.TrimSuffix(plain, ".dpapi.json") + ".json"
-	}
-	return plain
 }
 
 func loadDevicesFromDPAPIFile(path string) (map[string]deviceState, error) {
@@ -102,24 +90,49 @@ func loadDevicesFromDPAPIFile(path string) (map[string]deviceState, error) {
 	return buildDevicesMap(dc, path)
 }
 
-// loadDevicesConfigFromPlainJSON returns both the parsed config (for migration) and the validated map.
-func loadDevicesConfigFromPlainJSON(path string) (devicesConfigFile, map[string]deviceState, error) {
+func loadDevicesFromPlainJSON(path string) (map[string]deviceState, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return devicesConfigFile{}, nil, fmt.Errorf("%w: %s not found", ErrNotPaired, path)
+			return nil, fmt.Errorf("%w: %s not found", ErrNotPaired, path)
 		}
-		return devicesConfigFile{}, nil, fmt.Errorf("reading devices file %q: %w", path, err)
+		return nil, fmt.Errorf("reading devices file %q: %w", path, err)
 	}
-
 	var dc devicesConfigFile
 	if err := json.Unmarshal(b, &dc); err != nil {
-		return devicesConfigFile{}, nil, fmt.Errorf("parsing devices file %q: %w", path, err)
+		return nil, fmt.Errorf("parsing devices file %q: %w", path, err)
+	}
+	return buildDevicesMap(dc, path)
+}
+
+func writeDevicesDPAPIFile(path string, m map[string]deviceState) error {
+	inner := devicesConfigFile{Devices: make([]deviceConfig, 0, len(m))}
+	for _, st := range m {
+		inner.Devices = append(inner.Devices, deviceConfig{
+			ID:     st.id,
+			KeyHex: hex.EncodeToString(st.staticKey),
+		})
 	}
 
-	m, err := buildDevicesMap(dc, path)
+	innerJSON, err := json.Marshal(inner)
 	if err != nil {
-		return devicesConfigFile{}, nil, err
+		return err
 	}
-	return dc, m, nil
+
+	ct, err := dpapiProtect(innerJSON)
+	if err != nil {
+		return err
+	}
+
+	wrap := dpapiFile{V: 1, DPAPIB64: dpapiEncode(ct)}
+	outJSON, err := json.MarshalIndent(&wrap, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, outJSON, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
