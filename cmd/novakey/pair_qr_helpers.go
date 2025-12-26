@@ -4,7 +4,6 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"log"
 	"net"
 	"os"
