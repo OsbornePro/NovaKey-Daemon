@@ -2,15 +2,19 @@
 
 **NovaKey-Daemon** is security-critical software: it receives encrypted secrets over TCP and injects them into the active window. We take security seriously and welcome review.
 
-NovaKey-Daemon uses:
+NovaKey currently implements:
 
-- **ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305** for the `/msg` channel (protocol v3)
-- timestamp freshness checks, replay protection, and per-device rate limiting
-- optional **arming** and **two-man approval** gates to reduce risk from compromised pairing material
+- **/msg (Protocol v3):** ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305, with timestamp freshness checks, replay protection, and per-device rate limiting.
+- **/pair (Pairing v1):** one-time pairing token + ML-KEM-768 + XChaCha20-Poly1305 registration on the same TCP listener.
 
-Pairing uses a one-time token + ML-KEM + XChaCha20-Poly1305 on the same listening port.
+Optional safety controls:
 
-> Reviewer note: Please test only on systems you own/operate and do not expose your test daemon to the public Internet. NovaKey is designed for LAN/local testing and normal desktop sessions.
+- **Arming** gate (“push-to-type”)
+- **Two-man** mode (typed approve then inject)
+- Injection safety rules (`allow_newlines`, `max_inject_len`)
+- Target policy allow/deny lists
+
+> Reviewer note: Please test only on systems you own/operate and do not expose your test daemon to the public Internet. This project is designed for LAN/local testing and normal desktop sessions.
 
 ---
 
@@ -46,168 +50,163 @@ If you need encrypted comms, include “PGP” in your email and we’ll coordin
 
 ---
 
-## Current Design & Security Properties
+## Current Attack Surface
 
-### Network surface
+### One listening port + connection router
 
-NovaKey listens on **one TCP address** configured by `listen_addr` (default `127.0.0.1:60768`).
+NovaKey listens on **one** TCP address: `listen_addr` (default `127.0.0.1:60768`).
 
-Connections are routed by an ASCII preface line:
+Each connection is routed by an initial ASCII line:
 
-- `NOVAK/1 /pair` — pairing
-- `NOVAK/1 /msg`  — encrypted message exchange
+- `NOVAK/1 /pair\n` → pairing handler
+- `NOVAK/1 /msg\n`  → message handler
 
-If a client does **not** send the `NOVAK/1` route line, the daemon treats the connection as `/msg`.
+If the client does not send the route line, the connection is treated as `/msg`.
 
-### Pairing security (no TLS)
+---
 
-Pairing is initiated by scanning a QR code displayed by the daemon when no devices are paired.
+## Pairing Security (No TLS)
 
-The QR contains:
+Pairing is initiated when there are no paired devices (missing/empty `devices.json`).
 
-- daemon host+port
-- a short-lived **pairing token** (b64url)
-- a short fingerprint of the daemon ML-KEM public key (SHA-256 truncated to 16 bytes, hex)
-- an expiration timestamp
+### Pairing token
 
-Pairing occurs on the **same** TCP listener via `/pair`:
+The daemon creates a **one-time** pairing token (128-bit) with a TTL (default 10 minutes):
 
-1) Client sends a plaintext JSON line with the token:
-   - `{"op":"hello","v":1,"token":"<b64url>"}\n`
+- token encoding: base64 **raw URL** (`base64.RawURLEncoding`)
+- token is consumed by the first successful `/pair` hello
 
-2) Server replies with a plaintext JSON line containing:
-   - server ML-KEM public key (base64)
-   - public-key fingerprint (fp16 hex)
-   - expiry
-   - `{"op":"server_key","v":1,"kid":"1","kyber_pub_b64":"...","fp16_hex":"...","expires_unix":...}\n`
+This prevents random LAN pairing attempts.
 
-3) Client verifies `fp16_hex` matches what was in the QR.
+### Public key fingerprint
 
-4) Client encapsulates ML-KEM to the server public key, then sends an encrypted register request:
-   - binary frame:
-     - `[ctLen u16][ct bytes][nonce 24][ciphertext...]`
-   - AEAD key:
-     - `HKDF-SHA-256(sharedKem, salt=tokenBytes, info="NovaKey v4 Pair AEAD", outLen=32)`
-   - AEAD:
-     - XChaCha20-Poly1305
-   - AAD:
-     - `"PAIR" || ct || nonce`
+The daemon exposes its ML-KEM public key during pairing, and also provides a short fingerprint:
 
-5) Decrypted JSON is:
-   - `{"op":"register","v":1,"device_id":"...","device_key_hex":"..."}`
-   - If `device_id` or `device_key_hex` is empty, the **server assigns** values.
+- `fp16_hex = hex(sha256(pubkey)[0:16])`
 
-6) Server writes `devices.json` and reloads it, then replies with an encrypted ack:
-   - `[nonce 24][ciphertext...]` containing:
-     - `{"op":"ok","v":1,"device_id":"..."}`
+The QR should embed this fingerprint so the phone can verify the received public key matches what was scanned (mitigates “wrong host / wrong key” and some spoofing scenarios on a LAN).
 
-Security note: pairing returns a device secret. Treat pairing output as sensitive (like a password). If an attacker obtains a device secret, they may be able to produce valid `/msg` frames.
+### `/pair` cryptography
+
+Pair registration uses:
+
+- ML-KEM-768 decapsulation on the daemon
+- XChaCha20-Poly1305 AEAD for the register payload
+- AEAD key derived with HKDF-SHA-256:
+  - `IKM = sharedKem`
+  - `salt = tokenBytes`
+  - `info = "NovaKey v4 Pair AEAD"`
+  - outLen = 32 bytes
+
+AAD binds the request to the encapsulation and nonce:
+
+- `AAD = "PAIR" || ct || nonce`
+
+### Pairing material is sensitive
+
+Successful pairing results in a per-device **32-byte PSK** stored in `devices.json`.
+Treat pairing results and `devices.json` as secrets.
+
+If an attacker obtains a device PSK, they can produce valid `/msg` frames (arming/two-man can reduce silent injection risk, but does not protect a compromised host).
+
+---
+
+## `/msg` Security (Protocol v3)
 
 ### Per-device identity and secrets
 
-- Each paired device has a unique device ID and a **32-byte secret** stored in `devices.json`.
-- Device secrets are never transmitted in plaintext during normal operation.
+Each device has:
 
-### Post-quantum key encapsulation (ML-KEM-768) on `/msg`
+- `device_id` (string)
+- `device_key_hex` (32 bytes, hex)
 
-Each `/msg` request includes a KEM ciphertext.
+`device_key_hex` is never sent in plaintext.
 
-- Server decapsulates to obtain a per-message shared secret.
-- This prevents passive sniffers from learning the derived AEAD session key.
+### Post-quantum key encapsulation (ML-KEM-768)
+
+Each `/msg` request includes a KEM ciphertext:
+
+- server decapsulates → per-message shared secret
 
 ### Session key derivation (HKDF-SHA-256)
 
-Each message derives an ephemeral session key using:
+Per-message AEAD key:
 
-- IKM = per-message KEM shared secret
-- salt = per-device PSK (32 bytes)
-- info = `"NovaKey v3 AEAD key"`
-
-Session keys are single-use and not stored.
+- `IKM = sharedKem`
+- `salt = deviceKey`
+- `info = "NovaKey v3 AEAD key"`
+- outLen = 32 bytes
 
 ### Authenticated encryption (XChaCha20-Poly1305)
 
-Secrets are encrypted and authenticated with AEAD.
+- Nonce: 24 bytes (random per message)
+- AAD: binds the entire header through the KEM ciphertext
+- Prevents tampering with device routing / KEM material
 
-- The server binds header fields (including device ID and KEM ciphertext) as AAD to prevent tampering.
+### Typed inner message framing
 
-### Typed message framing (approve vs inject)
+After decrypting, the plaintext includes a timestamp and then an **inner typed frame**:
 
-The daemon expects the decrypted plaintext to carry a typed inner frame:
-
-- inner msgType `1` = Inject (payload is the secret string)
-- inner msgType `2` = Approve (payload empty/ignored)
+- inner msgType=1 → Inject (payload is secret string)
+- inner msgType=2 → Approve (payload empty/ignored)
 
 This avoids “magic string” controls and keeps policy decisions explicit.
 
 ### Freshness & replay protection
 
-- Each plaintext includes a Unix timestamp.
-- Each message includes a random XChaCha nonce.
-- Server rejects stale messages and replays of `(deviceID, nonce)` within a TTL window.
+- plaintext includes Unix timestamp (seconds)
+- server rejects stale messages and large clock skew
+- server caches `(deviceID, nonce)` for a TTL window to detect replays
 
 ### Per-device rate limiting
 
-- NovaKey enforces a per-device accepted message limit (`max_requests_per_min`).
-
-### Arming gate (optional)
-
-When enabled (`arm_enabled: true`), messages may decrypt and validate successfully, but **injection is blocked unless the host is armed**.
-
-### Two-man mode (optional)
-
-When enabled (`two_man_enabled: true`), injection requires a recent per-device **typed approve** message (and whatever arming policy you’ve configured).
-
-### Local Arm API (loopback only)
-
-If enabled (`arm_api_enabled: true`):
-
-- Binds only to loopback (recommended `127.0.0.1:60769`)
-- NovaKey refuses non-loopback binds
-- Protected by a random token stored in `arm_token_file`, provided via header `arm_token_header`
-
-Security note: any process running as the same user may potentially read the token file. Host compromise is considered game-over (standard assumption).
-
-### Injection safety policies
-
-NovaKey applies safety checks even after crypto succeeds:
-
-- `allow_newlines: false` blocks `\n` and `\r` by default
-- `max_inject_len` caps injected text length
-- optional target policy allow/deny lists restrict which focused apps are allowed
-
-### Logging safety
-
-NovaKey logs do not include full secrets.
-
-- Secrets are preview-only when logged (short prefix + length).
-- Optional file logging with rotation and redaction via config.
+- server enforces accepted message limits per device (`max_requests_per_min`)
 
 ---
 
-## Threat Model (High Level)
+## Optional Safety Controls
+
+### Arming gate
+
+When `arm_enabled: true`, frames can decrypt/validate but injection is blocked unless locally armed.
+
+### Two-man mode
+
+When `two_man_enabled: true`, injection requires a recent approve (inner msgType=2) from the same device (per-device approval window).
+
+### Local Arm API (loopback only)
+
+If `arm_api_enabled: true`:
+
+- binds only to loopback (`arm_listen_addr` must resolve to loopback)
+- token-protected via a random token stored in `arm_token_file`, supplied in header `arm_token_header`
+
+Note: processes running as the same user may be able to read the token file; host compromise is considered game-over.
+
+### Injection safety policies
+
+Even after crypto succeeds:
+
+- newline blocking by default (`allow_newlines: false`)
+- max injected length (`max_inject_len`)
+- optional target allow/deny policy for focused apps
+
+---
+
+## Threat Model
 
 ### In scope
 
-- Passive sniffing / active tampering on local networks
-- Replay attempts
-- Malicious clients without valid device secrets
-- Rate abuse from a valid device
+- passive sniffing / active tampering on LAN
+- replay attempts
+- unauthorized clients without device PSK
+- rate abuse from a valid device
 
-### Out of scope (assumed)
+### Out of scope
 
-- Fully compromised host OS / kernel / hypervisor
-- Malware running as the same user
-- Physical attacks and hardware keyloggers
-- Compromise of distribution/build pipeline (repo-level mitigations only)
-
-### Pairing material compromise
-
-If an attacker obtains a device secret (pairing output or `devices.json`):
-
-- They can generate valid encrypted `/msg` frames.
-- Arming/two-man can reduce the chance of silent injection when configured.
-- This does not protect against host compromise.
+- fully compromised host OS / same-user malware
+- physical attacks / hardware keyloggers
+- compromised build pipeline
 
 ---
 
