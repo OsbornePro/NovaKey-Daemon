@@ -7,21 +7,19 @@ import (
 )
 
 func enforceTargetPolicy() error {
-	// ✅ Only enforce when explicitly enabled.
+	// Only enforce when explicitly enabled.
 	if !cfg.TargetPolicyEnabled {
 		return nil
 	}
 
 	proc, title, err := getFocusedTarget()
 	if err != nil {
-		// Preserve your existing error strings (Wayland, etc.)
 		return err
 	}
 
 	procNorm := normalizeProcName(proc)
 	titleNorm := strings.ToLower(strings.TrimSpace(title))
 
-	// Build normalized allow/deny lists
 	allowProcs := normalizeProcList(cfg.AllowedProcessNames)
 	denyProcs := normalizeProcList(cfg.DeniedProcessNames)
 
@@ -48,7 +46,6 @@ func enforceTargetPolicy() error {
 	}
 
 	// If enabled but no lists were provided, optionally fall back to built-in allowlist.
-	// If UseBuiltInAllowlist is false here, we allow all.
 	if !cfg.UseBuiltInAllowlist {
 		return nil
 	}
@@ -70,10 +67,38 @@ func enforceTargetPolicy() error {
 func normalizeProcName(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.ToLower(s)
-	// strip trailing .exe for Windows proc names
+	if s == "" {
+		return ""
+	}
+
+	// Strip path segments (Windows + Unix)
+	// e.g. C:\Program Files\Chrome\chrome.exe -> chrome.exe
+	//      /usr/bin/firefox -> firefox
+	for {
+		i1 := strings.LastIndexByte(s, '\\')
+		i2 := strings.LastIndexByte(s, '/')
+		i := i1
+		if i2 > i {
+			i = i2
+		}
+		if i < 0 {
+			break
+		}
+		s = s[i+1:]
+	}
+
+	s = strings.TrimSpace(s)
+
+	// Strip macOS bundle suffix: Safari.app -> safari
+	if strings.HasSuffix(s, ".app") {
+		s = strings.TrimSuffix(s, ".app")
+	}
+
+	// Strip trailing .exe for Windows proc names
 	if strings.HasSuffix(s, ".exe") {
 		s = strings.TrimSuffix(s, ".exe")
 	}
+
 	return s
 }
 
@@ -121,7 +146,6 @@ func stringInSlice(s string, list []string) bool {
 }
 
 // Title rules: case-insensitive substring match.
-// (If you want exact match only, change strings.Contains -> ==)
 func titleMatchesAny(titleLower string, patternsLower []string) bool {
 	for _, p := range patternsLower {
 		if p == "" {
@@ -133,4 +157,3 @@ func titleMatchesAny(titleLower string, patternsLower []string) bool {
 	}
 	return false
 }
-

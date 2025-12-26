@@ -47,4 +47,3 @@ func trySetClipboard(text string) error {
 	log.Printf("[clipboard] set via xclip")
 	return nil
 }
-

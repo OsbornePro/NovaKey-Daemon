@@ -41,7 +41,6 @@ func itoa64(v uint64) string {
 	return string(buf[i:])
 }
 
-// safePreview returns a short, non-secret preview of the text for logs.
 func safePreview(s string) string {
 	const max = 3
 	runes := []rune(s)
@@ -55,15 +54,13 @@ func safePreview(s string) string {
 	return `"` + string(runes) + `" (len=` + itoa64(uint64(n)) + ")"
 }
 
-// --------------------
-// Log init + redaction
-// --------------------
-
 var (
 	logInitOnce sync.Once
 
 	redactMu sync.RWMutex
 	secrets  = map[string]struct{}{}
+
+	secretReplacer atomic.Value // stores *strings.Replacer
 )
 
 func initLoggingFromConfig() {
@@ -84,6 +81,7 @@ func initLoggingFromConfig() {
 		log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 		seedSecretsFromConfig()
+		rebuildSecretReplacerLocked()
 	})
 }
 
@@ -95,15 +93,12 @@ func loggingRedactEnabled() bool {
 }
 
 func seedSecretsFromConfig() {
-	// Two-man approve magic (never log this raw)
 	magic := cfg.ApproveMagic
 	if magic == "" {
 		magic = "__NOVAKEY_APPROVE__"
 	}
 	addSecret(magic)
 
-	// If token file already exists, register its contents as a secret.
-	// (Token may be created later by startArmAPI; that's fine.)
 	if cfg.ArmTokenFile != "" {
 		if b, err := os.ReadFile(cfg.ArmTokenFile); err == nil {
 			t := strings.TrimSpace(string(b))
@@ -119,9 +114,30 @@ func addSecret(s string) {
 	if s == "" {
 		return
 	}
+
 	redactMu.Lock()
+	if _, ok := secrets[s]; ok {
+		redactMu.Unlock()
+		return
+	}
 	secrets[s] = struct{}{}
+	rebuildSecretReplacerLocked()
 	redactMu.Unlock()
+}
+
+func rebuildSecretReplacerLocked() {
+	if len(secrets) == 0 {
+		secretReplacer.Store(strings.NewReplacer())
+		return
+	}
+	pairs := make([]string, 0, len(secrets)*2)
+	for sec := range secrets {
+		if sec == "" {
+			continue
+		}
+		pairs = append(pairs, sec, "[REDACTED]")
+	}
+	secretReplacer.Store(strings.NewReplacer(pairs...))
 }
 
 type lineSanitizingWriter struct {
@@ -163,17 +179,11 @@ func redactLine(line string) string {
 		return line
 	}
 
-	redactMu.RLock()
-	localSecrets := make([]string, 0, len(secrets))
-	for k := range secrets {
-		localSecrets = append(localSecrets, k)
-	}
-	redactMu.RUnlock()
-
 	out := line
-	for _, sec := range localSecrets {
-		if sec != "" && strings.Contains(out, sec) {
-			out = strings.ReplaceAll(out, sec, "[REDACTED]")
+
+	if v := secretReplacer.Load(); v != nil {
+		if r, ok := v.(*strings.Replacer); ok {
+			out = r.Replace(out)
 		}
 	}
 
@@ -182,7 +192,6 @@ func redactLine(line string) string {
 	return out
 }
 
-// Redact long base64/hex-ish blobs (like pubkeys) if they ever land in logs.
 func redactLongBlobs(s string) string {
 	const minLen = 120
 	const blobChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-"
@@ -221,32 +230,40 @@ func redactLongBlobs(s string) string {
 	return b.String()
 }
 
-// Redact obvious key/value hints.
+// Redact obvious key/value hints (all occurrences, now URL-safe).
 func redactKeyValueHints(s string) string {
 	keys := []string{
 		"password=", "pass=", "secret=", "token=", "key_hex=", "kyber=", "aead=",
 	}
 	out := s
-	lo := strings.ToLower(out)
+
 	for _, k := range keys {
-		idx := strings.Index(lo, k)
-		if idx < 0 {
-			continue
-		}
-		start := idx + len(k)
-		end := start
-		for end < len(out) {
-			ch := out[end]
-			if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == ',' || ch == '"' {
+		for {
+			lo := strings.ToLower(out)
+			idx := strings.Index(lo, k)
+			if idx < 0 {
 				break
 			}
-			end++
-		}
-		if start < end {
-			out = out[:start] + "[REDACTED]" + out[end:]
-			lo = strings.ToLower(out)
+			start := idx + len(k)
+			end := start
+			for end < len(out) {
+				ch := out[end]
+				// Expanded delimiters to catch URL query params:
+				// token=AAA&fp=...  token=AAA#...  token=AAA?...
+				if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' ||
+					ch == ',' || ch == '"' || ch == '\'' ||
+					ch == '&' || ch == '?' || ch == '#' || ch == ';' ||
+					ch == ')' || ch == ']' || ch == '}' {
+					break
+				}
+				end++
+			}
+			if start < end {
+				out = out[:start] + "[REDACTED]" + out[end:]
+			} else {
+				break
+			}
 		}
 	}
 	return out
 }
-

@@ -153,4 +153,3 @@ func (w *rotatingFileWriter) cleanupOldLocked() {
 		_ = os.Remove(cands[i].path)
 	}
 }
-

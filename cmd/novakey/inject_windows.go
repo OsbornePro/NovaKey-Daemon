@@ -62,10 +62,10 @@ func getWindowClass(hwnd windows.Handle) (string, error) {
 
 // InjectPasswordToFocusedControl on Windows:
 //
-//   1) Copy password to clipboard (best-effort).
-//   2) Get HWND of focused control.
-//   3) Try EM_REPLACESEL / WM_SETTEXT.
-//   4) Fall back to keybd_event typing.
+//  1. Copy password to clipboard (best-effort).
+//  2. Get HWND of focused control.
+//  3. Try EM_REPLACESEL / WM_SETTEXT.
+//  4. Fall back to keybd_event typing.
 func InjectPasswordToFocusedControl(password string) error {
 	log.Printf("[windows] InjectPasswordToFocusedControl called; len=%d", len(password))
 
@@ -314,4 +314,3 @@ func utf16FromString(s string) ([]uint16, error) {
 	}
 	return u, nil
 }
-

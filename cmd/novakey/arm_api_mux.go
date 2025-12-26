@@ -49,4 +49,3 @@ func handleArmDisarm(w http.ResponseWriter, r *http.Request) {
 	armGate.Disarm()
 	_, _ = fmt.Fprintln(w, "disarmed=true")
 }
-

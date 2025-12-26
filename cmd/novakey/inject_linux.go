@@ -14,14 +14,18 @@ import (
 // InjectPasswordToFocusedControl on Linux:
 //
 //   - If XDG_SESSION_TYPE=wayland:
-//       * We DO NOT attempt keystroke injection (xdotool won't work).
-//       * We best-effort copy the password to the clipboard in the background.
-//       * We return an error so the logs clearly show that Wayland typing
-//         is not supported yet.
+//
+//   - We DO NOT attempt keystroke injection (xdotool won't work).
+//
+//   - We best-effort copy the password to the clipboard in the background.
+//
+//   - We return an error so the logs clearly show that Wayland typing
+//     is not supported yet.
 //
 //   - Otherwise (x11 / xwayland / unset):
-//       * Original behavior: async clipboard via xclip,
-//         plus synchronous keystroke typing via xdotool type.
+//
+//   - Original behavior: async clipboard via xclip,
+//     plus synchronous keystroke typing via xdotool type.
 func InjectPasswordToFocusedControl(password string) error {
 	display := os.Getenv("DISPLAY")
 	session := os.Getenv("XDG_SESSION_TYPE")
@@ -100,4 +104,3 @@ func injectViaXdotoolType(password string) error {
 	}
 	return nil
 }
-

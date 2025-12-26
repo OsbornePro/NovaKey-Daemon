@@ -1,0 +1,7 @@
+2025/12/25 22:51:18.880296 [keys] loaded server ML-KEM keys from /Users/rosborne/Downloads/NovaKey-Daemon/server_keys.json
+2025/12/25 22:51:18.880525 [pair] not paired (devices file missing/empty): devices.json not found (no paired devices found; pairing is available)
+2025/12/25 22:51:18.880700 [pair] pairing token active id=8be9d8bb expires=2025-12-25T23:01:18-07:00
+2025/12/25 22:51:18.891560 [pair] token id=8be9d8bb expires=2025-12-25T23:01:18-07:00; QR opened at novakey-pair.png
+2025/12/25 22:51:18.891708 [arm] arm API enabled on http://127.0.0.1:60769 (token file: arm_token.txt, header: X-NovaKey-Token)
+2025/12/25 22:51:18.892117 [net] listening on 0.0.0.0:60768 (routes: /pair, /msg)
+2025/12/25 22:51:18.892167 NovaKey (macOS) started (listener=0.0.0.0:60768)

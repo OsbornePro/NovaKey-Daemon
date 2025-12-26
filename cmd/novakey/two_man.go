@@ -27,14 +27,10 @@ func (g *twoManGate) Approve(deviceID string, d time.Duration) time.Time {
 	return u
 }
 
-// ClearForTests resets two-man approval state (test helper).
 func (g *twoManGate) ClearForTests() {
-	// Reset by replacing with a freshly constructed gate (avoids depending on internal field names).
 	*g = *newTwoManGate()
 }
 
-// Consume returns true if device is currently approved.
-// If consume==true, it clears approval after use.
 func (g *twoManGate) Consume(deviceID string, consume bool) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -54,8 +50,7 @@ func (g *twoManGate) Consume(deviceID string, consume bool) bool {
 func (g *twoManGate) ApprovedUntil(deviceID string) time.Time {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	u := g.until[deviceID]
-	return u
+	return g.until[deviceID]
 }
 
 func (g *twoManGate) cleanupLocked(now time.Time) {
@@ -66,20 +61,9 @@ func (g *twoManGate) cleanupLocked(now time.Time) {
 	}
 }
 
-// Global gate instance (used by all platforms)
+// Global gate instance
 var approvalGate = newTwoManGate()
 
-// isApproveControlPayload returns true if this decrypted “password” is actually an approval control message.
-func isApproveControlPayload(pw string) bool {
-	// Default magic string if not configured.
-	magic := cfg.ApproveMagic
-	if magic == "" {
-		magic = "__NOVAKEY_APPROVE__"
-	}
-	return pw == magic
-}
-
-// approveWindow returns the approval TTL duration.
 func approveWindow() time.Duration {
 	ms := cfg.ApproveWindowMs
 	if ms <= 0 {

@@ -16,4 +16,3 @@ func validateInjectText(s string) error {
 	}
 	return nil
 }
-

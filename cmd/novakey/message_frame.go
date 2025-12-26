@@ -15,12 +15,12 @@ const (
 
 // Frame format (plaintext BEFORE encryption):
 //
-//   [0]   = version (uint8) = 1
-//   [1]   = msgType (uint8) = 1 inject, 2 approve
-//   [2:4] = deviceIDLen (uint16, big endian)
-//   [4:8] = payloadLen  (uint32, big endian)
-//   [..]  = deviceID bytes (UTF-8)
-//   [..]  = payload bytes  (UTF-8)
+//	[0]   = version (uint8) = 1
+//	[1]   = msgType (uint8) = 1 inject, 2 approve
+//	[2:4] = deviceIDLen (uint16, big endian)
+//	[4:8] = payloadLen  (uint32, big endian)
+//	[..]  = deviceID bytes (UTF-8)
+//	[..]  = payload bytes  (UTF-8)
 //
 // Notes:
 // - payload for MsgTypeApprove can be empty.
@@ -95,4 +95,3 @@ func decodeMessageFrame(b []byte) (deviceID string, msgType uint8, payload []byt
 	payload = b[plStart:plEnd]
 	return deviceID, msgType, payload, nil
 }
-

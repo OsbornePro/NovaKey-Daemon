@@ -22,8 +22,7 @@ var (
 	procGetWindowTextW       = user32.NewProc("GetWindowTextW")
 
 	// Control class + message injection
-	procGetClassNameW  = user32.NewProc("GetClassNameW")
-	procSendMessageW   = user32.NewProc("SendMessageW")
+	procGetClassNameW      = user32.NewProc("GetClassNameW")
+	procSendMessageW       = user32.NewProc("SendMessageW")
 	procGetCurrentThreadId = kernel32.NewProc("GetCurrentThreadId")
 )
-

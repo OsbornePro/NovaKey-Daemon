@@ -62,4 +62,3 @@ func getFocusedTarget() (string, string, error) {
 	}
 	return exe, title, nil
 }
-

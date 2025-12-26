@@ -122,4 +122,3 @@ func trimSpace(s string) string {
 	}
 	return s[i:j]
 }
-

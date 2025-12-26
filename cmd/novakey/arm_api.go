@@ -12,7 +12,15 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 )
+
+type armTokenSnapshot struct {
+	Path  string
+	Token string
+}
+
+var armTokenCache atomic.Value // stores armTokenSnapshot
 
 func startArmAPI() {
 	if !cfg.ArmAPIEnabled {
@@ -28,8 +36,14 @@ func startArmAPI() {
 	// Token init (create if missing, validate perms on Unix).
 	if err := initArmTokenFile(cfg.ArmTokenFile); err != nil {
 		log.Printf("[arm] token init failed: %v", err)
-        addSecret(cfg.ArmTokenFile)
 		return
+	}
+
+	// Load token once; cache it for request handlers; also add to redaction secrets.
+	if tok, err := readArmToken(cfg.ArmTokenFile); err == nil && tok != "" {
+		snap := armTokenSnapshot{Path: cfg.ArmTokenFile, Token: tok}
+		armTokenCache.Store(snap)
+		addSecret(tok)
 	}
 
 	log.Printf("[arm] arm API enabled on http://%s (token file: %s, header: %s)",
@@ -37,7 +51,6 @@ func startArmAPI() {
 
 	mux := armMuxForTests()
 
-	// Start serving in background.
 	go func() {
 		if err := http.ListenAndServe(cfg.ArmListenAddr, mux); err != nil {
 			log.Printf("[arm] http server stopped: %v", err)
@@ -45,10 +58,33 @@ func startArmAPI() {
 	}()
 }
 
+func cachedArmToken() (string, error) {
+	// If we have a cached snapshot and it matches current config path, use it.
+	if v := armTokenCache.Load(); v != nil {
+		if snap, ok := v.(armTokenSnapshot); ok {
+			if snap.Path == cfg.ArmTokenFile && strings.TrimSpace(snap.Token) != "" {
+				return strings.TrimSpace(snap.Token), nil
+			}
+		}
+	}
+
+	// Otherwise read from disk for current cfg.ArmTokenFile.
+	tok, err := readArmToken(cfg.ArmTokenFile)
+	if err != nil {
+		return "", err
+	}
+	tok = strings.TrimSpace(tok)
+	if tok != "" {
+		armTokenCache.Store(armTokenSnapshot{Path: cfg.ArmTokenFile, Token: tok})
+		addSecret(tok)
+	}
+	return tok, nil
+}
+
 func requireArmToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token, err := readArmToken(cfg.ArmTokenFile)
-		if err != nil {
+		token, err := cachedArmToken()
+		if err != nil || token == "" {
 			http.Error(w, "arm token not available", http.StatusInternalServerError)
 			return
 		}
@@ -117,7 +153,6 @@ func ensureFileMode0600(path string) error {
 		return err
 	}
 	mode := fi.Mode().Perm()
-	// Reject group/world readable/writable/executable.
 	if mode&0077 != 0 {
 		return fmt.Errorf("arm token file has insecure permissions (must be 0600 or stricter): %s (got %04o)", path, mode)
 	}
@@ -133,7 +168,6 @@ func isLoopbackListenAddr(addr string) bool {
 	if ip != nil {
 		return ip.IsLoopback()
 	}
-	// If host is a name, resolve and ensure all results are loopback.
 	ips, err := net.LookupIP(host)
 	if err != nil || len(ips) == 0 {
 		return false
@@ -145,4 +179,3 @@ func isLoopbackListenAddr(addr string) bool {
 	}
 	return true
 }
-

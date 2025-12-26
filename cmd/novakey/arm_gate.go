@@ -8,7 +8,7 @@ import (
 
 // ArmGate tracks whether the daemon is locally "armed" until a deadline.
 type ArmGate struct {
-	mu        sync.Mutex
+	mu         sync.Mutex
 	armedUntil time.Time
 }
 
@@ -60,4 +60,3 @@ func (g *ArmGate) Consume(consume bool) bool {
 	}
 	return true
 }
-

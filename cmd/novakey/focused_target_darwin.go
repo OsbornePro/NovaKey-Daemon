@@ -46,4 +46,3 @@ func runAppleScript(script string) (string, error) {
 	}
 	return out.String(), nil
 }
-

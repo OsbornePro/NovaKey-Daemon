@@ -23,4 +23,3 @@ func trySetClipboard(text string) error {
 	}
 	return nil
 }
-

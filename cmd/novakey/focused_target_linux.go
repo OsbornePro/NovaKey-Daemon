@@ -65,4 +65,3 @@ func cmdOut(name string, args ...string) (string, error) {
 	}
 	return out.String(), nil
 }
-

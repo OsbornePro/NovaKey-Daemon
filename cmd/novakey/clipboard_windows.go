@@ -8,4 +8,3 @@ package main
 func trySetClipboard(text string) error {
 	return setClipboardText(text)
 }
-
