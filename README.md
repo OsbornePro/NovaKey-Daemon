@@ -23,8 +23,8 @@ If a client does not send the route line, the daemon treats the connection as `/
 
 ### Crypto
 
-- **/pair:** one-time token + ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305 (pairing v1)
-- **/msg:** ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305 (protocol v3)
+- **/pair:** one-time pairing token + ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305 (Pairing Protocol v1)
+- **/msg:** ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305 (Protocol v3)
 - timestamp freshness checks, replay protection, and per-device rate limiting
 
 ### Safety controls (optional)
@@ -48,17 +48,25 @@ If a client does not send the route line, the daemon treats the connection as `/
 
 When there are no paired devices (missing/empty `devices.json`), the daemon generates a QR code (`novakey-pair.png`).
 
-Pairing uses `/pair` on the same listener:
+Pairing uses the `/pair` route on the same TCP listener. Clients **must** send the route preface:
 
-1) Client sends a hello JSON line containing a one-time token:
-   - `{"op":"hello","v":1,"token":"<b64url>"}\n`
+```text
+NOVAK/1 /pair\n
+````
 
-2) Server replies with the ML-KEM public key and a short fingerprint:
-   - `{"op":"server_key","v":1,"kid":"1","kyber_pub_b64":"...","fp16_hex":"...","expires_unix":...}\n`
+Flow:
 
-3) Client verifies `fp16_hex` matches the fingerprint embedded in the QR.
+1. Client sends a hello JSON line containing a one-time token:
 
-4) Client sends an encrypted register request. The server saves `devices.json` and reloads device keys.
+   * `{"op":"hello","v":1,"token":"<b64url>"}\n`
+
+2. Server replies with the ML-KEM public key and a short fingerprint:
+
+   * `{"op":"server_key","v":1,"kid":"1","kyber_pub_b64":"...","fp16_hex":"...","expires_unix":...}\n`
+
+3. Client verifies `fp16_hex` matches the fingerprint embedded in the QR.
+
+4. Client sends an encrypted register request. The server saves `devices.json` and reloads device keys.
 
 Pairing output is sensitive (treat it like a password).
 
@@ -70,39 +78,39 @@ NovaKey supports YAML (preferred) or JSON.
 
 Core:
 
-- `listen_addr`
-- `max_payload_len`
-- `max_requests_per_min`
-- `devices_file`
-- `server_keys_file`
+* `listen_addr`
+* `max_payload_len`
+* `max_requests_per_min`
+* `devices_file`
+* `server_keys_file`
 
 Safety gates:
 
-- `arm_enabled`
-- `arm_duration_ms`
-- `arm_consume_on_inject`
-- `two_man_enabled`
-- `approve_window_ms`
-- `approve_consume_on_inject`
-- `allow_clipboard_when_disarmed`
+* `arm_enabled`
+* `arm_duration_ms`
+* `arm_consume_on_inject`
+* `two_man_enabled`
+* `approve_window_ms`
+* `approve_consume_on_inject`
+* `allow_clipboard_when_disarmed`
 
 Arm API:
 
-- `arm_api_enabled`
-- `arm_listen_addr` (must be loopback)
-- `arm_token_file`
-- `arm_token_header`
+* `arm_api_enabled`
+* `arm_listen_addr` (must be loopback)
+* `arm_token_file`
+* `arm_token_header`
 
 Logging:
 
-- `log_dir` or `log_file`
-- `log_rotate_mb`
-- `log_keep`
-- `log_stderr`
-- `log_redact`
+* `log_dir` or `log_file`
+* `log_rotate_mb`
+* `log_keep`
+* `log_stderr`
+* `log_redact`
 
 ---
 
 ## Contact
 
-- Security: `security@novakey.app`
+* Security: `security@novakey.app`
