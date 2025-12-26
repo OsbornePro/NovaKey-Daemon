@@ -38,10 +38,16 @@ Clients must open a new connection for each request.
 ## 2) Pairing Protocol v1 (`/pair`)
 
 Pairing uses:
-- one-time pairing token (base64 raw URL)
+- one-time pairing token (base64 raw URL; `base64.RawURLEncoding`)
 - ML-KEM-768
 - HKDF-SHA-256
 - XChaCha20-Poly1305
+
+A typical QR payload uses a custom URI scheme, for example:
+
+- `novakey://pair?v=4&host=<host>&port=<port>&token=<b64url>&fp=<fp16hex>&exp=<unix>`
+
+(Exact QR payload format is an application-level choice; keep stable once clients depend on it.)
 
 ### 2.1 Hello (plaintext JSON line)
 
@@ -178,7 +184,7 @@ AAD = payload[0 : K]
 [2:4] = deviceIDLen (u16 BE)
 [4:8] = payloadLen  (u32 BE)
 [..]  = deviceID bytes (UTF-8)
-[..]  = payload bytes (UTF-8)
+[..]  = payload bytes  (UTF-8)
 ```
 
 Rules:
@@ -213,5 +219,3 @@ Key derivation:
 ## 5) Notes
 
 * Device IDs are sent in plaintext for routing. Do not use sensitive identifiers.
-
-```
