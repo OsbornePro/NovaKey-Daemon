@@ -20,7 +20,11 @@ const (
 	StatusReplay       RespStatus = 0x06
 	StatusRateLimit    RespStatus = 0x07
 	StatusCryptoFail   RespStatus = 0x08
-	StatusInternal     RespStatus = 0x7F
+
+	// New: injection couldn't be performed, but we successfully copied to clipboard.
+	StatusOKClipboard RespStatus = 0x09
+
+	StatusInternal RespStatus = 0x7F
 )
 
 func writeResp(conn net.Conn, st RespStatus, msg string) {
