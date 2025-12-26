@@ -48,7 +48,9 @@ func startUnifiedListener() error {
 }
 
 func routeConn(conn net.Conn) {
-	defer conn.Close()
+	// NOTE: Do NOT close here. Ownership belongs to the route handler (your platform handlers),
+	// which already do defer conn.Close(). This avoids double-close.
+	// defer conn.Close()
 
 	// Avoid hangs if client connects and never sends.
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
@@ -60,6 +62,8 @@ func routeConn(conn net.Conn) {
 	if err != nil {
 		// If we couldn't read a route line, try treating it as a raw /msg client.
 		_ = conn.SetReadDeadline(time.Time{})
+		_ = conn.SetReadDeadline(time.Time{}) // clear deadline (idempotent)
+		// handler owns conn close
 		if err := handleMsgConn(newPreReadConn(conn, br)); err != nil {
 			log.Printf("[net] /msg fallback error: %v", err)
 		}
