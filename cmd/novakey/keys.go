@@ -14,31 +14,32 @@ import (
 
 type serverKeys struct {
 	KyberPub  string `json:"kyber768_public"`
-	KyberPriv string `json:"kyber768_secret"` // base64-encoded mlkem768 seed (dk.Bytes())
+	KyberPriv string `json:"kyber768_secret"` // base64 seed (dk.Bytes())
 }
 
-// srvKeys is the on-disk representation.
-// serverDecapKey / serverEncapKey are the in-memory key objects.
 var (
 	srvKeys        serverKeys
 	serverDecapKey *mlkem768.DecapsulationKey
-	serverEncapKey []byte // public encapsulation key (raw bytes)
+	serverEncapKey []byte // raw bytes
 )
 
-// loadOrCreateServerKeys loads server_keys.json if present,
-// otherwise generates a new ML-KEM-768 keypair and writes it to disk.
-//
-// It also initializes serverDecapKey and serverEncapKey for runtime use.
+// loadOrCreateServerKeys loads server_keys.json if present; otherwise generates new keys.
+// If cfg.RotateKyberKeys is true, it ALWAYS generates and overwrites the file.
 func loadOrCreateServerKeys(path string) error {
 	if path == "" {
 		path = "server_keys.json"
 	}
 	abs, _ := filepath.Abs(path)
 
+	if cfg.RotateKyberKeys {
+		log.Printf("[keys] rotate_kyber_keys=true; generating new ML-KEM-768 keypair (%s)", abs)
+		return generateAndSaveServerKeys(path)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("server keys file %s not found; generating new Kyber keypair", abs)
+			log.Printf("[keys] server keys file %s not found; generating new ML-KEM-768 keypair", abs)
 			return generateAndSaveServerKeys(path)
 		}
 		return fmt.Errorf("reading %s: %w", abs, err)
@@ -51,23 +52,21 @@ func loadOrCreateServerKeys(path string) error {
 		return fmt.Errorf("invalid %s: missing kyber768_public or kyber768_secret", abs)
 	}
 
-	// Materialize ML-KEM keys
 	if err := materializeServerKeys(abs); err != nil {
 		return err
 	}
 
-	log.Printf("Loaded server Kyber keys from %s", abs)
+	log.Printf("[keys] loaded server ML-KEM keys from %s", abs)
 	return nil
 }
 
 func materializeServerKeys(absPath string) error {
-	// Decode private seed and build DecapsulationKey
 	privSeed, err := base64.StdEncoding.DecodeString(srvKeys.KyberPriv)
 	if err != nil {
 		return fmt.Errorf("decoding kyber768_secret in %s: %w", absPath, err)
 	}
 	if len(privSeed) != mlkem768.SeedSize {
-		return fmt.Errorf("kyber768_secret in %s has wrong length: got %d, want %d",
+		return fmt.Errorf("kyber768_secret in %s has wrong length: got %d want %d",
 			absPath, len(privSeed), mlkem768.SeedSize)
 	}
 
@@ -77,15 +76,30 @@ func materializeServerKeys(absPath string) error {
 	}
 	serverDecapKey = dk
 
-	// Decode public encapsulation key
 	pubBytes, err := base64.StdEncoding.DecodeString(srvKeys.KyberPub)
 	if err != nil {
 		return fmt.Errorf("decoding kyber768_public in %s: %w", absPath, err)
 	}
 	if len(pubBytes) != mlkem768.EncapsulationKeySize {
-		return fmt.Errorf("kyber768_public in %s has wrong length: got %d, want %d",
+		return fmt.Errorf("kyber768_public in %s has wrong length: got %d want %d",
 			absPath, len(pubBytes), mlkem768.EncapsulationKeySize)
 	}
+
+	// Optional consistency check: pub in file should match pub derived from seed
+	derived := dk.EncapsulationKey()
+	if len(derived) == len(pubBytes) {
+		same := true
+		for i := range derived {
+			if derived[i] != pubBytes[i] {
+				same = false
+				break
+			}
+		}
+		if !same {
+			return fmt.Errorf("server keys mismatch in %s: public key does not match private seed", absPath)
+		}
+	}
+
 	serverEncapKey = pubBytes
 	return nil
 }
@@ -98,8 +112,8 @@ func generateAndSaveServerKeys(path string) error {
 		return fmt.Errorf("mlkem768.GenerateKey: %w", err)
 	}
 
-	privSeed := dk.Bytes()           // SeedSize bytes
-	pubKey := dk.EncapsulationKey()  // EncapsulationKeySize bytes
+	privSeed := dk.Bytes()
+	pubKey := dk.EncapsulationKey()
 
 	srvKeys = serverKeys{
 		KyberPub:  base64.StdEncoding.EncodeToString(pubKey),
@@ -119,12 +133,11 @@ func generateAndSaveServerKeys(path string) error {
 		return fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
 	}
 
-	// Also initialize runtime objects
+	// Initialize runtime objects from what we just created
 	if err := materializeServerKeys(abs); err != nil {
 		return err
 	}
 
-	log.Printf("Generated new server Kyber keys at %s", abs)
+	log.Printf("[keys] generated new server ML-KEM keys at %s", abs)
 	return nil
 }
-
