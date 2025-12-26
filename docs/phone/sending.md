@@ -1,7 +1,7 @@
 # Sending Secrets to a Computer
 
 ## How sending works
-When you tap **Send**, NovaKey:
+When you tap **Send**, NovaKey:  
 1. Authenticates you (*Face ID / passcode*)  
 2. Verifies pairing  
 3. Optionally requests approval on the computer (*Two-Man Mode*)  
