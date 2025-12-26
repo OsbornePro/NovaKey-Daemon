@@ -1,4 +1,4 @@
-// cmd/novakey/devices_store_nonwindows.go
+// cmd/novakey/devices_store_unix.go
 //go:build !windows
 
 package main
