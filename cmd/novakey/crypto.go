@@ -31,8 +31,6 @@ const (
 	maxRequestsPerDevicePerMin = 60
 )
 
-var ErrNotPaired = errors.New("not paired (devices file missing/empty)")
-
 type deviceConfig struct {
 	ID     string `json:"id"`
 	KeyHex string `json:"key_hex"` // 32 bytes hex
