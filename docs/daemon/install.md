@@ -10,6 +10,8 @@
 ### 1) Build or download a binary
 Windows:
 ```powershell
+Set-ExecutionPolicy RemoteSigned
+Unblock-File .\build.ps1
 .\build.ps1 -Target Windows
 # dist\novakey-windows-amd64.exe
 ```
