@@ -45,8 +45,8 @@ type ServerConfig struct {
 	// Clipboard policy
 	// - allow_clipboard_when_disarmed: if true, clipboard fallback may be used when blocked by policy/gates
 	// - allow_clipboard_on_inject_failure: if true, clipboard fallback may be used when injection fails after gates pass (Wayland, permissions, etc.)
-	AllowClipboardWhenDisarmed     *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
-	AllowClipboardOnInjectFailure  *bool `json:"allow_clipboard_on_inject_failure" yaml:"allow_clipboard_on_inject_failure"`
+	AllowClipboardWhenDisarmed    *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
+	AllowClipboardOnInjectFailure *bool `json:"allow_clipboard_on_inject_failure" yaml:"allow_clipboard_on_inject_failure"`
 
 	// Local-only arming endpoint
 	ArmAPIEnabled  bool   `json:"arm_api_enabled" yaml:"arm_api_enabled"`
