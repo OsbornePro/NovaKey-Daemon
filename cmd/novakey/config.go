@@ -12,6 +12,7 @@ import (
 )
 
 type ServerConfig struct {
+	RotateKyberKeys   bool   `json:"rotate_kyber_keys" yaml:"rotate_kyber_keys"`
 	ListenAddr        string `json:"listen_addr" yaml:"listen_addr"`
 	MaxPayloadLen     int    `json:"max_payload_len" yaml:"max_payload_len"`
 	MaxRequestsPerMin int    `json:"max_requests_per_min" yaml:"max_requests_per_min"`
