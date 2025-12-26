@@ -9,6 +9,7 @@ NovaKey currently implements:
 
 Optional safety controls:
 
+- The shipped sample configuration enables arming and two-man by default (*text inject requires local arm and a recent approve window*)
 - **Arming** gate (“push-to-type”)
 - **Two-man** mode (typed approve then inject)
 - Injection safety rules (`allow_newlines`, `max_inject_len`)
