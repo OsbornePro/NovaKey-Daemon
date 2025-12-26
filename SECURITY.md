@@ -4,9 +4,11 @@
 
 NovaKey-Daemon uses:
 
-- **ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305** for transport security on `/msg`
+- **ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305** for the `/msg` channel (protocol v3)
 - timestamp freshness checks, replay protection, and per-device rate limiting
 - optional **arming** and **two-man approval** gates to reduce risk from compromised pairing material
+
+Pairing uses a one-time token + ML-KEM + XChaCha20-Poly1305 on the same listening port.
 
 > Reviewer note: Please test only on systems you own/operate and do not expose your test daemon to the public Internet. NovaKey is designed for LAN/local testing and normal desktop sessions.
 
@@ -50,12 +52,12 @@ If you need encrypted comms, include “PGP” in your email and we’ll coordin
 
 NovaKey listens on **one TCP address** configured by `listen_addr` (default `127.0.0.1:60768`).
 
-Connections are routed by a short ASCII preface line:
+Connections are routed by an ASCII preface line:
 
-- `NOVAK/1 /pair` — pairing exchange (one-time token)
-- `NOVAK/1 /msg`  — encrypted message exchange (ML-KEM + AEAD)
+- `NOVAK/1 /pair` — pairing
+- `NOVAK/1 /msg`  — encrypted message exchange
 
-For backward compatibility, if a client does **not** send the `NOVAK/1` route line, the daemon treats the connection as `/msg`.
+If a client does **not** send the `NOVAK/1` route line, the daemon treats the connection as `/msg`.
 
 ### Pairing security (no TLS)
 
@@ -63,21 +65,50 @@ Pairing is initiated by scanning a QR code displayed by the daemon when no devic
 
 The QR contains:
 
-- the daemon host+port
-- a **short-lived pairing token**
-- a short fingerprint of the daemon’s ML-KEM public key (for client-side sanity checking)
+- daemon host+port
+- a short-lived **pairing token** (b64url)
+- a short fingerprint of the daemon ML-KEM public key (SHA-256 truncated to 16 bytes, hex)
 - an expiration timestamp
 
-Pairing occurs over the same listening port via `/pair`. The token is required and expires; pairing is intended for local/LAN use only.
+Pairing occurs on the **same** TCP listener via `/pair`:
 
-Security note: pairing returns a device secret. Treat pairing output as sensitive (like a password). If an attacker obtains a device secret, they may be able to produce valid encrypted `/msg` frames.
+1) Client sends a plaintext JSON line with the token:
+   - `{"op":"hello","v":1,"token":"<b64url>"}\n`
+
+2) Server replies with a plaintext JSON line containing:
+   - server ML-KEM public key (base64)
+   - public-key fingerprint (fp16 hex)
+   - expiry
+   - `{"op":"server_key","v":1,"kid":"1","kyber_pub_b64":"...","fp16_hex":"...","expires_unix":...}\n`
+
+3) Client verifies `fp16_hex` matches what was in the QR.
+
+4) Client encapsulates ML-KEM to the server public key, then sends an encrypted register request:
+   - binary frame:
+     - `[ctLen u16][ct bytes][nonce 24][ciphertext...]`
+   - AEAD key:
+     - `HKDF-SHA-256(sharedKem, salt=tokenBytes, info="NovaKey v4 Pair AEAD", outLen=32)`
+   - AEAD:
+     - XChaCha20-Poly1305
+   - AAD:
+     - `"PAIR" || ct || nonce`
+
+5) Decrypted JSON is:
+   - `{"op":"register","v":1,"device_id":"...","device_key_hex":"..."}`
+   - If `device_id` or `device_key_hex` is empty, the **server assigns** values.
+
+6) Server writes `devices.json` and reloads it, then replies with an encrypted ack:
+   - `[nonce 24][ciphertext...]` containing:
+     - `{"op":"ok","v":1,"device_id":"..."}`
+
+Security note: pairing returns a device secret. Treat pairing output as sensitive (like a password). If an attacker obtains a device secret, they may be able to produce valid `/msg` frames.
 
 ### Per-device identity and secrets
 
-- Each paired device has a unique device ID and a **32-byte secret** stored in `devices.json` (or platform-specific secure storage if configured).
-- Device secrets are never sent in plaintext during normal operation.
+- Each paired device has a unique device ID and a **32-byte secret** stored in `devices.json`.
+- Device secrets are never transmitted in plaintext during normal operation.
 
-### Post-quantum key encapsulation (ML-KEM-768)
+### Post-quantum key encapsulation (ML-KEM-768) on `/msg`
 
 Each `/msg` request includes a KEM ciphertext.
 
@@ -102,7 +133,7 @@ Secrets are encrypted and authenticated with AEAD.
 
 ### Typed message framing (approve vs inject)
 
-The daemon expects an encrypted outer message that decrypts to a typed inner frame:
+The daemon expects the decrypted plaintext to carry a typed inner frame:
 
 - inner msgType `1` = Inject (payload is the secret string)
 - inner msgType `2` = Approve (payload empty/ignored)
@@ -125,10 +156,7 @@ When enabled (`arm_enabled: true`), messages may decrypt and validate successful
 
 ### Two-man mode (optional)
 
-When enabled (`two_man_enabled: true`), injection requires:
-
-1) host is armed (if `arm_enabled` is on), and  
-2) a recent per-device **typed approve** message.
+When enabled (`two_man_enabled: true`), injection requires a recent per-device **typed approve** message (and whatever arming policy you’ve configured).
 
 ### Local Arm API (loopback only)
 
