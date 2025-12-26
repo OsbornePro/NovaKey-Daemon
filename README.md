@@ -1,67 +1,58 @@
 # 🔐 NovaKey-Daemon
 
-**NovaKey-Daemon** is a lightweight, cross-platform Go agent that turns your computer into a secure, authenticated password-injection endpoint.
+**NovaKey-Daemon** is a cross-platform Go agent that receives authenticated secrets from a trusted device and injects them into the currently focused text field.
 
-It’s designed for cases where you don’t want to type high-value secrets (master passwords, recovery keys, etc.) on your desktop keyboard:
+It’s built for cases where you don’t want to type high-value secrets (master passwords, recovery keys, etc.) on your desktop keyboard:
 
 - the secret lives on a trusted device (e.g. your phone)
 - delivery is encrypted and authenticated
-- the daemon injects into the currently focused text field
-
-> Secrets do not traverse the network in plaintext.
+- the daemon injects into the focused control (with optional clipboard fallback when blocked)
 
 ---
 
 ## Current Status
 
-- The daemon runs on Linux / Windows / macOS.
-- Pairing + message transport are implemented on a **single TCP port** (default `:60768`).
-- A loopback-only Arm API exists for local control (optional).
+- Linux / Windows / macOS daemon
+- **One TCP listener** (`listen_addr`, default `127.0.0.1:60768`)
+- Connection routing via a single-line preface:
+  - `NOVAK/1 /pair`
+  - `NOVAK/1 /msg`
+- `/msg` uses **ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305** (protocol v3)
+- Optional loopback-only Arm API for local arming/disarming (token protected)
 
 ---
 
-## Security Review Invited
+## Docs
 
-NovaKey uses **ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305**, with freshness checks, replay protection, and per-device rate limiting.
-
-Safety controls:
-
-- arming (“push-to-type”)
-- two-man approval gate (per-device approve window)
-- injection safety rules (`allow_newlines`, `max_inject_len`)
-- optional target policy allow/deny lists
-
-Docs:
-- Protocol format: `PROTOCOL.md`
-- Security model: `SECURITY.md`
+- `SECURITY.md` — threat model + security properties
+- `PROTOCOL.md` — current wire format for `/pair` and `/msg`
 
 ---
 
-## Overview
+## How it works
 
-NovaKey listens on `listen_addr` (default `127.0.0.1:60768`) and routes each inbound TCP connection by a short route line:
-
-- `NOVAK/1 /pair` — pairing exchange
-- `NOVAK/1 /msg`  — encrypted message exchange (inject/approve)
-
-For backward compatibility, clients that do not send a route line are treated as `/msg`.
+1) NovaKey starts and loads/creates `server_keys.json` (ML-KEM-768 keypair).
+2) NovaKey loads device secrets from `devices.json`.
+3) If there are no paired devices, NovaKey generates a QR (`novakey-pair.png`) and waits for pairing.
+4) Clients connect to the daemon on the same TCP port and choose a route:
+   - `/pair` to pair
+   - `/msg` to send encrypted approve/inject requests
 
 ---
 
-## Pairing
+## Pairing (single-port)
 
-If no devices are paired (missing/empty `devices.json`), the daemon generates a QR code image (`novakey-pair.png`).
+Pairing uses the `/pair` route on the same listener.
 
-Scanning the QR provides the phone app (or a pairing tool) with:
+**Client → server (plaintext JSON line):**
+`{"op":"hello","v":1,"token":"<b64url>"}\n`
 
-- daemon host + port
-- a short-lived **pair token**
-- a fingerprint of the daemon’s ML-KEM public key (sanity check)
-- expiration timestamp
+**Server → client (plaintext JSON line):**
+`{"op":"server_key","v":1,"kid":"1","kyber_pub_b64":"...","fp16_hex":"...","expires_unix":...}\n`
 
-The client then connects to the daemon on the **same port** and performs pairing via `/pair`. Pairing returns the device ID + a per-device secret + the daemon public key material needed to send encrypted `/msg` requests.
+Then the client sends an encrypted register message using ML-KEM + XChaCha20-Poly1305. If `device_id` / `device_key_hex` are omitted, the server assigns them and saves `devices.json`.
 
-Treat pairing output as sensitive (like a password).
+Treat pairing output as sensitive.
 
 ---
 
@@ -77,7 +68,7 @@ Core fields:
 - `devices_file`
 - `server_keys_file`
 
-Arming / two-man:
+Safety gates:
 
 - `arm_enabled`
 - `arm_duration_ms`
@@ -104,18 +95,6 @@ Logging:
 
 ---
 
-## Running
+## Contact
 
-Run the daemon in a logged-in desktop session for reliable injection behavior.
-
-- On startup:
-  - server keys are loaded/created (`server_keys.json`)
-  - devices are loaded (`devices.json`)
-  - if not paired, a pairing QR is generated
-
----
-
-## Contact & Support
-
-- Security disclosures: see `SECURITY.md`
-- Email: `security@novakey.app`
+- Security: `security@novakey.app`
