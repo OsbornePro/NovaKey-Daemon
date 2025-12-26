@@ -1,0 +1,18 @@
+site_name: NovaKey Documentation
+site_description: NovaKey phone app + NovaKey-Daemon docs
+repo_url: https://github.com/OsbornePro/NovaKey-Daemon
+theme:
+  name: readthedocs
+
+nav:
+  - Home: index.md
+  - Phone App:
+      - Pairing: phone/pairing.md
+      - Sending secrets: phone/sending.md
+      - Troubleshooting: phone/troubleshooting.md
+  - NovaKey-Daemon:
+      - Install: daemon/install.md
+      - Configuration: daemon/config.md
+      - Troubleshooting: daemon/troubleshooting.md
+  - Security: security.md
+
