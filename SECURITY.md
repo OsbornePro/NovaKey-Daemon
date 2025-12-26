@@ -63,6 +63,22 @@ Each connection is routed by an initial ASCII line:
 
 If the client does not send the route line, the connection is treated as `/msg`.
 
+### Connection routing
+
+Routing is performed using a fixed ASCII preface line:
+
+- `NOVAK/1 /pair\n`
+- `NOVAK/1 /msg\n`
+
+Routing occurs **before** any cryptographic processing.
+
+Security properties are unchanged by routing:
+- `/pair` is protected by a one-time token and ML-KEM
+- `/msg` requires a valid per-device PSK
+
+If the route line is absent, the daemon treats the connection as `/msg`.
+This fallback does **not** grant pairing access.
+
 ---
 
 ## Pairing Security (No TLS)
