@@ -17,7 +17,8 @@ import (
 
 // saveDevicesToDisk writes devices as a sealed JSON file on non-Windows.
 // It uses an OS keyring-stored key when available; if keyring is unavailable,
-// it falls back to plaintext JSON with strict perms (0600).
+// it can fall back to plaintext JSON with strict perms (0600) unless
+// cfg.RequireSealedDeviceStore=true, in which case it fails closed.
 func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 	pt, err := json.MarshalIndent(&dc, "", "  ")
 	if err != nil {
@@ -26,6 +27,10 @@ func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 
 	key, err := getOrCreateDevicesKey()
 	if err != nil {
+		if cfg.RequireSealedDeviceStore {
+			return fmt.Errorf("%w: require_sealed_device_store=true but keyring is unavailable: %v",
+				ErrDevicesUnavailable, err)
+		}
 		// Headless Linux/macOS edge cases: if keyring can’t be used, fallback.
 		log.Printf("[warn] keyring unavailable (%v); falling back to plaintext with 0600", err)
 		return atomicWrite0600(path, pt)
