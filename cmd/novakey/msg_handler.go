@@ -13,6 +13,11 @@ import (
 func handleMsgConn(conn net.Conn) error {
 	defer conn.Close()
 
+	// Hard timeout for clients that connect and stall.
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	// Clear deadlines before returning (best practice).
+	defer func() { _ = conn.SetDeadline(time.Time{}) }()
+
 	reqID := nextReqID()
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
