@@ -1,3 +1,4 @@
+rotate_kyber_keys: false
 listen_addr: "0.0.0.0:60768"
 max_payload_len: 4096
 max_requests_per_min: 60
