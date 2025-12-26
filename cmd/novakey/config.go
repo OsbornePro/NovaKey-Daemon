@@ -12,36 +12,35 @@ import (
 )
 
 type ServerConfig struct {
-	RotateKyberKeys   bool   `json:"rotate_kyber_keys" yaml:"rotate_kyber_keys"`
 	ListenAddr        string `json:"listen_addr" yaml:"listen_addr"`
 	MaxPayloadLen     int    `json:"max_payload_len" yaml:"max_payload_len"`
 	MaxRequestsPerMin int    `json:"max_requests_per_min" yaml:"max_requests_per_min"`
 	DevicesFile       string `json:"devices_file" yaml:"devices_file"`
 	ServerKeysFile    string `json:"server_keys_file" yaml:"server_keys_file"`
 
+	// NEW: key rotation / pairing hardening
+	RotateKyberKeys         bool `json:"rotate_kyber_keys" yaml:"rotate_kyber_keys"`
+	RotateDevicePSKOnRepair bool `json:"rotate_device_psk_on_repair" yaml:"rotate_device_psk_on_repair"`
+	PairHelloMaxPerMin      int  `json:"pair_hello_max_per_min" yaml:"pair_hello_max_per_min"` // per-IP, /pair only (in-memory)
+
 	// --------------------
 	// Logging (optional)
 	// --------------------
-	// If LogFile is set, logs go to that file (with rotation).
-	// Else if LogDir is set, logs go to LogDir/novakey.log (with rotation).
-	// If neither is set, logs go to stderr only.
 	LogFile     string `json:"log_file" yaml:"log_file"`
 	LogDir      string `json:"log_dir" yaml:"log_dir"`
-	LogRotateMB int    `json:"log_rotate_mb" yaml:"log_rotate_mb"` // default 10
-	LogKeep     int    `json:"log_keep" yaml:"log_keep"`           // default 10
-	LogStderr   *bool  `json:"log_stderr" yaml:"log_stderr"`       // default true
-	LogRedact   *bool  `json:"log_redact" yaml:"log_redact"`       // default true
+	LogRotateMB int    `json:"log_rotate_mb" yaml:"log_rotate_mb"`
+	LogKeep     int    `json:"log_keep" yaml:"log_keep"`
+	LogStderr   *bool  `json:"log_stderr" yaml:"log_stderr"`
+	LogRedact   *bool  `json:"log_redact" yaml:"log_redact"`
 
-	// Arm gate (OFF by default)
+	// Arm gate
 	ArmEnabled         bool  `json:"arm_enabled" yaml:"arm_enabled"`
 	ArmDurationMs      int   `json:"arm_duration_ms" yaml:"arm_duration_ms"`
 	ArmConsumeOnInject *bool `json:"arm_consume_on_inject" yaml:"arm_consume_on_inject"`
 
-	// When blocked (disarmed / two-man missing), allow clipboard copy?
-	// Default FALSE (safer). Can be set true explicitly in config.
 	AllowClipboardWhenDisarmed *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
 
-	// Local-only arming endpoint (OFF by default)
+	// Local-only arming endpoint
 	ArmAPIEnabled  bool   `json:"arm_api_enabled" yaml:"arm_api_enabled"`
 	ArmListenAddr  string `json:"arm_listen_addr" yaml:"arm_listen_addr"`
 	ArmTokenFile   string `json:"arm_token_file" yaml:"arm_token_file"`
@@ -58,7 +57,7 @@ type ServerConfig struct {
 	ApproveMagic              string `json:"approve_magic" yaml:"approve_magic"`
 	LegacyApproveMagicEnabled bool   `json:"legacy_approve_magic_enabled" yaml:"legacy_approve_magic_enabled"`
 
-	// Target policy (allow/deny of focused app)
+	// Target policy
 	TargetPolicyEnabled bool     `json:"target_policy_enabled" yaml:"target_policy_enabled"`
 	UseBuiltInAllowlist bool     `json:"use_built_in_allowlist" yaml:"use_built_in_allowlist"`
 	AllowedProcessNames []string `json:"allowed_process_names" yaml:"allowed_process_names"`
@@ -98,11 +97,6 @@ func loadConfig() error {
 	}
 
 	applyDefaults()
-
-	// IMPORTANT: initialize logging after defaults are applied.
-	// This avoids needing to edit platform mains.
-	initLoggingFromConfig()
-
 	return nil
 }
 
@@ -138,6 +132,13 @@ func applyDefaults() {
 		cfg.ServerKeysFile = "server_keys.json"
 	}
 
+	// Pairing hardening defaults
+	if cfg.PairHelloMaxPerMin == 0 {
+		cfg.PairHelloMaxPerMin = 30 // per-IP / minute (in-memory)
+	}
+	// RotateKyberKeys default false
+	// RotateDevicePSKOnRepair default false (you can set true in shipped YAML)
+
 	// Logging defaults
 	if cfg.LogRotateMB == 0 {
 		cfg.LogRotateMB = 10
@@ -154,7 +155,16 @@ func applyDefaults() {
 		cfg.LogRedact = &v
 	}
 
-	// Arm defaults
+	// ✅ Your stated preference: arming + two-man enabled by default
+	// (If you only want this “enabled by default” in the shipped YAML, set those there instead
+	// and remove these two defaults.)
+	if !cfg.ArmEnabled {
+		cfg.ArmEnabled = true
+	}
+	if !cfg.TwoManEnabled {
+		cfg.TwoManEnabled = true
+	}
+
 	if cfg.ArmDurationMs == 0 {
 		cfg.ArmDurationMs = 20000
 	}
@@ -163,7 +173,7 @@ func applyDefaults() {
 		cfg.ArmConsumeOnInject = &v
 	}
 
-	// ✅ CHANGE: default to false instead of true
+	// Safer default: clipboard fallback OFF unless explicitly enabled
 	if cfg.AllowClipboardWhenDisarmed == nil {
 		v := false
 		cfg.AllowClipboardWhenDisarmed = &v
