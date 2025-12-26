@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -25,6 +26,30 @@ func boolDeref(ptr *bool, def bool) bool {
 	return *ptr
 }
 
+func maybeStartPairingQR() {
+	if isPaired() {
+		return
+	}
+
+	host, port := splitHostPortOrDie(cfg.ListenAddr)
+	advertiseHost := chooseAdvertiseHost(host)
+
+	tokenB64, tokenID, exp := startOrRefreshPairToken(10 * time.Minute)
+	fp := fp16Hex(serverEncapKey)
+
+	qr := fmt.Sprintf("novakey://pair?v=4&host=%s&port=%d&token=%s&fp=%s&exp=%d",
+		advertiseHost, port, tokenB64, fp, exp.Unix())
+
+	pngPath, err := writeAndOpenPairQR(".", qr)
+	if err != nil {
+		log.Printf("[pair] token id=%s expires=%s; QR at %s (viewer open failed: %v)",
+			tokenID, exp.Format(time.RFC3339), pngPath, err)
+	} else {
+		log.Printf("[pair] token id=%s expires=%s; QR opened at %s",
+			tokenID, exp.Format(time.RFC3339), pngPath)
+	}
+}
+
 func main() {
 	if err := loadConfig(); err != nil {
 		log.Fatalf("loadConfig failed: %v", err)
@@ -34,29 +59,22 @@ func main() {
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
-	maybeStartPairingBootstrap()
+
+	maybeStartPairingQR()
 	startArmAPI()
 
-	listenAddr := cfg.ListenAddr
-	maxLen := cfg.MaxPayloadLen
-
-	log.Printf("NovaKey (macOS) service starting (listener=%s)", listenAddr)
-
-	ln, err := net.Listen("tcp4", listenAddr)
-	if err != nil {
-		log.Fatalf("listen on %s: %v", listenAddr, err)
+	if err := startUnifiedListener(); err != nil {
+		log.Fatalf("startUnifiedListener failed: %v", err)
 	}
-	log.Printf("NovaKey (macOS) listening on %s", listenAddr)
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Printf("[accept] error: %v", err)
-			continue
-		}
-		reqID := nextReqID()
-		go handleConnDarwin(reqID, conn, maxLen)
-	}
+	log.Printf("NovaKey (macOS) started (listener=%s)", cfg.ListenAddr)
+	select {}
+}
+
+func handleMsgConn(conn net.Conn) error {
+	reqID := nextReqID()
+	handleConnDarwin(reqID, conn, cfg.MaxPayloadLen)
+	return nil
 }
 
 func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
@@ -64,9 +82,7 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
 
-	// Helper: write a response exactly once, then return.
 	respond := func(st RespStatus, msg string) {
-		// Best-effort. If client closes early, writeResp will just fail silently.
 		logReqf(reqID, "responding status=%d msg=%q", st, msg)
 		writeResp(conn, st, msg)
 	}
@@ -97,7 +113,6 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// ✅ Current path only: v3 outer frame -> typed inner message frame.
 	deviceID, msgType, payload, err := decryptMessageFrame(buf)
 	if err != nil {
 		logReqf(reqID, "decryptMessageFrame failed: %v", err)
@@ -105,7 +120,6 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// --- TWO-MAN: approval control message (typed) ---
 	if msgType == MsgTypeApprove {
 		if !cfg.TwoManEnabled {
 			logReqf(reqID, "approve message received but two_man_enabled=false; ignoring")
@@ -115,12 +129,10 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		until := approvalGate.Approve(deviceID, approveWindow())
 		logReqf(reqID, "two-man approve received from device=%q; approved until %s",
 			deviceID, until.Format(time.RFC3339Nano))
-
 		respond(StatusOK, "approved")
 		return
 	}
 
-	// --- INJECT message ---
 	if msgType != MsgTypeInject {
 		logReqf(reqID, "unknown msgType=%d from device=%q; dropping", msgType, deviceID)
 		respond(StatusBadRequest, "unknown msgType")
@@ -130,7 +142,6 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 	password := string(payload)
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
-	// Unsafe-text filter (newlines/max length etc)
 	if err := validateInjectText(password); err != nil {
 		logReqf(reqID, "blocked injection (unsafe text): %v", err)
 
@@ -149,8 +160,6 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// --- TARGET POLICY (allow/deny list) ---
-	// Do this BEFORE consuming approval/arm windows so a blocked focus can’t burn them.
 	if err := enforceTargetPolicy(); err != nil {
 		logReqf(reqID, "blocked injection (target policy): %v", err)
 
@@ -169,11 +178,9 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// Serialize injection paths
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
-	// --- TWO-MAN: require recent approval for this device ---
 	if cfg.TwoManEnabled {
 		consume := boolDeref(cfg.ApproveConsumeOnInject, true)
 		if !approvalGate.Consume(deviceID, consume) {
@@ -201,8 +208,6 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		logReqf(reqID, "two-man approval OK; proceeding")
 	}
 
-	// --- ARM GATE ---
-	// if cfg.ArmEnabled || cfg.TwoManEnabled {
 	if cfg.ArmEnabled {
 		consume := boolDeref(cfg.ArmConsumeOnInject, true)
 		if !armGate.Consume(consume) {
@@ -225,7 +230,6 @@ func handleConnDarwin(reqID uint64, conn net.Conn, maxLen int) {
 		logReqf(reqID, "armed gate open; proceeding with injection")
 	}
 
-	// Inject
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
 
