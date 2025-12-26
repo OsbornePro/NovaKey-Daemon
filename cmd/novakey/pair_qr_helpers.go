@@ -119,8 +119,3 @@ func randHex(nBytes int) string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
-
-// Optional helper for debugging/logs.
-func fmtHostPort(host string, port int) string {
-	return fmt.Sprintf("%s:%d", host, port)
-}
