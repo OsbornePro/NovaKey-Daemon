@@ -32,7 +32,7 @@ If a client does not send the route line, the daemon treats the connection as `/
 - arming (“push-to-type”)
 - two-man approval window (typed approve then inject)
 - injection safety rules (`allow_newlines`, `max_inject_len`)
-- target policy allow/deny lists
+- target policy allow/deny lists (focused app/window)
 - local Arm API (loopback only, token protected)
 
 ---
@@ -46,7 +46,7 @@ If a client does not send the route line, the daemon treats the connection as `/
 
 ## Pairing (single-port)
 
-When there are no paired devices (missing/empty `devices.json`), the daemon generates a QR code (`novakey-pair.png`).
+When there are no paired devices (missing/empty device store), the daemon generates a QR code (`novakey-pair.png`) at startup.
 
 Pairing uses the `/pair` route on the same TCP listener. Clients **must** send the route preface:
 
@@ -66,7 +66,7 @@ Flow:
 
 3. Client verifies `fp16_hex` matches the fingerprint embedded in the QR.
 
-4. Client sends an encrypted register request. The server saves `devices.json` and reloads device keys.
+4. Client sends an encrypted register request. The server saves the device PSK and reloads device keys.
 
 Pairing output is sensitive (treat it like a password).
 
@@ -93,6 +93,15 @@ Safety gates:
 * `approve_window_ms`
 * `approve_consume_on_inject`
 * `allow_clipboard_when_disarmed`
+
+Target policy:
+
+* `target_policy_enabled`
+* `use_built_in_allowlist`
+* `allowed_process_names`
+* `allowed_window_titles`
+* `denied_process_names`
+* `denied_window_titles`
 
 Arm API:
 
