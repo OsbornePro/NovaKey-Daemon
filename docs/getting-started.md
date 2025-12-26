@@ -2,6 +2,18 @@
 
 This is the fastest path to “send a secret from iPhone → computer”.
 
+## On the phone (quick tour)
+
+### Main screen
+![Main screen](assets/screenshots/novakey-main-page.PNG)
+
+### Add a secret
+![New secret](assets/screenshots/novakey-new-secret.PNG)
+
+### Pair by scanning a QR
+![Scan QR](assets/screenshots/novakey-scan-qr.PNG)
+
+
 ## Step 0 — Install NovaKey-Daemon
 
 Follow: **NovaKey-Daemon → Install**

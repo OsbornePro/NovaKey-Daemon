@@ -1,5 +1,8 @@
 # Adding and Managing Secrets
 
+### Create a new secret
+![New secret](../assets/screenshots/novakey-new-secret.PNG)
+
 ## Add a secret
 1. Tap **+**
 2. Enter:
@@ -7,6 +10,9 @@
    - **Secret**
    - **Confirm Secret**
 3. Tap **Save**
+
+### Secret actions
+![Secret options](../assets/screenshots/novakey-secret-options.PNG)
 
 ## Important behavior (by design)
 - Secrets are **never displayed again** after saving.

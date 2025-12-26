@@ -6,6 +6,18 @@ NovaKey (iOS) is the “vault and control surface”:
 - Sending/copying requires **Face ID / passcode**.
 - Secrets are never shown again after you tap **Save**.
 
+## Screens
+
+### Main screen
+![Main](../assets/screenshots/novakey-main-page.PNG)
+
+### Settings menu
+![Settings gear options](../assets/screenshots/novakey-settings-gear-options.PNG)
+
+### Settings page
+![Settings](../assets/screenshots/novakey-settings.PNG)
+
+
 ## Main concepts
 
 ### Secrets

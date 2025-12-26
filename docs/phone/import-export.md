@@ -10,6 +10,15 @@ NovaKey supports encrypted vault backups (JSON).
 3. (Optional) Require Face ID for each secret during export
 4. Save the file
 
+## Export screens
+
+### Export options
+![Export encryption options](../assets/screenshots/novakey-export-enc-options.PNG)
+
+### Export (password or none)
+![Export pass none](../assets/screenshots/novakey-export-pass-none.PNG)
+
+
 ## Importing a vault
 1. Settings → **Import Vault**
 2. Select a vault file

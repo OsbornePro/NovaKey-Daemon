@@ -3,6 +3,18 @@
 Pairing establishes **mutual trust** between your phone and your computer.  
 You typically do this once per device (or again if the host/port changes).
 
+## Pairing screens
+
+### Manage listeners
+![Edit listeners](../assets/screenshots/novakey-edit-listeners.PNG)
+
+### Pair / Send actions on a listener
+![Swipe pair/send listener](../assets/screenshots/novakey-swipe-pair-send-listener.PNG)
+
+### Scan QR code
+![Scan QR](../assets/screenshots/novakey-scan-qr.PNG)
+
+
 ## Before you start
 - NovaKey-Daemon is installed and running on your computer.
 - You know how your phone will reach the computer:
@@ -65,6 +77,10 @@ If you cannot scan a QR code:
 ⚠️ Treat pairing material as **highly sensitive**. Anyone with it may be able to impersonate your device.
 
 ---
+
+### Delete a listener
+![Swipe delete listener](../assets/screenshots/novakey-swipe-delete-listener.PNG)
+
 
 ## Why host/IP can’t be edited after pairing
 

@@ -1,5 +1,14 @@
 # Phone App Troubleshooting
 
+## In-app help screens
+
+![Help 1](../assets/screenshots/novakey-help-1.PNG)
+![Help 2](../assets/screenshots/novakey-help-2.PNG)
+
+## About screen
+
+![About](../assets/screenshots/novakey-about.PNG)
+
 ## “No Send Target set”
 You need a default Listener:
 - Listeners → select a Listener → set **Make Send Target**
