@@ -77,19 +77,21 @@ func initCrypto() error {
 		path = defaultDevicesFile
 	}
 
-	m, err := loadDevicesFromDisk(path) // OS-specific implementation (separate files)
+	m, err := loadDevicesFromDisk(path)
 	if err != nil {
-		if errors.Is(err, ErrNotPaired) {
-			devicesMu.Lock()
-			devices = make(map[string]deviceState)
-			devicesMu.Unlock()
+    	if errors.Is(err, ErrNotPaired) {
+        	devicesMu.Lock()
+	        devices = make(map[string]deviceState)
+    	    devicesMu.Unlock()
 
-			log.Printf("[pair] %v (will start pairing bootstrap)", err)
-			return nil
-		}
-		return err
+        	log.Printf("[pair] %v (no paired devices found; pairing is available)", err)
+        	return nil
+    	}
+
+    	// This includes ErrDevicesUnavailable and any other read/decrypt/parse error.
+    	log.Printf("[fatal] device store error: %v", err)
+    	return err
 	}
-
 	devicesMu.Lock()
 	devices = m
 	devicesMu.Unlock()
