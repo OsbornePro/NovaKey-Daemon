@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -53,13 +54,12 @@ func splitHostPortOrDie(addr string) (string, int) {
 		if n, err2 := strconv.Atoi(strings.TrimSpace(addr)); err2 == nil {
 			return "127.0.0.1", n
 		}
-		// Keep behavior similar to old code: fatal-like error, but return a sane default.
-		// If you'd rather hard-fail, replace with log.Fatalf here.
-		panic(fmt.Sprintf("invalid listen_addr %q: %v", addr, err))
+		log.Fatalf("invalid listen_addr %q: %v", addr, err)
 	}
+
 	n, err := strconv.Atoi(p)
 	if err != nil {
-		panic(fmt.Sprintf("invalid listen_addr port %q: %v", p, err))
+		log.Fatalf("invalid listen_addr port %q: %v", p, err)
 	}
 	return h, n
 }
@@ -118,4 +118,9 @@ func randHex(nBytes int) string {
 	b := make([]byte, nBytes)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// Optional helper for debugging/logs.
+func fmtHostPort(host string, port int) string {
+	return fmt.Sprintf("%s:%d", host, port)
 }
