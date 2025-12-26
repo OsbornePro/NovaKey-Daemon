@@ -21,12 +21,12 @@ const (
 // and routes each connection based on the first line:
 //
 //   "NOVAK/1 /pair\n"  -> handlePairConn
-//   "NOVAK/1 /msg\n"   -> handleMsgConn (your existing message flow)
+//   "NOVAK/1 /msg\n"   -> handleMsgConn
 //   (anything else)    -> fallback to /msg (backwards compatible)
 //
 // Drop-in usage:
 //   - call startUnifiedListener() from main after initCrypto()
-//   - implement handleMsgConn(conn) to wrap your current 60768 handler.
+//   - implement handleMsgConn(conn) to wrap your existing message flow.
 func startUnifiedListener() error {
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
@@ -48,33 +48,25 @@ func startUnifiedListener() error {
 }
 
 func routeConn(conn net.Conn) {
-	// NOTE: Do NOT close here. Ownership belongs to the route handler (your platform handlers),
-	// which already do defer conn.Close(). This avoids double-close.
-	// defer conn.Close()
-
-	// Avoid hangs if client connects and never sends.
+	// Router does NOT close the connection.
+	// Ownership belongs to the selected handler, which must Close().
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
 	br := bufio.NewReaderSize(conn, 4096)
 
-	// Peek up to routerMaxHdr, but do not block forever; ReadString reads until '\n'.
 	line, err := readRouteLine(br)
 	if err != nil {
-		// If we couldn't read a route line, try treating it as a raw /msg client.
+		// No route line: treat as raw /msg client (backwards compatible).
 		_ = conn.SetReadDeadline(time.Time{})
-		_ = conn.SetReadDeadline(time.Time{}) // clear deadline (idempotent)
-		// handler owns conn close
 		if err := handleMsgConn(newPreReadConn(conn, br)); err != nil {
 			log.Printf("[net] /msg fallback error: %v", err)
 		}
 		return
 	}
 
-	// Clear read deadline for handler.
 	_ = conn.SetReadDeadline(time.Time{})
 
-	route := parseRoute(line)
-	switch route {
+	switch parseRoute(line) {
 	case "/pair":
 		if err := handlePairConn(newPreReadConn(conn, br)); err != nil {
 			log.Printf("[pair] conn error: %v", err)
@@ -84,9 +76,7 @@ func routeConn(conn net.Conn) {
 			log.Printf("[msg] conn error: %v", err)
 		}
 	default:
-		// Backwards compatible: if a legacy phone client connects and immediately
-		// starts writing frames, it won’t send NOVAK/1 line. But if it sends a line
-		// we don’t understand, also treat as /msg.
+		// Unknown route token → treat as /msg.
 		if err := handleMsgConn(newPreReadConn(conn, br)); err != nil {
 			log.Printf("[msg] default route error: %v", err)
 		}
@@ -94,7 +84,6 @@ func routeConn(conn net.Conn) {
 }
 
 func readRouteLine(br *bufio.Reader) (string, error) {
-	// Look ahead: if first bytes don't match "NOVAK/1", do not consume anything.
 	peek, err := br.Peek(min(len(routerMagic), routerMaxHdr))
 	if err != nil && err != io.EOF {
 		return "", err
@@ -103,7 +92,6 @@ func readRouteLine(br *bufio.Reader) (string, error) {
 		return "", fmt.Errorf("no route magic")
 	}
 
-	// Consume a full line (bounded).
 	line, err := br.ReadString('\n')
 	if err != nil {
 		return "", err
@@ -116,7 +104,6 @@ func readRouteLine(br *bufio.Reader) (string, error) {
 
 func parseRoute(line string) string {
 	line = strings.TrimSpace(line)
-	// Expected: "NOVAK/1 /pair"
 	if !strings.HasPrefix(line, routerMagic) {
 		return ""
 	}
@@ -124,7 +111,6 @@ func parseRoute(line string) string {
 	if rest == "" {
 		return ""
 	}
-	// allow extra tokens, e.g. "NOVAK/1 /pair foo=bar"
 	parts := strings.Fields(rest)
 	if len(parts) == 0 {
 		return ""
@@ -139,8 +125,6 @@ func min(a, b int) int {
 	return b
 }
 
-// preReadConn lets handlers keep reading from the same buffered reader
-// (which may already contain bytes after the route line).
 type preReadConn struct {
 	net.Conn
 	br *bufio.Reader
@@ -150,17 +134,10 @@ func newPreReadConn(c net.Conn, br *bufio.Reader) net.Conn {
 	return &preReadConn{Conn: c, br: br}
 }
 
-func (p *preReadConn) Read(b []byte) (int, error) {
-	return p.br.Read(b)
-}
+func (p *preReadConn) Read(b []byte) (int, error)  { return p.br.Read(b) }
+func (p *preReadConn) Write(b []byte) (int, error) { return p.Conn.Write(b) }
 
-func (p *preReadConn) Write(b []byte) (int, error) {
-	return p.Conn.Write(b)
-}
-
-// Optional helper: allows handler to "unread" bytes by re-wrapping a reader.
-// Not currently used, but handy if you want to preserve exact framing.
+// Optional helper: wrap already-peeked bytes back onto the reader.
 func unreadBytes(br *bufio.Reader, data []byte) *bufio.Reader {
-	out := bufio.NewReader(io.MultiReader(bytes.NewReader(data), br))
-	return out
+	return bufio.NewReader(io.MultiReader(bytes.NewReader(data), br))
 }
