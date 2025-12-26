@@ -1,103 +1,99 @@
+// cmd/novakey/devices_store_nonwindows.go
 //go:build !windows
 
 package main
 
 import (
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
-	"path/filepath"
-	"runtime"
 
-	"github.com/zalando/go-keyring"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-const (
-	keyringServiceDevices = "novakey"
-	keyringAccountDevices = "devices-key"
-)
+type sealedDevicesFileV1 struct {
+	V        int    `json:"v"`
+	Alg      string `json:"alg"` // "xchacha20poly1305"
+	NonceB64 string `json:"nonce_b64"`
+	CtB64    string `json:"ct_b64"`
+}
 
-func saveDevicesToDisk(path string, dc devicesConfigFile) error {
-	pt, err := json.MarshalIndent(&dc, "", "  ")
+const devicesSealedAAD = "NovaKey devices v1"
+
+func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("marshal devices json: %w", err)
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: %s not found", ErrNotPaired, path)
+		}
+		return nil, fmt.Errorf("%w: reading devices file %q: %v", ErrDevicesUnavailable, path, err)
 	}
 
+	// Try sealed wrapper first.
+	var wrap sealedDevicesFileV1
+	if err := json.Unmarshal(data, &wrap); err == nil &&
+		wrap.V == 1 &&
+		wrap.Alg == "xchacha20poly1305" &&
+		wrap.NonceB64 != "" &&
+		wrap.CtB64 != "" {
+		return loadDevicesFromSealedWrapper(path, &wrap)
+	}
+
+	// Legacy plaintext JSON: treat as "unavailable/corrupt" unless it is truly empty.
+	var dc devicesConfigFile
+	if err := json.Unmarshal(data, &dc); err != nil {
+		return nil, fmt.Errorf("%w: parsing devices file %q: %v", ErrDevicesUnavailable, path, err)
+	}
+
+	if len(dc.Devices) == 0 {
+		return nil, fmt.Errorf("%w: %s has no devices", ErrNotPaired, path)
+	}
+
+	// This is plaintext legacy — if you still want to support it, build the map.
+	// If you want to forbid plaintext entirely, return ErrDevicesUnavailable here instead.
+	return buildDevicesMap(dc, path)
+}
+
+func loadDevicesFromSealedWrapper(path string, wrap *sealedDevicesFileV1) (map[string]deviceState, error) {
 	key, err := getOrCreateDevicesKey()
 	if err != nil {
-		// Headless Linux fallback (no unlocked keyring): write plaintext with strict perms.
-		log.Printf("[warn] keyring unavailable (%v); falling back to plaintext with 0600", err)
-		return atomicWrite0600(path, pt)
+		return nil, fmt.Errorf("%w: keyring unavailable for sealed devices file: %v", ErrDevicesUnavailable, err)
 	}
 
 	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
-		return fmt.Errorf("NewX: %w", err)
+		return nil, fmt.Errorf("%w: NewX: %v", ErrDevicesUnavailable, err)
 	}
 
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return fmt.Errorf("rand nonce: %w", err)
-	}
-
-	aad := []byte("NovaKey devices v1")
-	ct := aead.Seal(nil, nonce, pt, aad)
-
-	wrap := sealedDevicesFileV1{
-		V:        1,
-		Alg:      "xchacha20poly1305",
-		NonceB64: base64.StdEncoding.EncodeToString(nonce),
-		CtB64:    base64.StdEncoding.EncodeToString(ct),
-	}
-
-	out, err := json.MarshalIndent(&wrap, "", "  ")
+	nonce, err := base64.StdEncoding.DecodeString(wrap.NonceB64)
 	if err != nil {
-		return fmt.Errorf("marshal sealed wrapper: %w", err)
+		return nil, fmt.Errorf("%w: decode nonce_b64: %v", ErrDevicesUnavailable, err)
 	}
-	return atomicWrite0600(path, out)
-}
-
-func getOrCreateDevicesKey() ([]byte, error) {
-	s, err := keyring.Get(keyringServiceDevices, keyringAccountDevices)
-	if err == nil && s != "" {
-		b, derr := base64.StdEncoding.DecodeString(s)
-		if derr != nil {
-			return nil, fmt.Errorf("keyring key invalid base64: %w", derr)
-		}
-		if len(b) != chacha20poly1305.KeySize {
-			return nil, fmt.Errorf("keyring key wrong length: got %d want %d", len(b), chacha20poly1305.KeySize)
-		}
-		return b, nil
+	if len(nonce) != aead.NonceSize() {
+		return nil, fmt.Errorf("%w: invalid nonce length: got %d want %d", ErrDevicesUnavailable, len(nonce), aead.NonceSize())
 	}
 
-	key := make([]byte, chacha20poly1305.KeySize)
-	if _, rerr := rand.Read(key); rerr != nil {
-		return nil, fmt.Errorf("rand devices key: %w", rerr)
+	ct, err := base64.StdEncoding.DecodeString(wrap.CtB64)
+	if err != nil {
+		return nil, fmt.Errorf("%w: decode ct_b64: %v", ErrDevicesUnavailable, err)
+	}
+	if len(ct) < aead.Overhead() {
+		return nil, fmt.Errorf("%w: ciphertext too short: got %d need at least %d", ErrDevicesUnavailable, len(ct), aead.Overhead())
 	}
 
-	if serr := keyring.Set(keyringServiceDevices, keyringAccountDevices, base64.StdEncoding.EncodeToString(key)); serr != nil {
-		return nil, serr
+	aad := []byte(devicesSealedAAD)
+	pt, err := aead.Open(nil, nonce, ct, aad)
+	if err != nil {
+		return nil, fmt.Errorf("%w: decrypt sealed devices file: %v", ErrDevicesUnavailable, err)
 	}
-	log.Printf("[pair] created %s/%s in %s", keyringServiceDevices, keyringAccountDevices, runtime.GOOS)
-	return key, nil
-}
 
-func atomicWrite0600(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
+	var dc devicesConfigFile
+	if err := json.Unmarshal(pt, &dc); err != nil {
+		return nil, fmt.Errorf("%w: parse devices json inside sealed wrapper: %v", ErrDevicesUnavailable, err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", tmp, err)
+	if len(dc.Devices) == 0 {
+		return nil, fmt.Errorf("%w: %s has no devices", ErrNotPaired, path)
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
-	}
-	return nil
+	return buildDevicesMap(dc, path)
 }
