@@ -10,49 +10,57 @@ It’s built for cases where you don’t want to type high-value secrets (master
 
 ---
 
-## Current Status
+## Current Design
 
-- Linux / Windows / macOS daemon
-- **One TCP listener** (`listen_addr`, default `127.0.0.1:60768`)
-- Connection routing via a single-line preface:
-  - `NOVAK/1 /pair`
-  - `NOVAK/1 /msg`
-- `/msg` uses **ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305** (protocol v3)
-- Optional loopback-only Arm API for local arming/disarming (token protected)
+### One port, two routes
+
+NovaKey listens on one TCP address (`listen_addr`, default `127.0.0.1:60768`) and routes each incoming connection by a one-line preface:
+
+- `NOVAK/1 /pair\n` — pairing
+- `NOVAK/1 /msg\n` — encrypted approve/inject messages
+
+If a client does not send the route line, the daemon treats the connection as `/msg` for compatibility.
+
+### Crypto
+
+- **/pair:** one-time token + ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305 (pairing v1)
+- **/msg:** ML-KEM-768 + HKDF-SHA-256 + XChaCha20-Poly1305 (protocol v3)
+- timestamp freshness checks, replay protection, and per-device rate limiting
+
+### Safety controls (optional)
+
+- arming (“push-to-type”)
+- two-man approval window (typed approve then inject)
+- injection safety rules (`allow_newlines`, `max_inject_len`)
+- target policy allow/deny lists
+- local Arm API (loopback only, token protected)
 
 ---
 
 ## Docs
 
 - `SECURITY.md` — threat model + security properties
-- `PROTOCOL.md` — current wire format for `/pair` and `/msg`
-
----
-
-## How it works
-
-1) NovaKey starts and loads/creates `server_keys.json` (ML-KEM-768 keypair).
-2) NovaKey loads device secrets from `devices.json`.
-3) If there are no paired devices, NovaKey generates a QR (`novakey-pair.png`) and waits for pairing.
-4) Clients connect to the daemon on the same TCP port and choose a route:
-   - `/pair` to pair
-   - `/msg` to send encrypted approve/inject requests
+- `PROTOCOL.md` — wire formats for `/pair` and `/msg`
 
 ---
 
 ## Pairing (single-port)
 
-Pairing uses the `/pair` route on the same listener.
+When there are no paired devices (missing/empty `devices.json`), the daemon generates a QR code (`novakey-pair.png`).
 
-**Client → server (plaintext JSON line):**
-`{"op":"hello","v":1,"token":"<b64url>"}\n`
+Pairing uses `/pair` on the same listener:
 
-**Server → client (plaintext JSON line):**
-`{"op":"server_key","v":1,"kid":"1","kyber_pub_b64":"...","fp16_hex":"...","expires_unix":...}\n`
+1) Client sends a hello JSON line containing a one-time token:
+   - `{"op":"hello","v":1,"token":"<b64url>"}\n`
 
-Then the client sends an encrypted register message using ML-KEM + XChaCha20-Poly1305. If `device_id` / `device_key_hex` are omitted, the server assigns them and saves `devices.json`.
+2) Server replies with the ML-KEM public key and a short fingerprint:
+   - `{"op":"server_key","v":1,"kid":"1","kyber_pub_b64":"...","fp16_hex":"...","expires_unix":...}\n`
 
-Treat pairing output as sensitive.
+3) Client verifies `fp16_hex` matches the fingerprint embedded in the QR.
+
+4) Client sends an encrypted register request. The server saves `devices.json` and reloads device keys.
+
+Pairing output is sensitive (treat it like a password).
 
 ---
 
@@ -60,7 +68,7 @@ Treat pairing output as sensitive.
 
 NovaKey supports YAML (preferred) or JSON.
 
-Core fields:
+Core:
 
 - `listen_addr`
 - `max_payload_len`
@@ -78,7 +86,7 @@ Safety gates:
 - `approve_consume_on_inject`
 - `allow_clipboard_when_disarmed`
 
-Arm API (optional):
+Arm API:
 
 - `arm_api_enabled`
 - `arm_listen_addr` (must be loopback)
