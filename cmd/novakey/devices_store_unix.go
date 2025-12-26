@@ -40,7 +40,14 @@ func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 		return loadDevicesFromSealedWrapper(path, &wrap)
 	}
 
-	// Legacy plaintext JSON: treat as "unavailable/corrupt" unless it is truly empty.
+	// If the file is not a sealed wrapper, it's legacy plaintext JSON.
+	// If require_sealed_device_store is enabled, fail closed.
+	if cfg.RequireSealedDeviceStore {
+		return nil, fmt.Errorf("%w: require_sealed_device_store=true but devices file is not sealed (legacy plaintext): %s",
+			ErrDevicesUnavailable, path)
+	}
+
+	// Legacy plaintext JSON path:
 	var dc devicesConfigFile
 	if err := json.Unmarshal(data, &dc); err != nil {
 		return nil, fmt.Errorf("%w: parsing devices file %q: %v", ErrDevicesUnavailable, path, err)
@@ -50,8 +57,6 @@ func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 		return nil, fmt.Errorf("%w: %s has no devices", ErrNotPaired, path)
 	}
 
-	// This is plaintext legacy — if you still want to support it, build the map.
-	// If you want to forbid plaintext entirely, return ErrDevicesUnavailable here instead.
 	return buildDevicesMap(dc, path)
 }
 
