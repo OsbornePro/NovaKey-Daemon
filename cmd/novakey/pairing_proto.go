@@ -13,33 +13,13 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"filippo.io/mlkem768"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 )
-
-// Pairing protocol v1 (on /pair route, single TCP port 60768)
-//
-// Client -> Server (plaintext JSON line):
-//   {"op":"hello","v":1,"token":"<b64url>"}\n
-//
-// Server -> Client (plaintext JSON line):
-//   {"op":"server_key","v":1,"kid":"1","kyber_pub_b64":"...","fp16_hex":"...","expires_unix":...}\n
-//
-// Client verifies fp16_hex matches QR fingerprint.
-// Client encapsulates:
-//   ct, ss := Encaps(pk)
-// Client -> Server (binary frame):
-//   [ctLen u16][ct bytes][nonce 24][ciphertext..]   (XChaCha20-Poly1305)
-//   AEAD key = HKDF(ss, salt=tokenBytes, info="NovaKey v4 Pair AEAD")
-//
-// Encrypted plaintext (JSON):
-//   {"op":"register","v":1,"device_id":"ios-...","device_key_hex":"..."}  // OR empty if server assigns
-//
-// Server can either accept provided id/key or generate them server-side.
-// This implementation: server assigns device_id + device_key_hex if client sends empty fields.
 
 type pairHello struct {
 	Op    string `json:"op"`
@@ -57,10 +37,45 @@ type pairServerKey struct {
 }
 
 type pairRegister struct {
-	Op          string `json:"op"`
-	V           int    `json:"v"`
-	DeviceID    string `json:"device_id"`
+	Op           string `json:"op"`
+	V            int    `json:"v"`
+	DeviceID     string `json:"device_id"`
 	DeviceKeyHex string `json:"device_key_hex"`
+}
+
+// --- per-IP hello limiter (in-memory, per-uptime) ---
+var (
+	pairHelloMu sync.Mutex
+	pairHelloRL = map[string]rateWindow{} // reuse rateWindow from crypto.go
+)
+
+func allowPairHelloFromIP(ip string) bool {
+	limit := cfg.PairHelloMaxPerMin
+	if limit <= 0 {
+		limit = 30
+	}
+
+	now := time.Now().Unix()
+	pairHelloMu.Lock()
+	defer pairHelloMu.Unlock()
+
+	rw := pairHelloRL[ip]
+	if rw.windowStart == 0 || now-rw.windowStart >= 60 {
+		rw.windowStart = now
+		rw.count = 0
+	}
+	rw.count++
+	pairHelloRL[ip] = rw
+	return rw.count <= limit
+}
+
+func remoteIP(conn net.Conn) string {
+	ra := conn.RemoteAddr().String()
+	ip, _, err := net.SplitHostPort(ra)
+	if err == nil && ip != "" {
+		return ip
+	}
+	return ra
 }
 
 func handlePairConn(conn net.Conn) error {
@@ -68,7 +83,15 @@ func handlePairConn(conn net.Conn) error {
 		return fmt.Errorf("server keys not initialized")
 	}
 
-	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	// Hard timeout for pairing flow; clear before return.
+	_ = conn.SetDeadline(time.Now().Add(25 * time.Second))
+	defer func() { _ = conn.SetDeadline(time.Time{}) }()
+
+	ip := remoteIP(conn)
+	if !allowPairHelloFromIP(ip) {
+		return fmt.Errorf("pair hello rate limited for %s", ip)
+	}
+
 	br := bufio.NewReaderSize(conn, 8192)
 
 	// Read hello JSON line
@@ -111,8 +134,6 @@ func handlePairConn(conn net.Conn) error {
 	}
 
 	// Now read binary encapsulated register frame.
-	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
-
 	ct, nonce, ciphertext, err := readPairBinaryFrame(br)
 	if err != nil {
 		return err
@@ -135,7 +156,6 @@ func handlePairConn(conn net.Conn) error {
 		return fmt.Errorf("NewX: %w", err)
 	}
 
-	// AAD binds to ct and nonce, to avoid malleability around framing.
 	aad := makePairAAD(ct, nonce)
 
 	plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
@@ -155,11 +175,22 @@ func handlePairConn(conn net.Conn) error {
 	if reg.DeviceID == "" {
 		reg.DeviceID = "ios-" + randHex(8)
 	}
+
+	// If re-pair and rotation enabled: force a fresh PSK.
+	// (We detect "existing device" by checking the current in-memory map.)
+	if cfg.RotateDevicePSKOnRepair {
+		devicesMu.RLock()
+		_, exists := devices[reg.DeviceID]
+		devicesMu.RUnlock()
+		if exists {
+			reg.DeviceKeyHex = "" // force regeneration below
+		}
+	}
+
 	if reg.DeviceKeyHex == "" {
 		reg.DeviceKeyHex = randHex(32) // 32 bytes
 	}
 
-	// Persist devices file (single-user: overwrite as before)
 	if err := writeDevicesFile(cfg.DevicesFile, reg.DeviceID, reg.DeviceKeyHex); err != nil {
 		return fmt.Errorf("write devices: %w", err)
 	}
@@ -167,7 +198,6 @@ func handlePairConn(conn net.Conn) error {
 		return fmt.Errorf("reload devices: %w", err)
 	}
 
-	// Reply with encrypted "ok" (optional, but nice) using same session key
 	ack := map[string]any{
 		"op":        "ok",
 		"v":         1,
@@ -179,12 +209,11 @@ func handlePairConn(conn net.Conn) error {
 	_, _ = rand.Read(ackNonce)
 	ackCT := aead.Seal(nil, ackNonce, ackB, makePairAAD(ct, ackNonce))
 
-	// Write ack frame: [nonce 24][ackCiphertext...]
 	if err := writePairAck(conn, ackNonce, ackCT); err != nil {
 		return fmt.Errorf("write ack: %w", err)
 	}
 
-	log.Printf("[pair] paired device_id=%s (devices saved + loaded)", reg.DeviceID)
+	log.Printf("[pair] paired device_id=%s (saved + reloaded)", reg.DeviceID)
 	return nil
 }
 
@@ -203,7 +232,6 @@ func derivePairAEADKey(sharedKem []byte, token []byte) ([]byte, error) {
 }
 
 func makePairAAD(ct []byte, nonce []byte) []byte {
-	// small AAD: "PAIR" + ct + nonce
 	out := make([]byte, 0, 4+len(ct)+len(nonce))
 	out = append(out, 'P', 'A', 'I', 'R')
 	out = append(out, ct...)
@@ -211,8 +239,6 @@ func makePairAAD(ct []byte, nonce []byte) []byte {
 	return out
 }
 
-// readPairBinaryFrame reads:
-//   [ctLen u16][ct bytes][nonce 24][ciphertext...]
 func readPairBinaryFrame(r *bufio.Reader) (ct []byte, nonce []byte, ciphertext []byte, err error) {
 	hdr := make([]byte, 2)
 	if _, err := io.ReadFull(r, hdr); err != nil {
@@ -233,9 +259,6 @@ func readPairBinaryFrame(r *bufio.Reader) (ct []byte, nonce []byte, ciphertext [
 		return nil, nil, nil, fmt.Errorf("read nonce: %w", err)
 	}
 
-	// Remaining bytes until EOF or until client closes write-half.
-	// For simplicity: read a length-prefixed ciphertext would be nicer, but this works
-	// if the client writes exactly one register message then closes.
 	ciphertext, err = io.ReadAll(io.LimitReader(r, 64*1024))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("read ciphertext: %w", err)
@@ -250,7 +273,6 @@ func writePairAck(w io.Writer, nonce []byte, ct []byte) error {
 	if len(nonce) != chacha20poly1305.NonceSizeX {
 		return fmt.Errorf("bad nonce size")
 	}
-	// [nonce 24][ct...]
 	if _, err := w.Write(nonce); err != nil {
 		return err
 	}
