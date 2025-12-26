@@ -18,6 +18,9 @@ type ServerConfig struct {
 	DevicesFile       string `json:"devices_file" yaml:"devices_file"`
 	ServerKeysFile    string `json:"server_keys_file" yaml:"server_keys_file"`
 
+	// NEW: require encrypted-at-rest device store on non-Windows
+	RequireSealedDeviceStore bool `json:"require_sealed_device_store" yaml:"require_sealed_device_store"`
+
 	// NEW: key rotation / pairing hardening
 	RotateKyberKeys         bool `json:"rotate_kyber_keys" yaml:"rotate_kyber_keys"`
 	RotateDevicePSKOnRepair bool `json:"rotate_device_psk_on_repair" yaml:"rotate_device_psk_on_repair"`
@@ -132,12 +135,13 @@ func applyDefaults() {
 		cfg.ServerKeysFile = "server_keys.json"
 	}
 
+	// RequireSealedDeviceStore default false
+	// (If you want a stricter shipped default, set it in your YAML instead.)
+
 	// Pairing hardening defaults
 	if cfg.PairHelloMaxPerMin == 0 {
-		cfg.PairHelloMaxPerMin = 30 // per-IP / minute (in-memory)
+		cfg.PairHelloMaxPerMin = 30
 	}
-	// RotateKyberKeys default false
-	// RotateDevicePSKOnRepair default false (you can set true in shipped YAML)
 
 	// Logging defaults
 	if cfg.LogRotateMB == 0 {
@@ -155,9 +159,7 @@ func applyDefaults() {
 		cfg.LogRedact = &v
 	}
 
-	// ✅ Your stated preference: arming + two-man enabled by default
-	// (If you only want this “enabled by default” in the shipped YAML, set those there instead
-	// and remove these two defaults.)
+	// Your defaults
 	if !cfg.ArmEnabled {
 		cfg.ArmEnabled = true
 	}
@@ -173,7 +175,6 @@ func applyDefaults() {
 		cfg.ArmConsumeOnInject = &v
 	}
 
-	// Safer default: clipboard fallback OFF unless explicitly enabled
 	if cfg.AllowClipboardWhenDisarmed == nil {
 		v := false
 		cfg.AllowClipboardWhenDisarmed = &v
@@ -194,7 +195,6 @@ func applyDefaults() {
 	if cfg.MaxInjectLen == 0 {
 		cfg.MaxInjectLen = 256
 	}
-	// AllowNewlines defaults false
 
 	// Two-man defaults
 	if cfg.ApproveWindowMs == 0 {
