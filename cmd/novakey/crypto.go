@@ -53,8 +53,8 @@ var (
 
 var (
 	replayMu    sync.Mutex
-	replayCache = make(map[string]map[string]int64)
-	rateState   = make(map[string]rateWindow)
+	replayCache = make(map[string]map[string]int64) // deviceID -> nonceHex -> seenAtUnix
+	rateState   = make(map[string]rateWindow)       // deviceID -> window
 )
 
 type rateWindow struct {
@@ -77,19 +77,20 @@ func initCrypto() error {
 
 	m, err := loadDevicesFromDisk(path)
 	if err != nil {
-    	if errors.Is(err, ErrNotPaired) {
-        	devicesMu.Lock()
-	        devices = make(map[string]deviceState)
-    	    devicesMu.Unlock()
+		if errors.Is(err, ErrNotPaired) {
+			devicesMu.Lock()
+			devices = make(map[string]deviceState)
+			devicesMu.Unlock()
 
-        	log.Printf("[pair] %v (no paired devices found; pairing is available)", err)
-        	return nil
-    	}
+			log.Printf("[pair] %v (no paired devices found; pairing is available)", err)
+			return nil
+		}
 
-    	// This includes ErrDevicesUnavailable and any other read/decrypt/parse error.
-    	log.Printf("[fatal] device store error: %v", err)
-    	return err
+		// This includes ErrDevicesUnavailable and any other read/decrypt/parse error.
+		log.Printf("[fatal] device store error: %v", err)
+		return err
 	}
+
 	devicesMu.Lock()
 	devices = m
 	devicesMu.Unlock()
@@ -207,7 +208,6 @@ func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 	}
 	deviceID := string(frame[3 : 3+idLen])
 
-	// Snapshot device state under RLock
 	devicesMu.RLock()
 	dev, ok := devices[deviceID]
 	devicesMu.RUnlock()
@@ -275,7 +275,7 @@ func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	now := time.Now().Unix()
 
-	// --- Freshness checks (unchanged behavior) ---
+	// Freshness
 	if ts > now+maxClockSkewSec {
 		return fmt.Errorf("message timestamp is in the future (ts=%d, now=%d)", ts, now)
 	}
@@ -288,21 +288,21 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	replayMu.Lock()
 	defer replayMu.Unlock()
 
-	// Ensure per-device replay map exists.
-	m, ok := replayCache[deviceID]
-	if !ok {
+	// Replay map
+	m := replayCache[deviceID]
+	if m == nil {
 		m = make(map[string]int64)
 		replayCache[deviceID] = m
 	}
 
-	// Evict old replay entries (based on when we saw them).
+	// Evict old replay entries
 	for k, seenAt := range m {
 		if now-seenAt > replayCacheTTL {
 			delete(m, k)
 		}
 	}
 
-	// --- Rate limiting (do BEFORE consuming nonce) ---
+	// Rate limit BEFORE consuming nonce
 	rw := rateState[deviceID]
 	if rw.windowStart == 0 || now-rw.windowStart >= 60 {
 		rw.windowStart = now
@@ -314,18 +314,17 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 		limit = cfg.MaxRequestsPerMin
 	}
 
-	// If this request would exceed the limit, reject WITHOUT recording the nonce.
 	if rw.count+1 > limit {
 		return fmt.Errorf("rate limit exceeded for device %q: %d requests in window (limit=%d)",
 			deviceID, rw.count+1, limit)
 	}
 
-	// --- Replay check (only after passing rate limit) ---
+	// Replay check AFTER passing rate
 	if prevSeenAt, exists := m[nonceHex]; exists {
 		return fmt.Errorf("replay detected for device %q (nonce seen at ts=%d)", deviceID, prevSeenAt)
 	}
 
-	// Commit state: consume nonce + count request as accepted.
+	// Commit state
 	m[nonceHex] = now
 	rw.count++
 	rateState[deviceID] = rw
