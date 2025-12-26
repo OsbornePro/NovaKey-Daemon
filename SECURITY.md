@@ -249,6 +249,7 @@ Even with redaction enabled, logs should still be treated as potentially sensiti
 - fully compromised host OS / same-user malware
 - physical attacks / hardware keyloggers
 - compromised build pipeline
+- QR exposure == pairing exposure during TTL.
 
 ---
 
