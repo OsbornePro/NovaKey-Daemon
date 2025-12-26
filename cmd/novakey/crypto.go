@@ -275,6 +275,7 @@ func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {
 func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	now := time.Now().Unix()
 
+	// --- Freshness checks (unchanged behavior) ---
 	if ts > now+maxClockSkewSec {
 		return fmt.Errorf("message timestamp is in the future (ts=%d, now=%d)", ts, now)
 	}
@@ -287,38 +288,47 @@ func validateFreshnessAndRate(deviceID string, nonce []byte, ts int64) error {
 	replayMu.Lock()
 	defer replayMu.Unlock()
 
+	// Ensure per-device replay map exists.
 	m, ok := replayCache[deviceID]
 	if !ok {
 		m = make(map[string]int64)
 		replayCache[deviceID] = m
 	}
-	if prevTs, exists := m[nonceHex]; exists {
-		return fmt.Errorf("replay detected for device %q (nonce seen at ts=%d)", deviceID, prevTs)
-	}
-	m[nonceHex] = ts
 
-	for k, v := range m {
-		if now-v > replayCacheTTL {
+	// Evict old replay entries (based on when we saw them).
+	for k, seenAt := range m {
+		if now-seenAt > replayCacheTTL {
 			delete(m, k)
 		}
 	}
 
+	// --- Rate limiting (do BEFORE consuming nonce) ---
 	rw := rateState[deviceID]
-	if now-rw.windowStart >= 60 || rw.windowStart == 0 {
+	if rw.windowStart == 0 || now-rw.windowStart >= 60 {
 		rw.windowStart = now
 		rw.count = 0
 	}
-
-	rw.count++
-	rateState[deviceID] = rw
 
 	limit := maxRequestsPerDevicePerMin
 	if cfg.MaxRequestsPerMin > 0 {
 		limit = cfg.MaxRequestsPerMin
 	}
-	if rw.count > limit {
+
+	// If this request would exceed the limit, reject WITHOUT recording the nonce.
+	if rw.count+1 > limit {
 		return fmt.Errorf("rate limit exceeded for device %q: %d requests in window (limit=%d)",
-			deviceID, rw.count, limit)
+			deviceID, rw.count+1, limit)
 	}
+
+	// --- Replay check (only after passing rate limit) ---
+	if prevSeenAt, exists := m[nonceHex]; exists {
+		return fmt.Errorf("replay detected for device %q (nonce seen at ts=%d)", deviceID, prevSeenAt)
+	}
+
+	// Commit state: consume nonce + count request as accepted.
+	m[nonceHex] = now
+	rw.count++
+	rateState[deviceID] = rw
+
 	return nil
 }
