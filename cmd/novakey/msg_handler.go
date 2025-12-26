@@ -192,7 +192,7 @@ func handleMsgConn(conn net.Conn) error {
 				respond(StatusInternal, "inject failed; clipboard failed")
 			} else {
 				logReqf(reqID, "injection failed; clipboard set")
-				respond(StatusInternal, "inject failed; clipboard set")
+				respond(StatusOKClipboard, "clipboard set (inject unavailable)")
 			}
 			return nil
 		}
