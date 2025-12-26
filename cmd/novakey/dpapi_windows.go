@@ -11,7 +11,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// DPAPI wrapper format stored on disk.
+// dpapiFile is the wrapper format stored on disk for DPAPI-protected blobs.
+// Keep this type defined ONCE (here) to avoid duplicate-type build errors.
 type dpapiFile struct {
 	V        int    `json:"v"`
 	DPAPIB64 string `json:"dpapi_b64"`
@@ -55,5 +56,5 @@ func dpapiUnprotect(ciphertext []byte) ([]byte, error) {
 	return cp, nil
 }
 
-func dpapiEncode(b []byte) string            { return base64.StdEncoding.EncodeToString(b) }
-func dpapiDecode(s string) ([]byte, error)   { return base64.StdEncoding.DecodeString(s) }
+func dpapiEncode(b []byte) string          { return base64.StdEncoding.EncodeToString(b) }
+func dpapiDecode(s string) ([]byte, error) { return base64.StdEncoding.DecodeString(s) }
