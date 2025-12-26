@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -41,7 +42,11 @@ type ServerConfig struct {
 	ArmDurationMs      int   `json:"arm_duration_ms" yaml:"arm_duration_ms"`
 	ArmConsumeOnInject *bool `json:"arm_consume_on_inject" yaml:"arm_consume_on_inject"`
 
-	AllowClipboardWhenDisarmed *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
+	// Clipboard policy
+	// - allow_clipboard_when_disarmed: if true, clipboard fallback may be used when blocked by policy/gates
+	// - allow_clipboard_on_inject_failure: if true, clipboard fallback may be used when injection fails after gates pass (Wayland, permissions, etc.)
+	AllowClipboardWhenDisarmed     *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
+	AllowClipboardOnInjectFailure  *bool `json:"allow_clipboard_on_inject_failure" yaml:"allow_clipboard_on_inject_failure"`
 
 	// Local-only arming endpoint
 	ArmAPIEnabled  bool   `json:"arm_api_enabled" yaml:"arm_api_enabled"`
@@ -175,9 +180,17 @@ func applyDefaults() {
 		cfg.ArmConsumeOnInject = &v
 	}
 
+	// Clipboard defaults
+	// Safer default: clipboard when blocked OFF unless explicitly enabled
 	if cfg.AllowClipboardWhenDisarmed == nil {
 		v := false
 		cfg.AllowClipboardWhenDisarmed = &v
+	}
+	// Platform-friendly default: on Linux, injection may be impossible (Wayland),
+	// so allow clipboard on injection failure by default unless explicitly disabled.
+	if cfg.AllowClipboardOnInjectFailure == nil {
+		v := runtime.GOOS == "linux"
+		cfg.AllowClipboardOnInjectFailure = &v
 	}
 
 	// Arm API defaults
