@@ -184,7 +184,9 @@ func handleMsgConn(conn net.Conn) error {
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
 
-		if allowClipboardWhenBlocked() {
+		// IMPORTANT: this is "inject failed after gates passed" behavior,
+		// intended for Wayland and similar environments.
+		if allowClipboardOnInjectFailure() {
 			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
 				respond(StatusInternal, "inject failed; clipboard failed")
