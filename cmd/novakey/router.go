@@ -21,7 +21,7 @@ func startUnifiedListener() error {
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", cfg.ListenAddr, err)
 	}
-	log.Printf("[net] listening on %s (routes: /pair, /msg)", cfg.ListenAddr)
+	log.Printf("[net] listening on %s (routes: /pair*, /msg)", cfg.ListenAddr)
 
 	go func() {
 		for {
@@ -42,6 +42,7 @@ func routeConn(conn net.Conn) {
 
 	line, err := readRouteLine(br)
 	if err != nil {
+		// No route line -> assume /msg legacy
 		_ = conn.SetReadDeadline(time.Time{})
 		if err := handleMsgConn(newPreReadConn(conn, br)); err != nil {
 			log.Printf("[net] /msg fallback error: %v", err)
@@ -51,18 +52,24 @@ func routeConn(conn net.Conn) {
 
 	_ = conn.SetReadDeadline(time.Time{})
 
-	switch parseRoute(line) {
-	case "/pair":
-		if err := handlePairConn(newPreReadConn(conn, br)); err != nil {
-			log.Printf("[pair] conn error: %v", err)
+	route := parseRoute(line)
+
+	// ✅ IMPORTANT: accept /pair and any /pair/* subroutes
+	if strings.HasPrefix(route, "/pair") {
+		if err := handlePairConnWithRoute(route, newPreReadConn(conn, br)); err != nil {
+			log.Printf("[pair] conn error (route=%s): %v", route, err)
 		}
+		return
+	}
+
+	switch route {
 	case "/msg":
 		if err := handleMsgConn(newPreReadConn(conn, br)); err != nil {
 			log.Printf("[msg] conn error: %v", err)
 		}
 	default:
 		if err := handleMsgConn(newPreReadConn(conn, br)); err != nil {
-			log.Printf("[msg] default route error: %v", err)
+			log.Printf("[msg] default route error (route=%s): %v", route, err)
 		}
 	}
 }
@@ -120,3 +127,4 @@ func newPreReadConn(c net.Conn, br *bufio.Reader) net.Conn {
 
 func (p *preReadConn) Read(b []byte) (int, error)  { return p.br.Read(b) }
 func (p *preReadConn) Write(b []byte) (int, error) { return p.Conn.Write(b) }
+

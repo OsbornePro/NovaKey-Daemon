@@ -1,18 +1,63 @@
 site_name: NovaKey Documentation
-site_description: NovaKey phone app + NovaKey-Daemon docs
-repo_url: https://github.com/OsbornePro/NovaKey-Daemon
+site_description: NovaKey iOS app + NovaKey-Daemon user documentation
+
 theme:
-  name: readthedocs
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - glightbox
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.inlinehilite
+  - pymdownx.highlight
+  - pymdownx.snippets
+  - pymdownx.tasklist:
+      custom_checkbox: true
 
 nav:
   - Home: index.md
+  - Getting Started: getting-started.md
   - Phone App:
+      - Overview: phone/overview.md
       - Pairing: phone/pairing.md
-      - Sending secrets: phone/sending.md
+      - Secrets: phone/secrets.md
+      - Sending: phone/sending.md
+      - Clipboard: phone/clipboard.md
+      - Vault Import/Export: phone/import-export.md
       - Troubleshooting: phone/troubleshooting.md
   - NovaKey-Daemon:
+      - Overview: daemon/overview.md
       - Install: daemon/install.md
+      - Pairing: daemon/pairing.md
       - Configuration: daemon/config.md
       - Troubleshooting: daemon/troubleshooting.md
-  - Security: security.md
+  - Security:
+      - Overview: security/overview.md
+      - Protocol Summary: security/protocol-summary.md
+  - FAQ: faq.md
+  - Glossary: glossary.md
 
