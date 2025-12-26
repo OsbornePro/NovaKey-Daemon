@@ -93,6 +93,7 @@ Safety gates:
 * `approve_window_ms`
 * `approve_consume_on_inject`
 * `allow_clipboard_when_disarmed`
+* `require_sealed_device_store` If true: refuse to (a) fall back to plaintext when keyring is unavailable, and (b) load legacy plaintext devices.json. If sealing/keyring isn’t available → return ErrDevicesUnavailable so the daemon fails closed.
 
 Target policy:
 
