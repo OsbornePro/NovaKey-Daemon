@@ -14,6 +14,7 @@ Optional safety controls:
 - **Two-man** mode (typed approve then inject)
 - Injection safety rules (`allow_newlines`, `max_inject_len`)
 - Target policy allow/deny lists
+- Local Arm API (loopback only, token protected)
 
 > Reviewer note: Please test only on systems you own/operate and do not expose your test daemon to the public Internet. This project is designed for LAN/local testing and normal desktop sessions.
 
@@ -84,7 +85,7 @@ This fallback does **not** grant pairing access.
 
 ## Pairing Security (No TLS)
 
-Pairing is initiated when there are no paired devices (missing/empty `devices.json`).
+Pairing is initiated when there are no paired devices (missing/empty `devices.json` or equivalent store).
 
 ### Pairing token
 
@@ -121,8 +122,12 @@ AAD binds the request to the encapsulation and nonce:
 
 ### Pairing material is sensitive
 
-Successful pairing results in a per-device **32-byte PSK** stored in `devices.json`.
-Treat pairing results and `devices.json` as secrets.
+Successful pairing results in a per-device **32-byte PSK** stored in the device store.
+Treat pairing results and the device store as secrets.
+
+**Device store at rest:**
+- On **Windows**, device store is DPAPI-protected (`*.dpapi.json`).
+- On **non-Windows**, device store is sealed with XChaCha20-Poly1305 using an OS keyring-derived key when available; if keyring is unavailable (headless environments), NovaKey may fall back to plaintext JSON with strict permissions (0600).
 
 If an attacker obtains a device PSK, they can produce valid `/msg` frames (arming/two-man can reduce silent injection risk, but does not protect a compromised host).
 
@@ -206,7 +211,27 @@ Even after crypto succeeds:
 
 - newline blocking by default (`allow_newlines: false`)
 - max injected length (`max_inject_len`)
-- optional target allow/deny policy for focused apps
+- optional target allow/deny policy for focused apps (process/window)
+
+**Target policy normalization note:**
+- Process comparisons are normalized to reduce configuration foot-guns:
+  - lowercased
+  - path stripped (`/usr/bin/firefox`, `C:\...\chrome.exe`)
+  - `.exe` stripped
+  - `.app` stripped (macOS)
+
+---
+
+## Logging & Redaction
+
+NovaKey can write logs to stderr and/or a rotating file.
+
+When `log_redact: true`:
+- secrets registered via `addSecret()` are replaced with `[REDACTED]`
+- long base64/hex-ish blobs are replaced with `[REDACTED_BLOB]`
+- common key/value patterns are redacted, including URL query params (e.g. `token=...&fp=...`)
+
+Even with redaction enabled, logs should still be treated as potentially sensitive and protected accordingly.
 
 ---
 
