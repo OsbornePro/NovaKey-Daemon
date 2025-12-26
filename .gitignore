@@ -18,6 +18,9 @@ devices.json
 # Ignore the generated QR image
 novakey-pair.png
 
+# Ignore log dir
+logs/
+
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
