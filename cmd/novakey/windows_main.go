@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -25,6 +26,32 @@ func boolDeref(ptr *bool, def bool) bool {
 	return *ptr
 }
 
+// maybeStartPairingQR shows a QR code if not paired.
+// QR contains host/port=60768, token, server pubkey fingerprint, expiry.
+func maybeStartPairingQR() {
+	if isPaired() {
+		return
+	}
+
+	host, port := splitHostPortOrDie(cfg.ListenAddr)
+	advertiseHost := chooseAdvertiseHost(host)
+
+	tokenB64, tokenID, exp := startOrRefreshPairToken(10 * time.Minute)
+	fp := fp16Hex(serverEncapKey)
+
+	qr := fmt.Sprintf("novakey://pair?v=4&host=%s&port=%d&token=%s&fp=%s&exp=%d",
+		advertiseHost, port, tokenB64, fp, exp.Unix())
+
+	pngPath, err := writeAndOpenPairQR(".", qr)
+	if err != nil {
+		log.Printf("[pair] token id=%s expires=%s; QR at %s (viewer open failed: %v)",
+			tokenID, exp.Format(time.RFC3339), pngPath, err)
+	} else {
+		log.Printf("[pair] token id=%s expires=%s; QR opened at %s",
+			tokenID, exp.Format(time.RFC3339), pngPath)
+	}
+}
+
 func main() {
 	if err := loadConfig(); err != nil {
 		log.Fatalf("loadConfig failed: %v", err)
@@ -34,29 +61,30 @@ func main() {
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}
-	maybeStartPairingBootstrap()
+
+	// Pairing QR (no HTTP bootstrap)
+	maybeStartPairingQR()
+
+	// Local-only loopback arm API (optional)
 	startArmAPI()
 
-	listenAddr := cfg.ListenAddr
-	maxLen := cfg.MaxPayloadLen
-
-	log.Printf("NovaKey (Windows) starting (listener=%s)", listenAddr)
-
-	ln, err := net.Listen("tcp4", listenAddr)
-	if err != nil {
-		log.Fatalf("listen on %s: %v", listenAddr, err)
+	// Single listener on cfg.ListenAddr (default 127.0.0.1:60768)
+	if err := startUnifiedListener(); err != nil {
+		log.Fatalf("startUnifiedListener failed: %v", err)
 	}
-	log.Printf("NovaKey (Windows) listening on %s", listenAddr)
 
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Printf("[accept] error: %v", err)
-			continue
-		}
-		reqID := nextReqID()
-		go handleConnWin(reqID, conn, maxLen)
-	}
+	log.Printf("NovaKey (Windows) started (listener=%s)", cfg.ListenAddr)
+
+	// Block forever (listener runs in background goroutine).
+	select {}
+}
+
+// handleMsgConn is REQUIRED by router.go.
+// It runs your existing length-prefixed v3 decrypt + inject logic.
+func handleMsgConn(conn net.Conn) error {
+	reqID := nextReqID()
+	handleConnWin(reqID, conn, cfg.MaxPayloadLen)
+	return nil
 }
 
 func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
@@ -95,7 +123,6 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// ✅ Current path only: v3 outer frame -> typed inner message frame.
 	deviceID, msgType, payload, err := decryptMessageFrame(buf)
 	if err != nil {
 		logReqf(reqID, "decryptMessageFrame failed: %v", err)
@@ -128,7 +155,6 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 	password := string(payload)
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
-	// Unsafe-text filter
 	if err := validateInjectText(password); err != nil {
 		logReqf(reqID, "blocked injection (unsafe text): %v", err)
 
@@ -147,8 +173,6 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// --- TARGET POLICY (allow/deny list) ---
-	// Do this BEFORE consuming approval/arm windows so a blocked focus can’t burn them.
 	if err := enforceTargetPolicy(); err != nil {
 		logReqf(reqID, "blocked injection (target policy): %v", err)
 
@@ -167,11 +191,9 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 		return
 	}
 
-	// Serialize injection paths
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
-	// Two-man gate
 	if cfg.TwoManEnabled {
 		consume := boolDeref(cfg.ApproveConsumeOnInject, true)
 		if !approvalGate.Consume(deviceID, consume) {
@@ -199,8 +221,6 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 		logReqf(reqID, "two-man approval OK; proceeding")
 	}
 
-	// Arm gate
-	// if cfg.ArmEnabled || cfg.TwoManEnabled {
 	if cfg.ArmEnabled {
 		consume := boolDeref(cfg.ArmConsumeOnInject, true)
 		if !armGate.Consume(consume) {
@@ -223,7 +243,6 @@ func handleConnWin(reqID uint64, conn net.Conn, maxLen int) {
 		logReqf(reqID, "armed gate open; proceeding with injection")
 	}
 
-	// Inject
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
 
