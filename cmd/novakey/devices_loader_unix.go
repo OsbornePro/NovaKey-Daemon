@@ -18,6 +18,8 @@ type sealedDevicesFileV1 struct {
 	CtB64    string `json:"ct_b64"`
 }
 
+const devicesSealedAAD = "NovaKey devices v1"
+
 func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -37,7 +39,7 @@ func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 		return loadDevicesFromSealedWrapper(path, &wrap)
 	}
 
-	// Legacy plaintext JSON (will be migrated by saveDevicesToDisk when pairing completes).
+	// Legacy plaintext JSON (migration happens when saveDevicesToDisk is called).
 	var dc devicesConfigFile
 	if err := json.Unmarshal(data, &dc); err != nil {
 		return nil, fmt.Errorf("parsing devices file %q: %w", path, err)
@@ -60,12 +62,19 @@ func loadDevicesFromSealedWrapper(path string, wrap *sealedDevicesFileV1) (map[s
 	if err != nil {
 		return nil, fmt.Errorf("decode nonce_b64: %w", err)
 	}
+	if len(nonce) != aead.NonceSize() {
+		return nil, fmt.Errorf("invalid nonce length: got %d want %d", len(nonce), aead.NonceSize())
+	}
+
 	ct, err := base64.StdEncoding.DecodeString(wrap.CtB64)
 	if err != nil {
 		return nil, fmt.Errorf("decode ct_b64: %w", err)
 	}
+	if len(ct) < aead.Overhead() {
+		return nil, fmt.Errorf("ciphertext too short: got %d need at least %d", len(ct), aead.Overhead())
+	}
 
-	aad := []byte("NovaKey devices v1")
+	aad := []byte(devicesSealedAAD)
 	pt, err := aead.Open(nil, nonce, ct, aad)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt sealed devices file: %w", err)
