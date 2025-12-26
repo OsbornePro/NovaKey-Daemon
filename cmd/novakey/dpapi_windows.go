@@ -1,3 +1,4 @@
+// cmd/novakey/dpapi_windows.go
 //go:build windows
 
 package main
@@ -21,10 +22,7 @@ func dpapiProtect(plaintext []byte) ([]byte, error) {
 		return nil, fmt.Errorf("dpapiProtect: empty plaintext")
 	}
 
-	in := windows.DataBlob{
-		Size: uint32(len(plaintext)),
-		Data: &plaintext[0],
-	}
+	in := windows.DataBlob{Size: uint32(len(plaintext)), Data: &plaintext[0]}
 	var out windows.DataBlob
 
 	if err := windows.CryptProtectData(&in, nil, nil, 0, nil, 0, &out); err != nil {
@@ -43,10 +41,7 @@ func dpapiUnprotect(ciphertext []byte) ([]byte, error) {
 		return nil, fmt.Errorf("dpapiUnprotect: empty ciphertext")
 	}
 
-	in := windows.DataBlob{
-		Size: uint32(len(ciphertext)),
-		Data: &ciphertext[0],
-	}
+	in := windows.DataBlob{Size: uint32(len(ciphertext)), Data: &ciphertext[0]}
 	var out windows.DataBlob
 
 	if err := windows.CryptUnprotectData(&in, nil, nil, 0, nil, 0, &out); err != nil {
@@ -60,5 +55,5 @@ func dpapiUnprotect(ciphertext []byte) ([]byte, error) {
 	return cp, nil
 }
 
-func dpapiEncode(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
-func dpapiDecode(s string) ([]byte, error) { return base64.StdEncoding.DecodeString(s) }
+func dpapiEncode(b []byte) string            { return base64.StdEncoding.EncodeToString(b) }
+func dpapiDecode(s string) ([]byte, error)   { return base64.StdEncoding.DecodeString(s) }
