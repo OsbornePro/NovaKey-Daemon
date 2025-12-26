@@ -160,6 +160,3 @@ func unreadBytes(br *bufio.Reader, data []byte) *bufio.Reader {
 	out := bufio.NewReader(io.MultiReader(bytes.NewReader(data), br))
 	return out
 }
-
-// You MUST provide this in your codebase by adapting your existing 60768 handler.
-// func handleMsgConn(conn net.Conn) error { ... }
