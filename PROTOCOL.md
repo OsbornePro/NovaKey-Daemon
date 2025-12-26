@@ -1,4 +1,4 @@
-# NovaKey Wire Protocol (Current)
+# NovaKey Wire Protocol
 
 NovaKey uses a single TCP listener (`listen_addr`, default `127.0.0.1:60768`) and routes each connection by an initial ASCII line:
 
@@ -22,6 +22,16 @@ The client may begin with:
 - `NOVAK/1 /msg\n`
 
 After this line, the remaining bytes are interpreted by the selected route.
+
+### Connection lifetime
+
+Each TCP connection handles exactly one request:
+
+- `/pair`: one pairing exchange
+- `/msg`: one approve or inject message
+
+The server enforces read/write deadlines and closes idle or stalled connections.
+Clients must open a new connection for each request.
 
 ---
 
