@@ -223,12 +223,12 @@ func fp16Hex(pub []byte) string {
 }
 
 func derivePairAEADKey(sharedKem []byte, token []byte) ([]byte, error) {
-	h := hkdf.New(sha256.New, sharedKem, token, []byte("NovaKey v4 Pair AEAD"))
-	key := make([]byte, chacha20poly1305.KeySize)
-	if _, err := io.ReadFull(h, key); err != nil {
-		return nil, fmt.Errorf("hkdf: %w", err)
-	}
-	return key, nil
+    h := hkdf.New(sha256.New, sharedKem, token, []byte("NovaKey v3 Pair AEAD"))
+    key := make([]byte, chacha20poly1305.KeySize)
+    if _, err := io.ReadFull(h, key); err != nil {
+        return nil, fmt.Errorf("hkdf: %w", err)
+    }
+    return key, nil
 }
 
 func makePairAAD(ct []byte, nonce []byte) []byte {
