@@ -9,7 +9,7 @@ WANTS_LINK="$USER_SYSTEMD_DIR/default.target.wants/$SERVICE_NAME"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/novakey"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/novakey"
 
-BIN_PATH="/usr/local/bin/novakey-linux-amd64"
+BIN_PATH="/usr/local/bin/novakey-linux-amd64.elf"
 
 log() { printf '[novakey-uninstall] %s\n' "$*"; }
 
