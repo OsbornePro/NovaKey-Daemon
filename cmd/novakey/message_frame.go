@@ -11,6 +11,7 @@ const (
 	MsgTypeInject  = 1
     MsgTypeApprove = 2
     MsgTypeArm     = 3
+    MsgTypeDisarm  = 4
 )
 
 // Frame format (plaintext BEFORE encryption):
