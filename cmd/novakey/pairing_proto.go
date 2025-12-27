@@ -1,3 +1,83 @@
+// cmd/novakey/pairing_proto.go
+package main
+
+import (
+	"bufio"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"sync"
+	"time"
+
+	"filippo.io/mlkem768"
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/hkdf"
+)
+
+type pairHello struct {
+	Op    string `json:"op"`
+	V     int    `json:"v"`
+	Token string `json:"token"`
+}
+
+type pairServerKey struct {
+	Op          string `json:"op"`
+	V           int    `json:"v"`
+	KID         string `json:"kid"`
+	KyberPubB64 string `json:"kyber_pub_b64"`
+	FP16Hex     string `json:"fp16_hex"`
+	ExpiresUnix int64  `json:"expires_unix"`
+}
+
+type pairRegister struct {
+	Op           string `json:"op"`
+	V            int    `json:"v"`
+	DeviceID     string `json:"device_id"`
+	DeviceKeyHex string `json:"device_key_hex"`
+}
+
+// --- per-IP hello limiter (in-memory, per-uptime) ---
+var (
+	pairHelloMu sync.Mutex
+	pairHelloRL = map[string]rateWindow{} // reuse rateWindow from crypto.go
+)
+
+func allowPairHelloFromIP(ip string) bool {
+	limit := cfg.PairHelloMaxPerMin
+	if limit <= 0 {
+		limit = 30
+	}
+
+	now := time.Now().Unix()
+	pairHelloMu.Lock()
+	defer pairHelloMu.Unlock()
+
+	rw := pairHelloRL[ip]
+	if rw.windowStart == 0 || now-rw.windowStart >= 60 {
+		rw.windowStart = now
+		rw.count = 0
+	}
+	rw.count++
+	pairHelloRL[ip] = rw
+	return rw.count <= limit
+}
+
+func remoteIP(conn net.Conn) string {
+	ra := conn.RemoteAddr().String()
+	ip, _, err := net.SplitHostPort(ra)
+	if err == nil && ip != "" {
+		return ip
+	}
+	return ra
+}
+
 func handlePairConn(conn net.Conn) error {
     defer conn.Close() // IMPORTANT: ensure iOS sees EOF after ACK
 
@@ -145,4 +225,74 @@ func handlePairConn(conn net.Conn) error {
     log.Printf("[pair] paired device_id=%s (saved + reloaded)", reg.DeviceID)
     log.Printf("[pair] wrote ack bytes=%d", len(ackNonce)+len(ackCT))
     return nil
+}
+
+func fp16Hex(pub []byte) string {
+	h := sha256.Sum256(pub)
+	return hex.EncodeToString(h[:16])
+}
+
+func derivePairAEADKey(sharedKem []byte, token []byte) ([]byte, error) {
+    h := hkdf.New(sha256.New, sharedKem, token, []byte("NovaKey v3 Pair AEAD"))
+    key := make([]byte, chacha20poly1305.KeySize)
+    if _, err := io.ReadFull(h, key); err != nil {
+        return nil, fmt.Errorf("hkdf: %w", err)
+    }
+    return key, nil
+}
+
+func makePairAAD(ct []byte, nonce []byte) []byte {
+	out := make([]byte, 0, 4+len(ct)+len(nonce))
+	out = append(out, 'P', 'A', 'I', 'R')
+	out = append(out, ct...)
+	out = append(out, nonce...)
+	return out
+}
+
+func readPairBinaryFrame(r *bufio.Reader) (ct []byte, nonce []byte, ciphertext []byte, err error) {
+	hdr := make([]byte, 2)
+	if _, err := io.ReadFull(r, hdr); err != nil {
+		return nil, nil, nil, fmt.Errorf("read ctLen: %w", err)
+	}
+	ctLen := int(binary.BigEndian.Uint16(hdr))
+	if ctLen <= 0 || ctLen > 4096 {
+		return nil, nil, nil, fmt.Errorf("invalid ctLen=%d", ctLen)
+	}
+
+	ct = make([]byte, ctLen)
+	if _, err := io.ReadFull(r, ct); err != nil {
+		return nil, nil, nil, fmt.Errorf("read ct: %w", err)
+	}
+
+	nonce = make([]byte, chacha20poly1305.NonceSizeX)
+	if _, err := io.ReadFull(r, nonce); err != nil {
+		return nil, nil, nil, fmt.Errorf("read nonce: %w", err)
+	}
+
+	ciphertext, err = io.ReadAll(io.LimitReader(r, 64*1024))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("read ciphertext: %w", err)
+	}
+	if len(ciphertext) < 16 {
+		return nil, nil, nil, fmt.Errorf("ciphertext too short")
+	}
+	return ct, nonce, ciphertext, nil
+}
+
+func writePairAck(w io.Writer, nonce []byte, ct []byte) error {
+	if len(nonce) != chacha20poly1305.NonceSizeX {
+		return fmt.Errorf("bad nonce size")
+	}
+	if _, err := w.Write(nonce); err != nil {
+		return err
+	}
+	_, err := w.Write(ct)
+	return err
+}
+
+func trimNL(b []byte) []byte {
+	for len(b) > 0 && (b[len(b)-1] == '\n' || b[len(b)-1] == '\r') {
+		b = b[:len(b)-1]
+	}
+	return b
 }
