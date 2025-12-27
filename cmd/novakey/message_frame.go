@@ -8,9 +8,9 @@ import (
 
 const (
 	frameVersionV1 = 1
-
 	MsgTypeInject  = 1
-	MsgTypeApprove = 2
+    MsgTypeApprove = 2
+    MsgTypeArm     = 3
 )
 
 // Frame format (plaintext BEFORE encryption):

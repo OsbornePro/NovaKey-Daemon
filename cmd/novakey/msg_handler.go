@@ -3,8 +3,10 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"net"
+    "strconv"
 	"time"
 )
 
@@ -21,11 +23,17 @@ func handleMsgConn(conn net.Conn) error {
 	reqID := nextReqID()
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
+    respond := func(st RespStatus, msg string) {
+        logReqf(reqID, "responding status=%d msg=%q", st, msg)
 
-	respond := func(st RespStatus, msg string) {
-		logReqf(reqID, "responding status=%d msg=%q", st, msg)
-		writeResp(conn, st, msg)
-	}
+        // JSON line response
+        b, _ := json.Marshal(map[string]any{
+            "status":  uint8(st),
+            "message": msg,
+        })
+        b = append(b, '\n')
+        _, _ = conn.Write(b)
+    }
 
 	maxLen := cfg.MaxPayloadLen
 
@@ -57,6 +65,26 @@ func handleMsgConn(conn net.Conn) error {
 
 	// v3 outer frame -> typed inner message frame.
 	deviceID, msgType, payload, err := decryptMessageFrame(buf)
+    // --- ARM message ---
+    if msgType == MsgTypeArm {
+        if !cfg.ArmEnabled {
+            respond(StatusBadRequest, "arm disabled")
+            return nil
+        }
+
+        // Duration: default from config, override allowed.
+        ms := cfg.ArmDurationMs
+        if len(payload) > 0 {
+            if n, err := strconv.Atoi(string(payload)); err == nil && n > 0 && n <= 300000 {
+                ms = n // cap at 5 min for safety
+            }
+        }
+
+        armGate.ArmFor(time.Duration(ms) * time.Millisecond)
+        respond(StatusOK, fmt.Sprintf("armed_for_ms=%d", ms))
+        return nil
+    }
+
 	if err != nil {
 		logReqf(reqID, "decryptMessageFrame failed: %v", err)
 		respond(StatusCryptoFail, "decrypt/auth failed")
