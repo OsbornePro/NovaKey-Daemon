@@ -9,8 +9,8 @@ set -euo pipefail
 
 SERVICE_NAME="novakey"
 
-BIN_SRC="./dist/novakey-linux-amd64"
-BIN_DST="/usr/local/bin/novakey-linux-amd64"
+BIN_SRC="./dist/novakey-linux-amd64.elf"
+BIN_DST="/usr/local/bin/novakey-linux-amd64.elf"
 
 CONFIG_YAML_SRC="./server_config.yaml"
 DEVICES_JSON_SRC="./devices.json" # optional; if absent, daemon will show QR on first start

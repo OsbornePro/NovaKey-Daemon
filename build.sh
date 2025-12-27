@@ -105,17 +105,17 @@ case "$TARGET" in
             log "Building novakey for linux/$ARCH"
             CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
-                -o "dist/${FILENAME:-novakey-linux-$ARCH}" ./cmd/novakey
+                -o "dist/${FILENAME:-novakey-linux-$ARCH.elf}" ./cmd/novakey
             
             log "Building nvpair for linux/$ARCH"
             CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
-                -o "dist/nvpair-linux-$ARCH" ./cmd/nvpair
+                -o "dist/nvpair-linux-$ARCH.elf" ./cmd/nvpair
                 
             log "Building nvclient for linux/$ARCH"
             CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
               go build -trimpath -ldflags="$LDFLAGS" \
-                -o "dist/nvclient-linux-$ARCH" ./cmd/nvclient
+                -o "dist/nvclient-linux-$ARCH.elf" ./cmd/nvclient
         done
         ;;
 
