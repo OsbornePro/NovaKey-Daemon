@@ -124,6 +124,11 @@ Wants=graphical-session.target network-online.target
 Type=simple
 WorkingDirectory=$USER_DATA_DIR
 
+# Ensure the service can talk to the user's session bus (Secret Service / keyring).
+# %t expands to /run/user/<uid> for user units.
+Environment=XDG_RUNTIME_DIR=%t
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
+
 # Ensure log_dir exists
 ExecStartPre=/usr/bin/mkdir -p $LOG_DIR_ABS
 
@@ -231,4 +236,3 @@ else
     DBUS_SESSION_BUS_ADDRESS="$USER_BUS_ADDR" \
     systemctl --user status "$SERVICE_NAME" --no-pager -l || true
 fi
-
