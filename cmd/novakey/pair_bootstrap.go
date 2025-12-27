@@ -24,7 +24,7 @@ func maybeStartPairingBootstrap() {
 	tokenB64, tokenID, exp := startOrRefreshPairToken(10 * time.Minute)
 	fp := fp16Hex(serverEncapKey)
 
-	payload := fmt.Sprintf("novakey://pair?v=4&host=%s&port=%d&token=%s&fp=%s&exp=%d",
+	payload := fmt.Sprintf("novakey://pair?v=3&host=%s&port=%d&token=%s&fp=%s&exp=%d",
 		advertiseHost, port, tokenB64, fp, exp.Unix())
 
 	pngPath, err := writeAndOpenPairQR(".", payload)

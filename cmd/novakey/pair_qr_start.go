@@ -21,7 +21,7 @@ func maybeStartPairingQR() {
 	fp := fp16Hex(serverEncapKey)
 
 	// Stable scheme for your app to parse. Keep in sync with iOS client.
-	qr := fmt.Sprintf("novakey://pair?v=4&host=%s&port=%d&token=%s&fp=%s&exp=%d",
+	qr := fmt.Sprintf("novakey://pair?v=3&host=%s&port=%d&token=%s&fp=%s&exp=%d",
 		advertiseHost, port, tokenB64, fp, exp.Unix())
 
 	pngPath, err := writeAndOpenPairQR(".", qr)
