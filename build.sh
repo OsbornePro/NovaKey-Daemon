@@ -87,7 +87,7 @@ case "$TARGET" in
         log "Building novakey for windows/amd64"
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
           go build -trimpath -ldflags="$LDFLAGS -H=windowsgui" \
-            -o "dist/${FILENAME:-NovaKey.exe}" ./cmd/novakey
+            -o "dist/${FILENAME:-novakey-windows-amd64.exe}" ./cmd/novakey
             
         log "Building nvpair for windows/amd64"
         CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
