@@ -59,7 +59,7 @@ If (Test-Path -Path $SourceDevices) {
 # If (Test-Path -Path $ServerKeys) { Remove-Item -Force $ServerKeys }
 # Lock down InstallDir to the current user (and SYSTEM, Administrators)
 icacls $InstallDir /inheritance:r | Out-Null
-icacls $InstallDir /grant:r "$CurrentUserFull:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" | Out-Null
+icacls $InstallDir /grant:r"$($CurrentUserFull):(OI)(CI)F" "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" | Out-Null
 icacls $InstallDir /remove "Users" "Authenticated Users" "Everyone" 2>$null | Out-Null
 
 # Task action: WorkingDirectory MUST be InstallDir so relative paths resolve (devices.json, server_keys.json, ./logs, arm_token.txt)
