@@ -128,7 +128,9 @@ func handleMsgConn(conn net.Conn) error {
 				respond(StatusBadRequest, "unsafe text; clipboard failed")
 			} else {
 				logReqf(reqID, "clipboard set (unsafe text blocked)")
-				respond(StatusBadRequest, "unsafe text; clipboard set")
+				respondX(StatusOKClipboard, "clipboard set (unsafe text blocked)", "inject", ReasonClipboardFallback,
+					map[string]any{"blocked": "unsafe_text"},
+				)
 			}
 			return nil
 		}
@@ -147,7 +149,9 @@ func handleMsgConn(conn net.Conn) error {
 				respond(StatusBadRequest, "target policy; clipboard failed")
 			} else {
 				logReqf(reqID, "blocked injection (target policy); clipboard set")
-				respond(StatusBadRequest, "target policy; clipboard set")
+				respondX(StatusOKClipboard, "clipboard set (target policy blocked)", "inject", ReasonClipboardFallback,
+					map[string]any{"blocked": "target_policy"},
+				)
 			}
 			return nil
 		}
@@ -176,7 +180,9 @@ func handleMsgConn(conn net.Conn) error {
 					respond(StatusNeedsApprove, "needs approve; clipboard failed")
 				} else {
 					logReqf(reqID, "blocked injection (two-man); clipboard set")
-					respond(StatusNeedsApprove, "needs approve; clipboard set")
+					respondX(StatusOKClipboard, "clipboard set (needs approve)", "inject", ReasonClipboardFallback,
+						map[string]any{"blocked": "needs_approve"},
+					)
 				}
 				return nil
 			}
@@ -199,7 +205,9 @@ func handleMsgConn(conn net.Conn) error {
 					respond(StatusNotArmed, "not armed; clipboard failed")
 				} else {
 					logReqf(reqID, "blocked injection (not armed); clipboard set")
-					respond(StatusNotArmed, "not armed; clipboard set")
+					respondX(StatusOKClipboard, "clipboard set (not armed)", "inject", ReasonClipboardFallback,
+						map[string]any{"blocked": "not_armed"},
+					)
 				}
 				return nil
 			}
@@ -230,7 +238,10 @@ func handleMsgConn(conn net.Conn) error {
 			}
 
 			// Error Non-Wayland inject failure: do NOT report overall success
-			respond(StatusInternal, "inject failed; clipboard set")
+			respondX(StatusOKClipboard, "clipboard set (wayland; paste to insert)", "inject", ReasonInjectUnavailableWayland,
+				map[string]any{"session": "wayland"},
+			)
+
 			return nil
 		}
 		respond(StatusInternal, "inject failed")
