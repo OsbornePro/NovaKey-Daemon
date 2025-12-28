@@ -44,7 +44,7 @@ func handleMsgConn(conn net.Conn) error {
 
 	if length == 0 || int(length) > maxLen {
 		logReqf(reqID, "invalid length (%d), max=%d", length, maxLen)
-		respond(StatusBadRequest, "msg", ReasonBadRequest, "invalid length")
+		respond(StatusBadRequest, StageMsg, ReasonBadRequest, "invalid length")
 		return nil
 	}
 
