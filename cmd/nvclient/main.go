@@ -2,8 +2,10 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -17,25 +19,32 @@ import (
 
 const (
 	// IMPORTANT: Outer v3 msgType must remain 1 so the server accepts the frame.
-	// The "approve vs inject" distinction is carried in the INNER typed message frame.
+	// The "approve vs inject vs arm vs disarm" distinction is carried in the INNER typed message frame.
 	outerMsgTypePassword = 1
 
 	innerFrameVersionV1 = 1
 	innerMsgTypeInject  = 1
 	innerMsgTypeApprove = 2
+	innerMsgTypeArm     = 3
+	innerMsgTypeDisarm  = 4
 )
+
+const routeLineMsg = "NOVAK/1 /msg\n"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n")
-	fmt.Fprintf(os.Stderr, "  nvclient arm [--addr 127.0.0.1:60769] [--token_file arm_token.txt] [--ms 20000]\n")
-	fmt.Fprintf(os.Stderr, "  nvclient approve [flags]            (send typed APPROVE control message)\n")
-	fmt.Fprintf(os.Stderr, "  nvclient [flags]                    (send typed INJECT/password message)\n\n")
+	fmt.Fprintf(os.Stderr, "  nvclient arm [flags]                 (send typed ARM control message)\n")
+	fmt.Fprintf(os.Stderr, "  nvclient disarm [flags]              (send typed DISARM control message)\n")
+	fmt.Fprintf(os.Stderr, "  nvclient approve [flags]             (send typed APPROVE control message)\n")
+	fmt.Fprintf(os.Stderr, "  nvclient [flags]                     (send typed INJECT/password message)\n\n")
 	fmt.Fprintf(os.Stderr, "Common flags:\n")
 	fmt.Fprintf(os.Stderr, "  -addr                 NovaKey server address (host:port)\n")
 	fmt.Fprintf(os.Stderr, "  -device-id            device ID to use\n")
 	fmt.Fprintf(os.Stderr, "  -key-hex              hex-encoded 32-byte per-device key (matches devices.json)\n")
 	fmt.Fprintf(os.Stderr, "  -server-kyber-pub-b64 base64 ML-KEM-768 public key (kyber768_public)\n")
 	fmt.Fprintf(os.Stderr, "  -password             secret to send (inject only)\n\n")
+	fmt.Fprintf(os.Stderr, "arm flags:\n")
+	fmt.Fprintf(os.Stderr, "  -ms                   arm duration in ms (default 15000)\n")
 }
 
 type commonArgs struct {
@@ -73,11 +82,13 @@ func main() {
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "arm":
-			code := cmdArm(os.Args[2:])
-			os.Exit(code)
+			os.Exit(cmdArm(os.Args[2:]))
 			return
 		case "approve":
 			os.Exit(cmdApprove(os.Args[2:]))
+			return
+		case "disarm":
+			os.Exit(cmdDisarm(os.Args[2:]))
 			return
 		}
 	}
@@ -85,7 +96,6 @@ func main() {
 	fs := flag.NewFlagSet("nvclient", flag.ExitOnError)
 	fs.Usage = usage
 
-	// Make "--help" probes succeed (test scripts often do this)
 	help := fs.Bool("h", false, "show help")
 	help2 := fs.Bool("help", false, "show help")
 
@@ -104,16 +114,20 @@ func main() {
 		log.Fatalf("initCryptoClient failed: %v", err)
 	}
 
-	// Always send typed inner frame (no legacy mode).
 	inner, err := encodeInnerMessageFrame(c.deviceID, innerMsgTypeInject, []byte(c.password))
 	if err != nil {
 		log.Fatalf("encodeInnerMessageFrame: %v", err)
 	}
 
-	if err := sendV3OuterFrame(c.addr, inner); err != nil {
+	replyLine, err := sendV3OuterFrame(c.addr, inner)
+	if err != nil {
 		log.Fatalf("send failed: %v", err)
 	}
-	fmt.Printf("sent v3 Kyber+XChaCha encrypted password frame (inner msgType=%d)\n", innerMsgTypeInject)
+	fmt.Print(replyLine)
+
+	if st, ok := parseReplyStatus(replyLine); ok && !st.isSuccess() {
+		os.Exit(1)
+	}
 }
 
 func cmdApprove(args []string) int {
@@ -121,20 +135,17 @@ func cmdApprove(args []string) int {
 	fs.Usage = usage
 	fs.SetOutput(os.Stdout)
 
-	// Accept -h/--help so test_send.sh can probe support reliably.
 	help := fs.Bool("h", false, "show help")
 	help2 := fs.Bool("help", false, "show help")
 
 	c := parseCommon(fs)
 	if err := fs.Parse(args); err != nil {
-		// If they asked for help, treat as success
 		if *help || *help2 {
 			usage()
 			return 0
 		}
 		return 2
 	}
-
 	if *help || *help2 {
 		usage()
 		return 0
@@ -153,41 +164,110 @@ func cmdApprove(args []string) int {
 		return 1
 	}
 
-	if err := sendV3OuterFrame(c.addr, inner); err != nil {
+	replyLine, err := sendV3OuterFrame(c.addr, inner)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "send failed: %v\n", err)
 		return 1
 	}
+	fmt.Print(replyLine)
 
-	fmt.Printf("sent v3 Kyber+XChaCha encrypted APPROVE control frame (inner msgType=%d)\n", innerMsgTypeApprove)
+	if st, ok := parseReplyStatus(replyLine); ok && !st.isSuccess() {
+		return 1
+	}
 	return 0
 }
 
-// sendV3OuterFrame sends a single v3 frame to the daemon: [u16 length][payload] over TCP4.
-func sendV3OuterFrame(addr string, innerBody []byte) error {
-	frame, err := encryptV3OuterFrame(innerBody)
-	if err != nil {
-		return err
+func cmdDisarm(args []string) int {
+	fs := flag.NewFlagSet("disarm", flag.ContinueOnError)
+	fs.Usage = usage
+	fs.SetOutput(os.Stdout)
+
+	help := fs.Bool("h", false, "show help")
+	help2 := fs.Bool("help", false, "show help")
+
+	c := parseCommon(fs)
+	if err := fs.Parse(args); err != nil {
+		if *help || *help2 {
+			usage()
+			return 0
+		}
+		return 2
 	}
-	if len(frame) > 0xFFFF {
-		return fmt.Errorf("frame too large: %d", len(frame))
+	if *help || *help2 {
+		usage()
+		return 0
 	}
 
-	conn, err := net.Dial("tcp4", addr)
+	requireCryptoInputs(c)
+
+	if err := initCryptoClient(c.deviceID, c.keyHex, c.serverKyberPubB64); err != nil {
+		fmt.Fprintf(os.Stderr, "initCryptoClient failed: %v\n", err)
+		return 1
+	}
+
+	inner, err := encodeInnerMessageFrame(c.deviceID, innerMsgTypeDisarm, nil)
 	if err != nil {
-		return fmt.Errorf("Dial: %w", err)
+		fmt.Fprintf(os.Stderr, "encodeInnerMessageFrame failed: %v\n", err)
+		return 1
+	}
+
+	replyLine, err := sendV3OuterFrame(c.addr, inner)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "send failed: %v\n", err)
+		return 1
+	}
+	fmt.Print(replyLine)
+
+	if st, ok := parseReplyStatus(replyLine); ok && !st.isSuccess() {
+		return 1
+	}
+	return 0
+}
+
+// sendV3OuterFrame sends a single NOVAK/1 routed request to the daemon:
+//   route line: "NOVAK/1 /msg\n"
+//   then: [u16 length][payload]
+// and returns the newline-terminated JSON reply line.
+func sendV3OuterFrame(addr string, innerBody []byte) (string, error) {
+	frame, err := encryptV3OuterFrame(innerBody)
+	if err != nil {
+		return "", err
+	}
+	if len(frame) > 0xFFFF {
+		return "", fmt.Errorf("frame too large: %d", len(frame))
+	}
+
+	d := net.Dialer{Timeout: 3 * time.Second}
+	conn, err := d.Dial("tcp", addr)
+	if err != nil {
+		return "", fmt.Errorf("Dial: %w", err)
 	}
 	defer conn.Close()
+
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	// Route line for NOVAK router
+	if _, err := conn.Write([]byte(routeLineMsg)); err != nil {
+		return "", fmt.Errorf("write route line: %w", err)
+	}
 
 	var hdr [2]byte
 	binary.BigEndian.PutUint16(hdr[:], uint16(len(frame)))
 
 	if _, err := conn.Write(hdr[:]); err != nil {
-		return fmt.Errorf("write length: %w", err)
+		return "", fmt.Errorf("write length: %w", err)
 	}
 	if _, err := conn.Write(frame); err != nil {
-		return fmt.Errorf("write frame: %w", err)
+		return "", fmt.Errorf("write frame: %w", err)
 	}
-	return nil
+
+	// Read one JSON line reply
+	br := bufio.NewReader(conn)
+	line, err := br.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("read reply line: %w", err)
+	}
+	return line, nil
 }
 
 // encryptV3OuterFrame builds the v3 payload:
@@ -261,7 +341,9 @@ func encodeInnerMessageFrame(deviceID string, msgType uint8, payload []byte) ([]
 	if deviceID == "" {
 		return nil, fmt.Errorf("deviceID required")
 	}
-	if msgType != innerMsgTypeInject && msgType != innerMsgTypeApprove {
+	switch msgType {
+	case innerMsgTypeInject, innerMsgTypeApprove, innerMsgTypeArm, innerMsgTypeDisarm:
+	default:
 		return nil, fmt.Errorf("invalid inner msgType=%d", msgType)
 	}
 	if payload == nil {
@@ -290,3 +372,25 @@ func encodeInnerMessageFrame(deviceID string, msgType uint8, payload []byte) ([]
 	return out, nil
 }
 
+// ---- Reply parsing helpers (optional, for exit codes) ----
+
+type daemonReply struct {
+	V      int    `json:"v"`
+	Status uint8  `json:"status"`
+	Stage  string `json:"stage"`
+	Reason string `json:"reason"`
+	Msg    string `json:"msg"`
+	ReqID  uint64 `json:"req_id"`
+}
+
+type replyStatus uint8
+
+func (s replyStatus) isSuccess() bool { return s == 0x00 || s == 0x09 }
+
+func parseReplyStatus(line string) (replyStatus, bool) {
+	var r daemonReply
+	if err := json.Unmarshal([]byte(line), &r); err != nil {
+		return 0, false
+	}
+	return replyStatus(r.Status), true
+}
