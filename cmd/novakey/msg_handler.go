@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"time"
+	"errors"
 )
 
 // handleMsgConn is used by router.go for "/msg" and legacy clients.
