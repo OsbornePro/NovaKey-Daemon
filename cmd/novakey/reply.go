@@ -9,8 +9,8 @@ import (
 type ReplyReason string
 
 const (
-	ReasonOK                     ReplyReason = "ok"
-	ReasonClipboardFallback       ReplyReason = "clipboard_fallback"
+	ReasonOK                      ReplyReason = "ok"
+	ReasonClipboardFallback        ReplyReason = "clipboard_fallback"
 	ReasonInjectUnavailableWayland ReplyReason = "inject_unavailable_wayland"
 
 	ReasonNotArmed     ReplyReason = "not_armed"
@@ -25,15 +25,13 @@ const (
 )
 
 type ServerReply struct {
-	Status  uint8              `json:"status"`
-	Msg     string             `json:"msg,omitempty"`     // keep for backwards compatibility
-	Stage   string             `json:"stage,omitempty"`   // "inject" | "approve" | "arm" | "disarm"
-	Reason  ReplyReason        `json:"reason,omitempty"`  // machine readable
-	Details map[string]any     `json:"details,omitempty"` // optional
+	Status uint8       `json:"status"`
+	Stage  string      `json:"stage"`            // always present
+	Reason ReplyReason `json:"reason"`           // always present
+	Msg    string      `json:"msg,omitempty"`    // optional human-readable
 }
 
 func writeReplyLine(conn net.Conn, r ServerReply) {
-	// Always return ONE JSON line terminated by '\n' to match your current client behavior.
 	b, _ := json.Marshal(r)
 	b = append(b, '\n')
 	_, _ = conn.Write(b)
