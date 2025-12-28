@@ -23,14 +23,8 @@ func handleMsgConn(conn net.Conn) error {
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
 
-	// Single responder: ALWAYS machine-readable
-	respond := func(st RespStatus, stage string, reason ReplyReason, msg string) {
-		writeReplyLine(conn, ServerReply{
-			Status: uint8(st),
-			Stage:  stage,
-			Reason: reason,
-			Msg:    msg,
-		})
+	respond := func(st RespStatus, stage ReplyStage, reason ReplyReason, msg string) {
+		writeReplyLine(conn, makeReply(reqID, st, stage, reason, msg))
 	}
 
 	maxLen := cfg.MaxPayloadLen
