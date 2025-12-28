@@ -1,3 +1,4 @@
+// cmd/novakey/inject_darwin.go
 //go:build darwin
 
 package main
@@ -17,11 +18,10 @@ func InjectPasswordToFocusedControl(password string) error {
 		log.Printf("[darwin] clipboard+Cmd+V path succeeded")
 		return nil
 	} else {
-		log.Printf("[darwin] clipboard-paste injection failed, falling back to keystroke typing: %v", err)
+		log.Printf("[darwin] clipboard-paste failed; falling back to keystroke typing: %v", err)
 	}
 
 	if err := injectViaAppleScriptType(password); err != nil {
-		log.Printf("[darwin] keystroke typing failed: %v", err)
 		return fmt.Errorf("both clipboard-paste and keystroke typing failed: %w", err)
 	}
 
@@ -30,33 +30,28 @@ func InjectPasswordToFocusedControl(password string) error {
 }
 
 func injectViaClipboardPaste(password string) error {
-	log.Printf("[darwin] injectViaClipboardPaste start")
+	// Save clipboard (best-effort)
 	var oldClipboard []byte
-	readCmd := exec.Command("pbpaste")
-	if out, err := readCmd.Output(); err == nil {
+	if out, err := exec.Command("pbpaste").Output(); err == nil {
 		oldClipboard = out
-	} else {
-		log.Printf("pbpaste (read) failed; clipboard will not be restored: %v", err)
 	}
 
+	// Set clipboard
 	setCmd := exec.Command("pbcopy")
 	setCmd.Stdin = bytes.NewBufferString(password)
 	if out, err := setCmd.CombinedOutput(); err != nil {
 		if len(out) > 0 {
-			log.Printf("pbcopy (set) output: %s", string(out))
+			log.Printf("[darwin] pbcopy output: %s", string(out))
 		}
-		return fmt.Errorf("pbcopy (set) failed: %w", err)
+		return fmt.Errorf("pbcopy failed: %w", err)
 	}
 
-	ascript := `
-tell application "System Events"
-    keystroke "v" using command down
-end tell
-`
+	// Cmd+V via System Events
+	ascript := `tell application "System Events" to keystroke "v" using command down`
 	keyCmd := exec.Command("osascript", "-e", ascript)
 	if out, err := keyCmd.CombinedOutput(); err != nil {
 		if len(out) > 0 {
-			log.Printf("osascript cmd+v output: %s", string(out))
+			log.Printf("[darwin] osascript cmd+v output: %s", string(out))
 		}
 		restoreClipboardMac(oldClipboard)
 		return fmt.Errorf("osascript cmd+v failed: %w", err)
@@ -70,18 +65,12 @@ func restoreClipboardMac(old []byte) {
 	if len(old) == 0 {
 		return
 	}
-	restoreCmd := exec.Command("pbcopy")
-	restoreCmd.Stdin = bytes.NewReader(old)
-	if out, err := restoreCmd.CombinedOutput(); err != nil {
-		if len(out) > 0 {
-			log.Printf("pbcopy (restore) output: %s", string(out))
-		}
-		log.Printf("failed to restore clipboard: %v", err)
-	}
+	cmd := exec.Command("pbcopy")
+	cmd.Stdin = bytes.NewReader(old)
+	_, _ = cmd.CombinedOutput()
 }
 
 func injectViaAppleScriptType(password string) error {
-	log.Printf("[darwin] injectViaAppleScriptType start")
 	script := `
 on run argv
     set t to item 1 of argv
@@ -93,7 +82,7 @@ end run
 	cmd := exec.Command("osascript", "-e", script, "--", password)
 	out, err := cmd.CombinedOutput()
 	if len(out) > 0 {
-		log.Printf("osascript type output: %s", string(out))
+		log.Printf("[darwin] osascript type output: %s", string(out))
 	}
 	if err != nil {
 		return fmt.Errorf("osascript keystroke failed: %w", err)
