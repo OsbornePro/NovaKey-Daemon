@@ -209,21 +209,29 @@ func handleMsgConn(conn net.Conn) error {
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
 
+		// Clipboard fallback policy:
+		// - If Wayland sentinel error: clipboard fallback counts as SUCCESS (StatusOKClipboard).
+		// - Otherwise: clipboard fallback is a helpful side-effect, but overall is NOT success.
 		if allowClipboardOnInjectFailure() {
 			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
 				respond(StatusInternal, "inject failed; clipboard failed")
-			} else {
-				logReqf(reqID, "injection failed; clipboard set")
-				respond(StatusOKClipboard, "clipboard set (inject unavailable)")
+				return nil
 			}
+
+			// Success Wayland: treat clipboard as the intended “delivery”
+			if errors.Is(err, ErrInjectUnavailableWayland) {
+				respond(StatusOKClipboard, "clipboard set (wayland; paste to insert)")
+				return nil
+			}
+
+			// Error Non-Wayland inject failure: do NOT report overall success
+			respond(StatusInternal, "inject failed; clipboard set")
 			return nil
 		}
-
 		respond(StatusInternal, "inject failed")
 		return nil
 	}
-
 	logReqf(reqID, "injection complete")
 	respond(StatusOK, "ok")
 	return nil
