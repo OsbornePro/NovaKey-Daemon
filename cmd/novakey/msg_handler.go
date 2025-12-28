@@ -24,17 +24,21 @@ func handleMsgConn(conn net.Conn) error {
 	logReqf(reqID, "connection opened from %s", remote)
 
 	respond := func(st RespStatus, msg string) {
-		logReqf(reqID, "responding status=%d msg=%q", st, msg)
-		b, _ := json.Marshal(map[string]any{
-			"status":  uint8(st),
-			"message": msg,
+		writeReplyLine(conn, ServerReply{
+			Status: uint8(st),
+			Msg:    msg,
 		})
-		b = append(b, '\n')
-		_, _ = conn.Write(b)
 	}
-
+	respondX := func(st RespStatus, msg, stage string, reason ReplyReason, details map[string]any) {
+		writeReplyLine(conn, ServerReply{
+			Status:  uint8(st),
+			Msg:     msg,
+			Stage:   stage,
+			Reason:  reason,
+			Details: details,
+		})
+	}
 	maxLen := cfg.MaxPayloadLen
-
 	var length uint16
 	if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
 		if err != io.EOF {
