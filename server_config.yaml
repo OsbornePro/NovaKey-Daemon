@@ -11,7 +11,7 @@ log_rotate_mb: 10
 log_keep: 10
 log_stderr: true
 log_redact: true
-require_sealed_device_store: true
+require_sealed_device_store: false
 target_policy_enabled: false
 use_built_in_allowlist: false
 allowed_process_names:
@@ -45,17 +45,16 @@ allowed_process_names:
 allowed_window_titles: []
 denied_process_names: []
 denied_window_titles: []
-arm_enabled: true
+arm_enabled: false
 arm_duration_ms: 20000
 arm_consume_on_inject: true
 allow_clipboard_when_disarmed: false
 allow_clipboard_on_inject_failure: true
-arm_api_enabled: true
-arm_listen_addr: "127.0.0.1:60769"
+arm_api_enabled: false
 arm_token_file: "arm_token.txt"
 arm_token_header: "X-NovaKey-Token"
 allow_newlines: false
 max_inject_len: 256
-two_man_enabled: true 
+two_man_enabled: false
 approve_window_ms: 15000
 approve_consume_on_inject: true

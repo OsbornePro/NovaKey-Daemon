@@ -194,9 +194,6 @@ func applyDefaults() {
 	}
 
 	// Arm API defaults
-	if cfg.ArmListenAddr == "" {
-		cfg.ArmListenAddr = "127.0.0.1:60769"
-	}
 	if cfg.ArmTokenFile == "" {
 		cfg.ArmTokenFile = "arm_token.txt"
 	}
