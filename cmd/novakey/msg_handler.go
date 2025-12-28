@@ -4,8 +4,8 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
-    "fmt"
 	"net"
 	"time"
 )
@@ -15,25 +15,22 @@ import (
 func handleMsgConn(conn net.Conn) error {
 	defer conn.Close()
 
-	// Hard timeout for clients that connect and stall.
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-	// Clear deadlines before returning (best practice).
 	defer func() { _ = conn.SetDeadline(time.Time{}) }()
 
 	reqID := nextReqID()
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
-    respond := func(st RespStatus, msg string) {
-        logReqf(reqID, "responding status=%d msg=%q", st, msg)
 
-        // JSON line response
-        b, _ := json.Marshal(map[string]any{
-            "status":  uint8(st),
-            "message": msg,
-        })
-        b = append(b, '\n')
-        _, _ = conn.Write(b)
-    }
+	respond := func(st RespStatus, msg string) {
+		logReqf(reqID, "responding status=%d msg=%q", st, msg)
+		b, _ := json.Marshal(map[string]any{
+			"status":  uint8(st),
+			"message": msg,
+		})
+		b = append(b, '\n')
+		_, _ = conn.Write(b)
+	}
 
 	maxLen := cfg.MaxPayloadLen
 
@@ -63,38 +60,36 @@ func handleMsgConn(conn net.Conn) error {
 		return nil
 	}
 
-	// v3 outer frame -> typed inner message frame.
+	// Decrypt FIRST. Never branch on msgType until err == nil.
 	deviceID, msgType, payload, err := decryptMessageFrame(buf)
-    // --- ARM control message ---
-	if msgType == MsgTypeArm {
-    	// payload is optional JSON: {"ms":15000}
-    	ms := cfg.ArmDurationMs
-    	if len(payload) > 0 {
-        	var obj struct{ MS int `json:"ms"` }
-        	if err := json.Unmarshal(payload, &obj); err == nil && obj.MS > 0 {
-            	ms = obj.MS
-        	}
-    	}
-    	armGate.ArmFor(time.Duration(ms) * time.Millisecond)
-    	respond(StatusOK, fmt.Sprintf("armed_for_ms=%d", ms))
-	    return nil
-	}
-
-	// --- DISARM control message ---
-	if msgType == MsgTypeDisarm {
-    	armGate.Disarm()
-    	respond(StatusOK, "disarmed")
-    	return nil
-	}
-
 	if err != nil {
 		logReqf(reqID, "decryptMessageFrame failed: %v", err)
 		respond(StatusCryptoFail, "decrypt/auth failed")
 		return nil
 	}
 
-	// --- TWO-MAN: approval control message (typed) ---
-	if msgType == MsgTypeApprove {
+	// Now safe to route by msgType.
+	switch msgType {
+
+	case MsgTypeArm:
+		// payload is optional JSON: {"ms":15000}
+		ms := cfg.ArmDurationMs
+		if len(payload) > 0 {
+			var obj struct{ MS int `json:"ms"` }
+			if err := json.Unmarshal(payload, &obj); err == nil && obj.MS > 0 {
+				ms = obj.MS
+			}
+		}
+		armGate.ArmFor(time.Duration(ms) * time.Millisecond)
+		respond(StatusOK, fmt.Sprintf("armed_for_ms=%d", ms))
+		return nil
+
+	case MsgTypeDisarm:
+		armGate.Disarm()
+		respond(StatusOK, "disarmed")
+		return nil
+
+	case MsgTypeApprove:
 		if !cfg.TwoManEnabled {
 			logReqf(reqID, "approve message received but two_man_enabled=false; ignoring")
 			respond(StatusBadRequest, "two-man disabled; approve ignored")
@@ -105,15 +100,17 @@ func handleMsgConn(conn net.Conn) error {
 			deviceID, until.Format(time.RFC3339Nano))
 		respond(StatusOK, "approved")
 		return nil
-	}
 
-	// --- INJECT message ---
-	if msgType != MsgTypeInject {
+	case MsgTypeInject:
+		// continue below
+
+	default:
 		logReqf(reqID, "unknown msgType=%d from device=%q; dropping", msgType, deviceID)
 		respond(StatusBadRequest, "unknown msgType")
 		return nil
 	}
 
+	// ---- INJECT path (same as your existing code) ----
 	password := string(payload)
 	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
 
@@ -155,7 +152,6 @@ func handleMsgConn(conn net.Conn) error {
 		return nil
 	}
 
-	// Serialize injection paths (shared global mutex)
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
@@ -210,12 +206,9 @@ func handleMsgConn(conn net.Conn) error {
 		logReqf(reqID, "armed gate open; proceeding with injection")
 	}
 
-	// Inject (platform-specific implementation behind this symbol)
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
 
-		// IMPORTANT: this is "inject failed after gates passed" behavior,
-		// intended for Wayland and similar environments.
 		if allowClipboardOnInjectFailure() {
 			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
