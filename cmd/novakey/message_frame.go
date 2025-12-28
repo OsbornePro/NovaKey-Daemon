@@ -8,35 +8,43 @@ import (
 
 const (
 	frameVersionV1 = 1
+
 	MsgTypeInject  = 1
-    MsgTypeApprove = 2
-    MsgTypeArm     = 3
-    MsgTypeDisarm  = 4
+	MsgTypeApprove = 2
+	MsgTypeArm     = 3
+	MsgTypeDisarm  = 4
 )
 
 // Frame format (plaintext BEFORE encryption):
 //
 //	[0]   = version (uint8) = 1
-//	[1]   = msgType (uint8) = 1 inject, 2 approve
+//	[1]   = msgType (uint8) = 1 inject, 2 approve, 3 arm, 4 disarm
 //	[2:4] = deviceIDLen (uint16, big endian)
 //	[4:8] = payloadLen  (uint32, big endian)
 //	[..]  = deviceID bytes (UTF-8)
-//	[..]  = payload bytes  (UTF-8)
+//	[..]  = payload bytes
 //
 // Notes:
 // - payload for MsgTypeApprove can be empty.
+// - payload for MsgTypeDisarm is typically empty.
+// - payload for MsgTypeArm is optional JSON: {"ms":15000}
 // - payload for MsgTypeInject is the secret string.
 func encodeMessageFrame(deviceID string, msgType uint8, payload []byte) ([]byte, error) {
 	if deviceID == "" {
 		return nil, fmt.Errorf("deviceID required")
 	}
-	if msgType != MsgTypeInject && msgType != MsgTypeApprove {
+	switch msgType {
+	case MsgTypeInject, MsgTypeApprove, MsgTypeArm, MsgTypeDisarm:
+	default:
 		return nil, fmt.Errorf("invalid msgType=%d", msgType)
 	}
 
 	dev := []byte(deviceID)
 	if len(dev) > 0xFFFF {
 		return nil, fmt.Errorf("deviceID too long")
+	}
+	if len(payload) > int(^uint32(0)) {
+		return nil, fmt.Errorf("payload too long")
 	}
 
 	out := make([]byte, 0, 1+1+2+4+len(dev)+len(payload))
@@ -64,8 +72,11 @@ func decodeMessageFrame(b []byte) (deviceID string, msgType uint8, payload []byt
 	if ver != frameVersionV1 {
 		return "", 0, nil, fmt.Errorf("unsupported frame version=%d", ver)
 	}
+
 	msgType = b[1]
-	if msgType != MsgTypeInject && msgType != MsgTypeApprove {
+	switch msgType {
+	case MsgTypeInject, MsgTypeApprove, MsgTypeArm, MsgTypeDisarm:
+	default:
 		return "", 0, nil, fmt.Errorf("invalid msgType=%d", msgType)
 	}
 
@@ -74,12 +85,6 @@ func decodeMessageFrame(b []byte) (deviceID string, msgType uint8, payload []byt
 
 	if devLen < 1 {
 		return "", 0, nil, fmt.Errorf("deviceIDLen invalid")
-	}
-	if devLen > 0xFFFF {
-		return "", 0, nil, fmt.Errorf("deviceIDLen too large")
-	}
-	if plLen < 0 {
-		return "", 0, nil, fmt.Errorf("payloadLen invalid")
 	}
 
 	want := 1 + 1 + 2 + 4 + devLen + plLen
