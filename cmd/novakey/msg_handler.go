@@ -23,20 +23,22 @@ func handleMsgConn(conn net.Conn) error {
 	remote := conn.RemoteAddr().String()
 	logReqf(reqID, "connection opened from %s", remote)
 
+	// ALWAYS reply with ONE newline-terminated JSON line (machine-readable).
 	respond := func(st RespStatus, stage ReplyStage, reason ReplyReason, msg string) {
 		writeReplyLine(conn, makeReply(reqID, st, stage, reason, msg))
 	}
 
 	maxLen := cfg.MaxPayloadLen
 
+	// ---- Read length ----
 	var length uint16
 	if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
 		if err != io.EOF {
 			logReqf(reqID, "read length failed: %v", err)
-			respond(StatusBadRequest, "msg", ReasonBadRequest, "read length failed")
+			respond(StatusBadRequest, StageMsg, ReasonBadRequest, "read length failed")
 		} else {
 			logReqf(reqID, "client closed connection before sending length")
-			respond(StatusBadRequest, "msg", ReasonBadRequest, "client closed before length")
+			respond(StatusBadRequest, StageMsg, ReasonBadRequest, "client closed before length")
 		}
 		return nil
 	}
@@ -48,52 +50,55 @@ func handleMsgConn(conn net.Conn) error {
 		return nil
 	}
 
+	// ---- Read payload ----
 	buf := make([]byte, length)
 	if _, err := io.ReadFull(conn, buf); err != nil {
 		logReqf(reqID, "read payload failed: %v", err)
-		respond(StatusBadRequest, "msg", ReasonBadRequest, "read payload failed")
+		respond(StatusBadRequest, StageMsg, ReasonBadRequest, "read payload failed")
 		return nil
 	}
 
-	// Decrypt FIRST. Never branch on msgType until err == nil.
+	// ---- Decrypt FIRST. Never branch on msgType until err == nil. ----
 	deviceID, msgType, payload, err := decryptMessageFrame(buf)
 	if err != nil {
 		logReqf(reqID, "decryptMessageFrame failed: %v", err)
-		respond(StatusCryptoFail, "msg", ReasonCryptoFail, "decrypt/auth failed")
+		respond(StatusCryptoFail, StageMsg, ReasonCryptoFail, "decrypt/auth failed")
 		return nil
 	}
 
-	// Now safe to route by msgType.
+	// ---- Route by msgType ----
 	switch msgType {
 
 	case MsgTypeArm:
 		// payload is optional JSON: {"ms":15000}
 		ms := cfg.ArmDurationMs
 		if len(payload) > 0 {
-			var obj struct{ MS int `json:"ms"` }
+			var obj struct {
+				MS int `json:"ms"`
+			}
 			if err := json.Unmarshal(payload, &obj); err == nil && obj.MS > 0 {
 				ms = obj.MS
 			}
 		}
 		armGate.ArmFor(time.Duration(ms) * time.Millisecond)
-		respond(StatusOK, "arm", ReasonOK, fmt.Sprintf("armed_for_ms=%d", ms))
+		respond(StatusOK, StageArm, ReasonOK, fmt.Sprintf("armed_for_ms=%d", ms))
 		return nil
 
 	case MsgTypeDisarm:
 		armGate.Disarm()
-		respond(StatusOK, "disarm", ReasonOK, "disarmed")
+		respond(StatusOK, StageDisarm, ReasonOK, "disarmed")
 		return nil
 
 	case MsgTypeApprove:
 		if !cfg.TwoManEnabled {
 			logReqf(reqID, "approve message received but two_man_enabled=false; ignoring")
-			respond(StatusBadRequest, "approve", ReasonBadRequest, "two-man disabled; approve ignored")
+			respond(StatusBadRequest, StageApprove, ReasonBadRequest, "two-man disabled; approve ignored")
 			return nil
 		}
 		until := approvalGate.Approve(deviceID, approveWindow())
 		logReqf(reqID, "two-man approve received from device=%q; approved until %s",
 			deviceID, until.Format(time.RFC3339Nano))
-		respond(StatusOK, "approve", ReasonOK, "approved")
+		respond(StatusOK, StageApprove, ReasonOK, "approved")
 		return nil
 
 	case MsgTypeInject:
@@ -101,7 +106,7 @@ func handleMsgConn(conn net.Conn) error {
 
 	default:
 		logReqf(reqID, "unknown msgType=%d from device=%q; dropping", msgType, deviceID)
-		respond(StatusBadRequest, "msg", ReasonBadRequest, "unknown msgType")
+		respond(StatusBadRequest, StageMsg, ReasonBadRequest, "unknown msgType")
 		return nil
 	}
 
@@ -116,15 +121,15 @@ func handleMsgConn(conn net.Conn) error {
 		if allowClipboardWhenBlocked() {
 			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
-				respond(StatusBadRequest, "inject", ReasonBadRequest, "unsafe text; clipboard failed")
+				respond(StatusBadRequest, StageInject, ReasonBadRequest, "unsafe text; clipboard failed")
 			} else {
 				logReqf(reqID, "clipboard set (unsafe text blocked)")
-				respond(StatusOKClipboard, "inject", ReasonClipboardFallback, "clipboard set (unsafe text blocked)")
+				respond(StatusOKClipboard, StageInject, ReasonClipboardFallback, "clipboard set (unsafe text blocked)")
 			}
 			return nil
 		}
 
-		respond(StatusBadRequest, "inject", ReasonBadRequest, "unsafe text")
+		respond(StatusBadRequest, StageInject, ReasonBadRequest, "unsafe text")
 		return nil
 	}
 
@@ -135,15 +140,15 @@ func handleMsgConn(conn net.Conn) error {
 		if allowClipboardWhenBlocked() {
 			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
-				respond(StatusBadRequest, "inject", ReasonBadRequest, "target policy; clipboard failed")
+				respond(StatusBadRequest, StageInject, ReasonBadRequest, "target policy; clipboard failed")
 			} else {
 				logReqf(reqID, "blocked injection (target policy); clipboard set")
-				respond(StatusOKClipboard, "inject", ReasonClipboardFallback, "clipboard set (target policy blocked)")
+				respond(StatusOKClipboard, StageInject, ReasonClipboardFallback, "clipboard set (target policy blocked)")
 			}
 			return nil
 		}
 
-		respond(StatusBadRequest, "inject", ReasonBadRequest, "target policy blocked")
+		respond(StatusBadRequest, StageInject, ReasonBadRequest, "target policy blocked")
 		return nil
 	}
 
@@ -164,15 +169,15 @@ func handleMsgConn(conn net.Conn) error {
 			if allowClipboardWhenBlocked() {
 				if err2 := trySetClipboard(password); err2 != nil {
 					logReqf(reqID, "clipboard set failed: %v", err2)
-					respond(StatusNeedsApprove, "inject", ReasonNeedsApprove, "needs approve; clipboard failed")
+					respond(StatusNeedsApprove, StageInject, ReasonNeedsApprove, "needs approve; clipboard failed")
 				} else {
 					logReqf(reqID, "blocked injection (two-man); clipboard set")
-					respond(StatusOKClipboard, "inject", ReasonClipboardFallback, "clipboard set (needs approve)")
+					respond(StatusOKClipboard, StageInject, ReasonClipboardFallback, "clipboard set (needs approve)")
 				}
 				return nil
 			}
 
-			respond(StatusNeedsApprove, "inject", ReasonNeedsApprove, "needs approve")
+			respond(StatusNeedsApprove, StageInject, ReasonNeedsApprove, "needs approve")
 			return nil
 		}
 		logReqf(reqID, "two-man approval OK; proceeding")
@@ -187,46 +192,47 @@ func handleMsgConn(conn net.Conn) error {
 			if allowClipboardWhenBlocked() {
 				if err2 := trySetClipboard(password); err2 != nil {
 					logReqf(reqID, "clipboard set failed: %v", err2)
-					respond(StatusNotArmed, "inject", ReasonNotArmed, "not armed; clipboard failed")
+					respond(StatusNotArmed, StageInject, ReasonNotArmed, "not armed; clipboard failed")
 				} else {
 					logReqf(reqID, "blocked injection (not armed); clipboard set")
-					respond(StatusOKClipboard, "inject", ReasonClipboardFallback, "clipboard set (not armed)")
+					respond(StatusOKClipboard, StageInject, ReasonClipboardFallback, "clipboard set (not armed)")
 				}
 				return nil
 			}
 
-			respond(StatusNotArmed, "inject", ReasonNotArmed, "not armed")
+			respond(StatusNotArmed, StageInject, ReasonNotArmed, "not armed")
 			return nil
 		}
 		logReqf(reqID, "armed gate open; proceeding with injection")
 	}
 
+	// Perform injection
 	if err := InjectPasswordToFocusedControl(password); err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
 
 		if allowClipboardOnInjectFailure() {
 			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
-				respond(StatusInternal, "inject", ReasonInternal, "inject failed; clipboard failed")
+				respond(StatusInternal, StageInject, ReasonInternal, "inject failed; clipboard failed")
 				return nil
 			}
 
 			// Wayland sentinel => clipboard counts as success
 			if errors.Is(err, ErrInjectUnavailableWayland) {
-				respond(StatusOKClipboard, "inject", ReasonInjectUnavailableWayland, "clipboard set (wayland; paste to insert)")
+				respond(StatusOKClipboard, StageInject, ReasonInjectUnavailableWayland, "clipboard set (wayland; paste to insert)")
 				return nil
 			}
 
 			// Non-wayland failure: clipboard is side-effect, still overall error
-			respond(StatusInternal, "inject", ReasonInternal, "inject failed; clipboard set")
+			respond(StatusInternal, StageInject, ReasonInternal, "inject failed; clipboard set")
 			return nil
 		}
 
-		respond(StatusInternal, "inject", ReasonInternal, "inject failed")
+		respond(StatusInternal, StageInject, ReasonInternal, "inject failed")
 		return nil
 	}
 
 	logReqf(reqID, "injection complete")
-	respond(StatusOK, "inject", ReasonOK, "ok")
+	respond(StatusOK, StageInject, ReasonOK, "ok")
 	return nil
 }
