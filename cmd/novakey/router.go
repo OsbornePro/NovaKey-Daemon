@@ -21,7 +21,7 @@ func startUnifiedListener() error {
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", cfg.ListenAddr, err)
 	}
-	log.Printf("[net] listening on %s (routes: /pair*, /msg)", cfg.ListenAddr)
+	log.Printf("[net] listening on %s (routes: /pair, /msg)", cfg.ListenAddr)
 
 	go func() {
 		for {
@@ -42,35 +42,29 @@ func routeConn(conn net.Conn) {
 
 	line, err := readRouteLine(br)
 	if err != nil {
-		// No route line -> assume /msg legacy
-		_ = conn.SetReadDeadline(time.Time{})
-		if err := handleMsgConn(newPreReadConn(conn, br)); err != nil {
-			log.Printf("[net] /msg fallback error: %v", err)
-		}
+		// Strict routing: clients MUST send "NOVAK/1 /pair\n" or "NOVAK/1 /msg\n".
+		log.Printf("[net] reject: missing/invalid route preface: %v", err)
 		return
 	}
 
 	_ = conn.SetReadDeadline(time.Time{})
 
 	route := parseRoute(line)
-
-	// ✅ IMPORTANT: accept /pair and any /pair/* subroutes
-	if strings.HasPrefix(route, "/pair") {
+	switch route {
+	case "/pair":
 		if err := handlePairConnWithRoute(route, newPreReadConn(conn, br)); err != nil {
-			log.Printf("[pair] conn error (route=%s): %v", route, err)
+			log.Printf("[pair] conn error: %v", err)
 		}
 		return
-	}
-
-	switch route {
 	case "/msg":
 		if err := handleMsgConn(newPreReadConn(conn, br)); err != nil {
 			log.Printf("[msg] conn error: %v", err)
 		}
+		return
 	default:
-		if err := handleMsgConn(newPreReadConn(conn, br)); err != nil {
-			log.Printf("[msg] default route error (route=%s): %v", route, err)
-		}
+		// Strict routing: unknown routes are rejected (no default-to-/msg).
+		log.Printf("[net] reject: unknown route %q", route)
+		return
 	}
 }
 
@@ -80,7 +74,7 @@ func readRouteLine(br *bufio.Reader) (string, error) {
 		return "", err
 	}
 	if len(peek) < len(routerMagic) || string(peek[:len(routerMagic)]) != routerMagic {
-		return "", fmt.Errorf("no route magic")
+		return "", fmt.Errorf("missing %q preface", routerMagic)
 	}
 
 	line, err := br.ReadString('\n')

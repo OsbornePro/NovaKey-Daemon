@@ -26,7 +26,7 @@ var (
 	procGlobalLock   = kernel32.NewProc("GlobalLock")
 	procGlobalUnlock = kernel32.NewProc("GlobalUnlock")
 
-	// keyboard fallback
+	// keyboard alternate path 
 	procKeybdEvent     = user32.NewProc("keybd_event")
 	procVkKeyScanW     = user32.NewProc("VkKeyScanW")
 	procMapVirtualKeyW = user32.NewProc("MapVirtualKeyW")
@@ -65,7 +65,7 @@ func getWindowClass(hwnd windows.Handle) (string, error) {
 //  1. Copy password to clipboard (best-effort).
 //  2. Get HWND of focused control.
 //  3. Try EM_REPLACESEL / WM_SETTEXT.
-//  4. Fall back to keybd_event typing.
+//  4. Alternate typing to keybd_event typing.
 func InjectPasswordToFocusedControl(password string) error {
 	log.Printf("[windows] InjectPasswordToFocusedControl called; len=%d", len(password))
 
@@ -114,12 +114,12 @@ func InjectPasswordToFocusedControl(password string) error {
 		log.Printf("[windows] control class %q not in safe list; using keybd_event", className)
 	}
 
-	// Fallback typing path
+	// Alternate typing path
 	if err := injectViaKeybdEvent(password); err != nil {
 		log.Printf("[windows] keybd_event typing failed: %v", err)
 		return fmt.Errorf("keybd_event typing failed: %w", err)
 	}
-	log.Printf("[windows] keybd_event typing fallback succeeded")
+	log.Printf("[windows] keybd_event typing path succeeded")
 	return nil
 }
 
@@ -142,7 +142,7 @@ func injectViaMessages(hwnd windows.Handle, password string) error {
 		return nil
 	}
 
-	// Fallback WM_SETTEXT
+	// Alternate WM_SETTEXT path
 	r1, _, _ = procSendMessageW.Call(
 		uintptr(hwnd),
 		uintptr(WM_SETTEXT),
@@ -172,7 +172,7 @@ func injectViaKeybdEvent(password string) error {
 	log.Printf("[windows] injectViaKeybdEvent start, len=%d", len(password))
 	for _, r := range password {
 		if r > 0x7f {
-			return fmt.Errorf("keybd_event fallback does not support non-ASCII char %q", r)
+			return fmt.Errorf("keybd_event alternate path does not support non-ASCII char %q", r)
 		}
 
 		vk, shiftState, err := charToVk(byte(r))

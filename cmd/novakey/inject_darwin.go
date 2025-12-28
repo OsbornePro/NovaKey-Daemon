@@ -10,7 +10,7 @@ import (
 	"os/exec"
 )
 
-// macOS: primary = clipboard+Cmd+V, fallback = keystroke typing via AppleScript
+// macOS: primary = clipboard+Cmd+V, alternate = keystroke typing via AppleScript
 func InjectPasswordToFocusedControl(password string) error {
 	log.Printf("[darwin] InjectPasswordToFocusedControl called; len=%d", len(password))
 

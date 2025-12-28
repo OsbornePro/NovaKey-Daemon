@@ -80,7 +80,7 @@ func initLoggingFromConfig() {
 		log.SetOutput(newLineSanitizingWriter(dst))
 		log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
-		seedSecretsFromConfig()
+//		seedSecretsFromConfig()
 		rebuildSecretReplacerLocked()
 	})
 }
@@ -90,23 +90,6 @@ func loggingRedactEnabled() bool {
 		return true
 	}
 	return *cfg.LogRedact
-}
-
-func seedSecretsFromConfig() {
-	magic := cfg.ApproveMagic
-	if magic == "" {
-		magic = "__NOVAKEY_APPROVE__"
-	}
-	addSecret(magic)
-
-	if cfg.ArmTokenFile != "" {
-		if b, err := os.ReadFile(cfg.ArmTokenFile); err == nil {
-			t := strings.TrimSpace(string(b))
-			if t != "" {
-				addSecret(t)
-			}
-		}
-	}
 }
 
 func addSecret(s string) {

@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// maybeStartPairingBootstrap kept for compatibility with older call sites.
-// It now generates the same QR payload shape as maybeStartPairingQR in *_main.go.
-func maybeStartPairingBootstrap() {
+// startPairingBootstrapIfUnpaired generates and displays a pairing QR when no devices are paired.
+func startPairingBootstrapIfUnpaired() {
 	if isPaired() {
 		return
 	}
@@ -24,7 +23,8 @@ func maybeStartPairingBootstrap() {
 	tokenB64, tokenID, exp := startOrRefreshPairToken(10 * time.Minute)
 	fp := fp16Hex(serverEncapKey)
 
-	payload := fmt.Sprintf("novakey://pair?v=3&host=%s&port=%d&token=%s&fp=%s&exp=%d",
+	// Pairing QR payload (application-level). Keep stable once clients depend on it.
+	payload := fmt.Sprintf("novakey://pair?v=4&host=%s&port=%d&token=%s&fp=%s&exp=%d",
 		advertiseHost, port, tokenB64, fp, exp.Unix())
 
 	pngPath, err := writeAndOpenPairQR(".", payload)
@@ -36,3 +36,4 @@ func maybeStartPairingBootstrap() {
 			tokenID, exp.Format(time.RFC3339), pngPath)
 	}
 }
+

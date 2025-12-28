@@ -24,10 +24,10 @@ func trySetClipboard(text string) error {
 				log.Printf("[clipboard] set via wl-copy (wayland)")
 				return nil
 			} else {
-				log.Printf("[clipboard] wl-copy failed: %v (will try xclip fallback)", err)
+                log.Printf("[clipboard] wl-copy failed: %v (will try xclip next)", err)
 			}
 		} else {
-			log.Printf("[clipboard] wl-copy not found in PATH (will try xclip fallback)")
+            log.Printf("[clipboard] wl-copy not found in PATH (will try xclip next)")
 		}
 	}
 

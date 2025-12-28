@@ -40,14 +40,14 @@ func loadDevicesFromDisk(path string) (map[string]deviceState, error) {
 		return loadDevicesFromSealedWrapper(path, &wrap)
 	}
 
-	// If the file is not a sealed wrapper, it's legacy plaintext JSON.
+	// If the file is not a sealed wrapper, it's plaintext JSON.
 	// If require_sealed_device_store is enabled, fail closed.
 	if cfg.RequireSealedDeviceStore {
-		return nil, fmt.Errorf("%w: require_sealed_device_store=true but devices file is not sealed (legacy plaintext): %s",
+		return nil, fmt.Errorf("%w: require_sealed_device_store=true but devices file is not sealed (plaintext): %s",
 			ErrDevicesUnavailable, path)
 	}
 
-	// Legacy plaintext JSON path:
+	// Plaintext JSON path:
 	var dc devicesConfigFile
 	if err := json.Unmarshal(data, &dc); err != nil {
 		return nil, fmt.Errorf("%w: parsing devices file %q: %v", ErrDevicesUnavailable, path, err)

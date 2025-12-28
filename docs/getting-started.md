@@ -57,7 +57,7 @@ NovaKey will never display the secret again (by design).
 
 Success outcomes:
 - ✅ **Sent to <Computer>** (typed injection)
-- ✅ **📋 Copied to clipboard on <Computer>** (injection blocked; clipboard fallback)
+- ✅ **📋 Copied to clipboard on <Computer>** (injection blocked; clipboard mode used)
 
 ## If something doesn’t work
 

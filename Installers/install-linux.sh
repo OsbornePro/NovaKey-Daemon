@@ -97,7 +97,7 @@ echo "[*] Installing config to user profile"
 # Keep a "config copy" (editable location)...
 install -m 0600 -o "$TARGET_USER" -g "$TARGET_USER" "$CONFIG_YAML_SRC" "$USER_CONFIG_DIR/server_config.yaml"
 
-# ...and a "runtime copy" in WorkingDirectory so relative paths resolve and fallback lookup succeeds.
+# ...and a "runtime copy" in WorkingDirectory so relative paths resolve and secondary lookup succeeds.
 install -m 0600 -o "$TARGET_USER" -g "$TARGET_USER" "$CONFIG_YAML_SRC" "$USER_DATA_DIR/server_config.yaml"
 
 # devices.json (optional): do NOT create if absent (daemon will show QR on first start)

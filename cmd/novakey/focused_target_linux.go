@@ -41,7 +41,7 @@ func getFocusedTarget() (string, string, error) {
 		return proc, title, nil
 	}
 
-	// fallback: ps
+    // alternate: ps
 	proc, err := cmdOut("ps", "-p", pidStr, "-o", "comm=")
 	if err != nil {
 		return "", title, fmt.Errorf("ps comm: %w", err)

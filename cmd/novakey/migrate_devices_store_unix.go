@@ -55,7 +55,7 @@ func runMigrateDevicesStore() error {
 		return nil
 	}
 
-	// Parse legacy plaintext devices.json
+	// Parse plaintext devices.json
 	var dc devicesConfigFile
 	if err := json.Unmarshal(data, &dc); err != nil {
 		return fmt.Errorf("devices file is not a sealed wrapper and not valid plaintext json: %w", err)

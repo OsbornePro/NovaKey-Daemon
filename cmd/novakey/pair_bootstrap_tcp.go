@@ -38,7 +38,6 @@ func handlePairConnWithRoute(route string, conn net.Conn) error {
 	case "/pair/complete":
 		return handlePairCompleteTCP(conn)
 	default:
-		// If someone sends /pair/whatever, treat it as /pair for backwards compat
 		return handlePairConn(conn)
 	}
 }

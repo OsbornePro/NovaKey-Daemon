@@ -43,8 +43,8 @@ type ServerConfig struct {
 	ArmConsumeOnInject *bool `json:"arm_consume_on_inject" yaml:"arm_consume_on_inject"`
 
 	// Clipboard policy
-	// - allow_clipboard_when_disarmed: if true, clipboard fallback may be used when blocked by policy/gates
-	// - allow_clipboard_on_inject_failure: if true, clipboard fallback may be used when injection fails after gates pass (Wayland, permissions, etc.)
+    // - allow_clipboard_when_disarmed: if true, clipboard may be used when blocked by policy/gates
+    // - allow_clipboard_on_inject_failure: if true, clipboard may be used when injection fails after gates pass (Wayland, permissions, etc.)
 	AllowClipboardWhenDisarmed    *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
 	AllowClipboardOnInjectFailure *bool `json:"allow_clipboard_on_inject_failure" yaml:"allow_clipboard_on_inject_failure"`
 
@@ -62,8 +62,6 @@ type ServerConfig struct {
 	TwoManEnabled             bool   `json:"two_man_enabled" yaml:"two_man_enabled"`
 	ApproveWindowMs           int    `json:"approve_window_ms" yaml:"approve_window_ms"`
 	ApproveConsumeOnInject    *bool  `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
-	ApproveMagic              string `json:"approve_magic" yaml:"approve_magic"`
-	LegacyApproveMagicEnabled bool   `json:"legacy_approve_magic_enabled" yaml:"legacy_approve_magic_enabled"`
 
 	// Target policy
 	TargetPolicyEnabled bool     `json:"target_policy_enabled" yaml:"target_policy_enabled"`
@@ -213,9 +211,6 @@ func applyDefaults() {
 	if cfg.ApproveConsumeOnInject == nil {
 		v := true
 		cfg.ApproveConsumeOnInject = &v
-	}
-	if cfg.ApproveMagic == "" {
-		cfg.ApproveMagic = "__NOVAKEY_APPROVE__"
 	}
 
 	// Target policy defaults

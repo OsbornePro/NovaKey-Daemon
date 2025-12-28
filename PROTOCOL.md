@@ -1,11 +1,28 @@
 # NovaKey Wire Protocol
 
-NovaKey uses a single TCP listener (`listen_addr`, default `127.0.0.1:60768`) and routes each connection by an initial ASCII line:
+NovaKey uses a single TCP listener (`listen_addr`, default `0.0.0.0:60768`) and routes each connection by an initial ASCII line (**required**):
 
-- `NOVAK/1 /pair\n` — pairing (Pairing Protocol v1)
-- `NOVAK/1 /msg\n`  — encrypted messages (Protocol v3)
+- `NOVAK/1 /pair\n` — pairing (*Pairing Protocol v1*)
+- `NOVAK/1 /msg\n`  — encrypted messages (*Protocol v3*)
 
-If the route line is absent, the connection is treated as `/msg`.
+Connections that do not begin with one of these exact lines are rejected before any cryptographic processing.
+
+### Message Types (Protocol v3)
+
+All `/msg` requests decrypt to a timestamp followed by a **required inner typed message frame (v1)**.
+Exactly one inner message type (1–4) is permitted per request:
+
+| Type | Name    | Description                                                                            |
+| ---- | ------- | -------------------------------------------------------------------------------------- |
+| 1    | Inject  | Injects the secret payload into the currently focused field (subject to policy gates). |
+| 2    | Approve | Opens a short approval window allowing a subsequent Inject (Two-Man Mode).             |
+| 3    | Arm     | Arms the daemon for a limited duration, enabling injection (“push-to-type”).           |
+| 4    | Disarm  | Clears the armed state immediately, blocking further injection.                        |
+
+This table is normative for all NovaKey documentation; other pages must reference this section rather than restating message types.
+
+Messages that do not contain a valid **Inner Message Frame v1** with one of the above types are rejected.
+There is no legacy or untyped message support.
 
 ---
 
@@ -15,8 +32,9 @@ If the route line is absent, the connection is treated as `/msg`.
 - TCP
 - address: `listen_addr`
 
-### Route preface
-The client may begin with:
+### Route preface (required)
+
+The client must begin with exactly one of:
 
 - `NOVAK/1 /pair\n`
 - `NOVAK/1 /msg\n`
@@ -28,7 +46,7 @@ After this line, the remaining bytes are interpreted by the selected route.
 Each TCP connection handles exactly one request:
 
 - `/pair`: one pairing exchange
-- `/msg`: one approve or inject message
+- `/msg`: one typed message (*approve/arm/disarm/inject*)
 
 The server enforces read/write deadlines and closes idle or stalled connections.
 Clients must open a new connection for each request.
@@ -38,7 +56,7 @@ Clients must open a new connection for each request.
 ## 2) Pairing Protocol v1 (`/pair`)
 
 Pairing uses:
-- one-time pairing token (base64 raw URL; `base64.RawURLEncoding`)
+- one-time pairing token (*base64 raw URL;* `base64.RawURLEncoding`)
 - ML-KEM-768
 - HKDF-SHA-256
 - XChaCha20-Poly1305
@@ -47,7 +65,7 @@ A typical QR payload uses a custom URI scheme, for example:
 
 - `novakey://pair?v=4&host=<host>&port=<port>&token=<b64url>&fp=<fp16hex>&exp=<unix>`
 
-(Exact QR payload format is an application-level choice; keep stable once clients depend on it.)
+(*Exact QR payload format is an application-level choice; keep stable once clients depend on it.*)
 
 ### 2.1 Hello (plaintext JSON line)
 
@@ -60,7 +78,7 @@ Rules:
 
 * `op` must be `"hello"`
 * `v` must be `1`
-* token is one-time and expires (server-side TTL)
+* token is one-time and expires (*server-side TTL*)
 
 ### 2.2 Server key (plaintext JSON line)
 
@@ -114,7 +132,7 @@ If `device_id` or `device_key_hex` is empty, the server assigns:
 * `device_id = "ios-" + randHex(8)`
 * `device_key_hex = randHex(32)` (32 bytes)
 
-Server persists device keys and reloads them.
+Server persists device keys and reloads device keys.
 
 ### 2.4 Ack (encrypted)
 
@@ -169,29 +187,38 @@ AAD:
 AAD = payload[0 : K]
 ```
 
-### 3.3 Plaintext inside AEAD
+### 3.3 Plaintext inside AEAD (required)
+
+After decrypting the AEAD ciphertext, the plaintext is:
 
 ```text
 [0..7]   = timestamp (uint64 BE unix seconds)
 [8..end] = inner typed frame (v1)
 ```
 
+Messages that do not contain a valid inner typed frame are rejected.
+
 ### 3.4 Inner typed message frame (v1)
 
 ```text
 [0]   = innerVersion (u8) = 1
-[1]   = innerMsgType (u8) = 1 inject, 2 approve
+[1]   = innerMsgType (u8)
 [2:4] = deviceIDLen (u16 BE)
 [4:8] = payloadLen  (u32 BE)
 [..]  = deviceID bytes (UTF-8)
-[..]  = payload bytes  (UTF-8)
-```
+[..]  = payload bytes
 
 Rules:
 
-* inner deviceID must match outer deviceID
-* msgType=1 inject: payload is the secret string
-* msgType=2 approve: payload may be empty (ignored)
+* inner `deviceID` must match outer `deviceID`
+* `payload` is UTF-8 text (may be empty depending on message type)
+
+Inner `msgType` values:
+
+* `1` = Inject (payload is the secret string)
+* `2` = Approve (payload ignored; may be empty)
+* `3` = Arm (payload optional JSON: `{"ms":15000}`)
+* `4` = Disarm (payload typically empty)
 
 ### 3.5 `/msg` key schedule
 
@@ -204,18 +231,3 @@ Algorithms:
 Key derivation:
 
 * `K = HKDF-SHA256(IKM=kemShared, salt=deviceKey(32), info="NovaKey v3 AEAD key", outLen=32)`
-
----
-
-## 4) Server validation (summary)
-
-* timestamp freshness (skew + max age)
-* replay detection on `(deviceID, nonce)` within a TTL window
-* per-device rate limiting
-* optional arming gate and two-man gate (policy-level)
-
----
-
-## 5) Notes
-
-* Device IDs are sent in plaintext for routing. Do not use sensitive identifiers.

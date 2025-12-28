@@ -163,6 +163,8 @@ func decryptMessageFrame(frame []byte) (deviceID string, msgType uint8, payload 
 	if err != nil {
 		return "", 0, nil, err
 	}
+
+	// plaintext must be: [8-byte timestamp][inner frame v1...]
 	if len(plaintext) < 8 {
 		return "", 0, nil, fmt.Errorf("plaintext too short for timestamp: %d", len(plaintext))
 	}
@@ -173,19 +175,24 @@ func decryptMessageFrame(frame []byte) (deviceID string, msgType uint8, payload 
 	}
 
 	body := plaintext[8:]
-
-	if len(body) >= 1 && body[0] == byte(frameVersionV1) {
-		innerDev, innerType, innerPayload, derr := decodeMessageFrame(body)
-		if derr != nil {
-			return "", 0, nil, fmt.Errorf("invalid inner message frame: %w", derr)
-		}
-		if innerDev != devID {
-			return "", 0, nil, fmt.Errorf("inner deviceID mismatch (outer=%q inner=%q)", devID, innerDev)
-		}
-		return devID, innerType, innerPayload, nil
+	if len(body) < 1 {
+		return "", 0, nil, fmt.Errorf("missing inner message frame (empty body)")
 	}
 
-	return devID, MsgTypeInject, body, nil
+	// HARD REQUIRE: inner message frame v1
+	if body[0] != byte(frameVersionV1) {
+		return "", 0, nil, fmt.Errorf("missing required inner frame v%d (got first_byte=%d)", frameVersionV1, body[0])
+	}
+
+	innerDev, innerType, innerPayload, derr := decodeMessageFrame(body)
+	if derr != nil {
+		return "", 0, nil, fmt.Errorf("invalid inner message frame: %w", derr)
+	}
+	if innerDev != devID {
+		return "", 0, nil, fmt.Errorf("inner deviceID mismatch (outer=%q inner=%q)", devID, innerDev)
+	}
+
+	return devID, innerType, innerPayload, nil
 }
 
 func decryptOuterV3(frame []byte) (string, []byte, []byte, error) {

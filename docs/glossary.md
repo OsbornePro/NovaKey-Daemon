@@ -18,6 +18,6 @@ A policy gate requiring an approve action before injection is allowed in a short
 **Injection**  
 Typing the secret into the currently focused text field on the computer.
 
-**Clipboard fallback**  
+**Clipboard Mode**  
 When injection is blocked, the daemon may copy the secret to clipboard and report success via clipboard status.
 

@@ -9,9 +9,11 @@ When you tap **Send**, NovaKey:
 
 ## Send a secret
 1. Tap a secret
-2. Choose **Send**
-3. Confirm biometric prompt
-4. Watch for a success message:
+2. Tap '**Arm Computer (15s)**' which sends a message to the computer it will receive text to type soon
+3. Tap the secret you wish to send 
+3. Choose **Send**
+4. Confirm biometric prompt
+5. Watch for a success message:
    - **Sent to <Computer>**
    - or **📋 Copied to clipboard on <Computer>** (*when injection is blocked*)
 
@@ -24,12 +26,12 @@ Typical flow:
 - iOS app sends **Approve**
 - daemon opens a short approval window
 - iOS app sends **Inject**
-- daemon injects into the focused field
+- daemon injects into the focused field; if injection is blocked and policy allows, the daemon may copy the secret to clipboard and report this explicitly 
 
-If approval is required but missing, you’ll see a “Needs approval” style error.
+If approval is required but missing, you’ll see a “*Needs approval*” style error.
 
-## Clipboard fallback behavior
-On some systems (or when policies deny injection), the daemon may copy the secret to clipboard instead of typing it.
+## Clipboard Mode Behavior
+On some systems (*or when policies deny injection*), the daemon may copy the secret to clipboard instead of typing it.
 
 When this happens, NovaKey treats it as a **successful send**, but indicates it differently:
 - “📋 Copied to clipboard on <Computer>”

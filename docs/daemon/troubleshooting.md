@@ -3,7 +3,7 @@
 ## “Nothing types” / injection fails
 ### Linux
 - Wayland may block injection depending on compositor and security settings.
-- Try X11, or rely on clipboard fallback where appropriate.
+- Try X11, or rely on clipboard path where appropriate.
 
 ### macOS
 - Accessibility permissions are often required for injection.
@@ -12,7 +12,7 @@
 ### Windows
 - Some UAC contexts and secure desktop prompts can block injection.
 
-## Clipboard fallback happened (status okClipboard)
+## Clipboard mode happened (status okClipboard)
 This means:
 - injection was blocked or denied
 - **but** the daemon successfully copied the secret to clipboard

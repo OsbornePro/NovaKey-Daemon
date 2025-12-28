@@ -2,11 +2,11 @@
 
 NovaKey is a secure, post-quantum–protected secret injection system:
 
-- Secrets live **only** on your iPhone (iOS Keychain).
+- Secrets live **only** on your iPhone (*iOS Keychain*).
 - Secrets are transmitted **on demand** to a trusted computer using mutual authentication,
   replay protection, and modern cryptography.
 - The computer runs **NovaKey-Daemon**, which injects into the currently focused field
-  (and may fall back to clipboard in constrained environments).
+  (*and may fall back to clipboard in constrained environments*).
 
 ## NovaKey iOS App
 
@@ -47,8 +47,8 @@ NovaKey is a secure, post-quantum–protected secret injection system:
 - Runs on your computer
 - Accepts secrets only from paired devices
 - Optional safety gates:
-  - arming (“push-to-type”)
-  - two-man approval (approve then inject)
+  - arming (*“push-to-type”*)
+  - two-man approval (*approve then inject*)
   - target allow/deny policy
-- Injects into the active application (clipboard fallback when blocked)
+- Injects into the active application (*injects into the focused field; if injection is blocked and policy allows, the daemon may copy the secret to clipboard and report this explicitly*)
 

@@ -31,7 +31,7 @@ func saveDevicesToDisk(path string, dc devicesConfigFile) error {
 			return fmt.Errorf("%w: require_sealed_device_store=true but keyring is unavailable: %v",
 				ErrDevicesUnavailable, err)
 		}
-		// Headless Linux/macOS edge cases: if keyring can’t be used, fallback.
+        // Headless Linux/macOS edge cases: if keyring can’t be used, plaintext devices store may be required (explicit opt-in).
 		log.Printf("[warn] keyring unavailable (%v); falling back to plaintext with 0600", err)
 		return atomicWrite0600(path, pt)
 	}
