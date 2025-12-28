@@ -66,25 +66,27 @@ func handleMsgConn(conn net.Conn) error {
 
 	// v3 outer frame -> typed inner message frame.
 	deviceID, msgType, payload, err := decryptMessageFrame(buf)
-    // --- ARM message ---
-    if msgType == MsgTypeArm {
-        if !cfg.ArmEnabled {
-            respond(StatusBadRequest, "arm disabled")
-            return nil
-        }
+    // --- ARM control message ---
+	if msgType == MsgTypeArm {
+    	// payload is optional JSON: {"ms":15000}
+    	ms := cfg.ArmDurationMs
+    	if len(payload) > 0 {
+        	var obj struct{ MS int `json:"ms"` }
+        	if err := json.Unmarshal(payload, &obj); err == nil && obj.MS > 0 {
+            	ms = obj.MS
+        	}
+    	}
+    	armGate.ArmFor(time.Duration(ms) * time.Millisecond)
+    	respond(StatusOK, fmt.Sprintf("armed_for_ms=%d", ms))
+	    return nil
+	}
 
-        // Duration: default from config, override allowed.
-        ms := cfg.ArmDurationMs
-        if len(payload) > 0 {
-            if n, err := strconv.Atoi(string(payload)); err == nil && n > 0 && n <= 300000 {
-                ms = n // cap at 5 min for safety
-            }
-        }
-
-        armGate.ArmFor(time.Duration(ms) * time.Millisecond)
-        respond(StatusOK, fmt.Sprintf("armed_for_ms=%d", ms))
-        return nil
-    }
+	// --- DISARM control message ---
+	if msgType == MsgTypeDisarm {
+    	armGate.Disarm()
+    	respond(StatusOK, "disarmed")
+    	return nil
+	}
 
 	if err != nil {
 		logReqf(reqID, "decryptMessageFrame failed: %v", err)
