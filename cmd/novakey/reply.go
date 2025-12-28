@@ -10,6 +10,7 @@ import (
 const replyVersion = 1
 
 type ReplyStage string
+
 const (
 	StageMsg     ReplyStage = "msg"
 	StageInject  ReplyStage = "inject"
@@ -19,6 +20,7 @@ const (
 )
 
 type ReplyReason string
+
 const (
 	ReasonOK                      ReplyReason = "ok"
 	ReasonClipboardFallback        ReplyReason = "clipboard_fallback"
@@ -35,19 +37,19 @@ const (
 	ReasonInternal     ReplyReason = "internal_error"
 )
 
-// Production: all machine-readable fields always present.
-// msg can be empty if you want, but keep it for UX.
 type ServerReply struct {
-	V      int        `json:"v"`      // schema version (replyVersion)
-	Status uint8      `json:"status"` // RespStatus byte value
-	Stage  ReplyStage `json:"stage"`
+	V      int         `json:"v"`
+	Status uint8       `json:"status"`
+	Stage  ReplyStage  `json:"stage"`
 	Reason ReplyReason `json:"reason"`
-	Msg    string     `json:"msg"`
-	TsUnix int64      `json:"ts_unix"` // audit/debug, optional but useful
-	ReqID  uint64     `json:"req_id"`  // correlate logs + client
+	Msg    string      `json:"msg"`
+	TsUnix int64       `json:"ts_unix"`
+	ReqID  uint64      `json:"req_id"`
 }
 
+// Always return ONE JSON line terminated by '\n'
 func writeReplyLine(conn net.Conn, r ServerReply) {
+	_ = conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
 	b, _ := json.Marshal(r)
 	b = append(b, '\n')
 	_, _ = conn.Write(b)
