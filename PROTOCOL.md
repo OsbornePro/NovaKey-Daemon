@@ -108,7 +108,7 @@ Client sends:
 
 Key derivation:
 
-* `K = HKDF-SHA256(IKM=ss, salt=tokenBytes, info="NovaKey v4 Pair AEAD", outLen=32)`
+* `K = HKDF-SHA256(IKM=ss, salt=tokenBytes, info="NovaKey v3 Pair AEAD", outLen=32)`
 
 AEAD:
 
