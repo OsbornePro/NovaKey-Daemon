@@ -28,6 +28,21 @@ $PairPng      = Join-Path -Path $InstallDir -ChildPath "novakey-pair.png"
 
 $FirewallRule = "NovaKey TCP Listener (Per-User)"
 $ListenPort   = 60768
+Function Get-EffectiveLogonIdentity {
+    # Returns: @{ Name = "AzureAD\User" or "DOMAIN\User" or "MACHINE\User"; Sid = "S-1-..." }
+    $Name = (& whoami 2>$null).Trim()
+    If (-not $Name) {
+        $Name = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    }
+    $Sid = $Null
+    Try {
+        $SidLine = (& whoami /user 2>$null | Select-String -Pattern 'S-\d-\d+-.+').Line
+        If ($SidLine) {
+            $Sid = ($SidLine -split '\s+') | Where-Object -FilterScript { $_ -like 'S-*' } | Select-Object -First 1
+        }
+    } Catch {}
+    Return @{ Name = $Name; Sid = $Sid }
+}
 
 Write-Output -InputObject "[*] Installing NovaKey (Windows) as a per-user Scheduled Task"
 
@@ -58,9 +73,24 @@ If (Test-Path -Path $SourceDevices) {
 # If you want "fresh install" behavior, uncomment the next line:
 # If (Test-Path -Path $ServerKeys) { Remove-Item -Force $ServerKeys }
 # Lock down InstallDir to the current user (and SYSTEM, Administrators)
+# Lock down InstallDir to the current user (and SYSTEM, Administrators)
+$Ident = Get-EffectiveLogonIdentity
+$EffectiveUser = $Ident.Name
+$EffectiveSid  = $Ident.Sid
+
+Write-Information -MessageData "[*] ACL identity  : $EffectiveUser"
+If ($EffectiveSid) { Write-Information -MessageData "[*] ACL SID       : $EffectiveSid" }
 icacls $InstallDir /inheritance:r | Out-Null
-icacls $InstallDir /grant:r"$($CurrentUserFull):(OI)(CI)F" "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" | Out-Null
+icacls $InstallDir /grant:r "$($EffectiveUser):(OI)(CI)F" "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" | Out-Null
+If ($EffectiveUser -like "AzureAD\*") {
+    If ($EffectiveSid) {
+        icacls $InstallDir /grant "*$($EffectiveSid):(OI)(CI)F" | Out-Null
+    } Else {
+        Write-Information -MessageData "[!] AzureAD user detected but SID not found via whoami /user"
+    }
+}
 icacls $InstallDir /remove "Users" "Authenticated Users" "Everyone" 2>$null | Out-Null
+icacls $InstallDir /T /C | Out-Null
 
 # Task action: WorkingDirectory MUST be InstallDir so relative paths resolve (devices.json, server_keys.json, ./logs, arm_token.txt)
 $Action    = New-ScheduledTaskAction -Execute $TargetExe -Argument "--config `"$ConfigPath`"" -WorkingDirectory $InstallDir
