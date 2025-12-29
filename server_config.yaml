@@ -42,10 +42,12 @@ allowed_process_names:
   - textedit
   - gedit
   - kate
+  - vim
+  - nano
 allowed_window_titles: []
 denied_process_names: []
 denied_window_titles: []
-arm_enabled: false
+arm_enabled: true
 arm_duration_ms: 20000
 arm_consume_on_inject: true
 allow_clipboard_when_disarmed: false
