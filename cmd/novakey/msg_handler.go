@@ -112,7 +112,7 @@ func handleMsgConn(conn net.Conn) error {
 
 	// ---- INJECT path ----
 	password := string(payload)
-	logReqf(reqID, "decrypted password payload from device=%q: %s", deviceID, safePreview(password))
+    logReqf(reqID, "decrypted payload from device=%q (len=%d)", deviceID, len(payload))
 
 	// Unsafe-text filter
 	if err := validateInjectText(password); err != nil {

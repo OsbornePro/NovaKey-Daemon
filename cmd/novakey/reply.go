@@ -47,12 +47,27 @@ type ServerReply struct {
 	ReqID  uint64      `json:"req_id"`
 }
 
-// Always return ONE JSON line terminated by '\n'
 func writeReplyLine(conn net.Conn, r ServerReply) {
-	_ = conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
-	b, _ := json.Marshal(r)
-	b = append(b, '\n')
-	_, _ = conn.Write(b)
+	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	defer func() { _ = conn.SetWriteDeadline(time.Time{}) }()
+
+	b, err := json.Marshal(r)
+	if err != nil {
+		b = []byte(`{"v":1,"status":127,"stage":"msg","reason":"internal_error","msg":"marshal failed","ts_unix":0,"req_id":0}` + "\n")
+	} else {
+		b = append(b, '\n')
+	}
+
+	for len(b) > 0 {
+		n, err := conn.Write(b)
+		if err != nil {
+			return
+		}
+		if n == 0 {
+			return
+		}
+		b = b[n:]
+	}
 }
 
 func makeReply(reqID uint64, st RespStatus, stage ReplyStage, reason ReplyReason, msg string) ServerReply {
@@ -66,3 +81,4 @@ func makeReply(reqID uint64, st RespStatus, stage ReplyStage, reason ReplyReason
 		ReqID:  reqID,
 	}
 }
+
