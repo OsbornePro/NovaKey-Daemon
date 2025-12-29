@@ -125,15 +125,6 @@ If ($IsAdmin) {
             -Action Allow `
             -Profile Any | Out-Null
     }
-    If (-not (Get-NetFirewallRule -DisplayName "NovaKey TCP Pairing (Per-User)" -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule `
-            -DisplayName "NovaKey TCP Pairing (Per-User)" `
-            -Direction Inbound `
-            -Protocol TCP `
-            -LocalPort ($ListenPort + 2) `
-            -Action Allow `
-            -Profile Any | Out-Null
-    }
 } Else {
     Write-Information -MessageData "[*] Skipping firewall rule (not running as Administrator)"
 }
