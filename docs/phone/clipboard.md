@@ -1,9 +1,14 @@
-# Clipboard Handling (Pro Feature)
+# Clipboard Handling
 
-Clipboard access is available **only in the Pro tier** of NovaKey.
+## Local (Phone) Clipboard
+NovaKey allows secrets to be copied to the clipboard on the phone after explicit user action.
+This is available in both Free and Pro tiers and always requires authentication.
+
+## Remote (Computer) Clipboard Injection
+Injecting secrets directly into the computer’s clipboard via NovaKey-Daemon is a **Pro feature**.
 NovaKey allows secrets to be copied to the clipboard when explicitly requested.
 
-This restriction is intentional and designed to reduce the risk of accidental secret exposure via system-wide clipboard access.
+This restriction reduces the risk of unintended exposure on desktop systems where clipboard contents may persist or be accessed by other applications.
 
 ## Clipboard behavior (Pro only)
 - Secrets may be copied only after explicit user action

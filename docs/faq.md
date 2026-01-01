@@ -15,7 +15,7 @@ No. Secrets remain local to your devices.
 The Pro unlock is a one-time, non-consumable purchase that:
 - Removes the 1-listener limit
 - Removes the 1-secret limit
-- Enables clipboard access
+- Enables remote clipboard injection on paired computers
 
 ## Is Pro a subscription?
 No. Pro is a one-time purchase.
