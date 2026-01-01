@@ -1,23 +1,23 @@
 # Clipboard Handling
 
-## Local (Phone) Clipboard
-NovaKey allows secrets to be copied to the clipboard on the phone after explicit user action.
-This is available in both Free and Pro tiers and always requires authentication.
+NovaKey supports clipboard usage in two places:
 
-## Remote (Computer) Clipboard Injection
-Injecting secrets directly into the computer’s clipboard via NovaKey-Daemon is a **Pro feature**.
-NovaKey allows secrets to be copied to the clipboard when explicitly requested.
+## Phone Clipboard (iOS)
+You can copy a secret to the clipboard on the phone after explicit user action.
+- Clipboard contents auto-clear after a configurable timeout (if enabled)
+- Clipboard may be cleared when the app moves to background (if enabled)
+- Copying requires user authentication
 
-This restriction reduces the risk of unintended exposure on desktop systems where clipboard contents may persist or be accessed by other applications.
+## Computer Clipboard (NovaKey-Daemon)
+On supported systems, NovaKey-Daemon may place the secret into the computer’s clipboard as part of delivery.
 
-## Clipboard behavior (Pro only)
+Clipboard support is available in both Free and Pro tiers.
+
+## Clipboard behavior
 - Secrets may be copied only after explicit user action
 - Clipboard contents auto-clear after a configurable timeout
 - Clipboard is cleared when the app moves to background (if enabled)
 - Clipboard access always requires biometric or device authentication
-
-Free-tier users will see a clear prompt explaining that clipboard access requires the Pro unlock.
-Clipboard is local and intentionally constrained.
 
 ## Copying a secret
 When you copy a secret:

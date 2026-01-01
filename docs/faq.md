@@ -12,10 +12,9 @@ Yes. NovaKey supports:
 No. Secrets remain local to your devices.
 
 ## What does Pro unlock?
-The Pro unlock is a one-time, non-consumable purchase that:
+The Pro unlock is a one-time, non-consumable purchase that removes Free-tier limits:
 - Removes the 1-listener limit
 - Removes the 1-secret limit
-- Enables remote clipboard injection on paired computers
 
 ## Is Pro a subscription?
 No. Pro is a one-time purchase.

@@ -44,9 +44,9 @@ Typical flow:
 
 If approval is required but missing, you’ll see a “*Needs approval*” style error.
 
-i## Clipboard injection
-On supported systems, NovaKey-Daemon can inject secrets directly into the computer’s clipboard.
-This capability is available only in the Pro tier.
+## Clipboard injection
+Depending on the target system and configuration, NovaKey-Daemon may deliver the secret by injecting it into the computer’s clipboard.
+This behavior is available in both Free and Pro tiers.
 
 ## Clipboard Mode Behavior
 On some systems (*or when policies deny injection*), the daemon may copy the secret to clipboard instead of typing it.
