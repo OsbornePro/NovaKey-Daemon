@@ -1,0 +1,5 @@
+.md-header__button.md-logo img {
+  height: 32px; /* tweak 24–36 */
+  width: auto;
+}
+

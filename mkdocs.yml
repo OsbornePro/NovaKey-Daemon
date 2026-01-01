@@ -3,6 +3,8 @@ site_description: NovaKey iOS app + NovaKey-Daemon user documentation
 
 theme:
   name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
   features:
     - navigation.instant
     - navigation.tracking
@@ -62,3 +64,5 @@ nav:
   - FAQ: faq.md
   - Glossary: glossary.md
 
+extra_css:
+  - stylesheets/extra.css
