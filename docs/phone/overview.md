@@ -19,7 +19,7 @@ NovaKey offers a free tier and a one-time Pro unlock.
 
 When a free-tier limit is reached, NovaKey shows a clear alert explaining the restriction and offering the Pro unlock.
 
-NovaKey (iOS) is the “vault and control surface”:
+NovaKey (iOS) acts as the secure vault and control surface:
 
 - Secrets are stored **only on your phone** (iOS Keychain).
 - Sending/copying requires **Face ID / passcode**.
