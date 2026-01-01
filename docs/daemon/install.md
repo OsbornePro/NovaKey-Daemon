@@ -9,8 +9,8 @@
 
 ### Uninstall Scripts
 If you have used the install script to install your NovaKey-Daemon instance you can utilize the uninstall scripts to remove it or perform a re-freshed installation.
-The uninstall scripts are execute the same as the install scripts are below. 
-The difference being you would run `./Installers/uninstall-macos.sh` to uninstall instead of `./Installers/install-macos.sh` to install.
+The uninstall scripts are executed to undo what the install scripts below do. 
+The difference in execution being you would run `./Installers/uninstall-macos.sh` to uninstall instead of `./Installers/install-macos.sh` to install.
 
 ### 0) Build or download a binary
 
