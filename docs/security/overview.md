@@ -1,6 +1,14 @@
-# Security Overview (High level)
+# Security Overview
 
 NovaKey is designed around a few core safety principles:
+
+## Key principles
+- Secrets are never displayed after creation
+- Secrets are never logged
+- All communication is encrypted
+- Devices must be explicitly paired
+
+NovaKey does not rely on cloud infrastructure.
 
 ## Secrets stay on the phone
 - Secrets are stored only in the iOS Keychain.

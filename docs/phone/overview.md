@@ -1,5 +1,24 @@
-# Phone App Overview (iOS)
+# NovaKey iOS App Overview
 
+The NovaKey iOS app is responsible for:
+- Storing secrets securely on-device
+- Managing trusted listeners (computers)
+- Sending secrets over an encrypted channel
+- Providing accessibility-friendly interactions
+
+## Free vs Pro
+NovaKey offers a free tier and a one-time Pro unlock.
+
+| Feature | Free | Pro |
+|------|------|-----|
+| Listeners | 1 | Unlimited |
+| Secrets | 1 | Unlimited |
+| Clipboard Copy | No | Yes |
+| Restore Purchases | N/A | Yes |
+
+Clipboard access is intentionally restricted to the Pro tier to reduce the risk of accidental disclosure of sensitive data.
+When a free-tier limit is reached, NovaKey shows a clear alert explaining the restriction and offering the Pro unlock.  
+  
 NovaKey (iOS) is the “vault and control surface”:
 
 - Secrets are stored **only on your phone** (iOS Keychain).

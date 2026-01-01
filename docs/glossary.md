@@ -1,13 +1,21 @@
 # Glossary
 
 **Listener**  
+A paired computer running NovaKey-Daemon.
 A saved “computer target” (host/IP + port + friendly name) in the iOS app.
+
+**Secret**  
+Sensitive data stored securely in the NovaKey app.
+
+**Pairing**  
+The process of establishing cryptographic trust between devices.
+A one-time trust bootstrap that establishes mutual authentication and keying material.
+
+**Pro Unlock**  
+A one-time purchase that removes Free-tier limits.
 
 **Send Target**  
 The Listener marked as default destination for sending secrets.
-
-**Pairing**  
-A one-time trust bootstrap that establishes mutual authentication and keying material.
 
 **Arming**  
 A local “push-to-type” gate on the daemon: injection is blocked unless armed.

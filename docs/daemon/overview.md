@@ -1,7 +1,14 @@
 # NovaKey-Daemon Overview
 
-NovaKey-Daemon is a cross-platform Go agent that receives authenticated secrets
-from a trusted device and injects them into the currently focused text field.
+NovaKey-Daemon is a cross-platform Go agent that receives authenticated secrets from a trusted device and injects them into the currently focused text field.
+NovaKey-Daemon runs on your computer and receives secrets from the phone.
+
+It is designed to:
+- Accept connections only from paired devices
+- Reject replayed or malformed messages
+- Never store secrets longer than required
+
+The daemon does not expose a web interface.
 
 It’s designed for cases where you don’t want to type high-value secrets on your desktop keyboard:
 - the secret lives on your phone

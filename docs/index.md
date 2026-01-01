@@ -1,4 +1,18 @@
-# NovaKey Documentation
+# NovaKey Apps
+
+NovaKey is a secure secret delivery system designed to send sensitive data from your phone to a trusted computer **without exposing secrets on the screen**.
+
+NovaKey consists of:
+- **NovaKey iOS App** – stores secrets locally and sends them securely
+- **NovaKey-Daemon** – runs on the target computer and receives secrets
+
+NovaKey is designed with:
+- Strong cryptography
+- Minimal attack surface
+- Accessibility-first UI
+- Clear free vs pro feature boundaries
+
+Secrets are never displayed after saving and are only transmitted to explicitly paired devices.
 
 NovaKey is a secure, post-quantum–protected secret injection system:
 

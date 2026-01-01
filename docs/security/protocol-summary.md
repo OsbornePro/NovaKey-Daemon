@@ -1,6 +1,19 @@
-# Protocol Summary (User-friendly)
+# Protocol Summary
 
 This page summarizes the daemon’s `PROTOCOL.md` in a way that helps troubleshoot and understand behavior.
+
+NovaKey uses a custom secure protocol designed for:
+- Mutual authentication
+- Replay protection
+- Forward secrecy
+
+Each message includes:
+- Nonce
+- Timestamp
+- Device identifiers
+- Cryptographic authentication
+
+Invalid or replayed messages are rejected.
 
 NovaKey uses one TCP listener and routes each connection by a one-line preface:
 - `NOVAK/1 /pair\n` for pairing

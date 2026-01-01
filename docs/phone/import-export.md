@@ -1,7 +1,18 @@
-# Vault Import & Export
+# Vault Import and Export
 
 NovaKey supports **vault backups** as JSON files.  
 Vaults may be exported with **no protection** or with **password-based encryption**.
+NovaKey allows secure export and import of secrets for backup or migration.
+
+## Export options
+- Password-protected archive
+- Biometric-protected archive
+
+## Import behavior
+- Imported secrets are validated before storage
+- Existing secrets are not overwritten silently
+
+Accessibility announcements confirm successful imports or errors.
 
 > Treat vault files as sensitive. Even encrypted vaults should be stored carefully.
 

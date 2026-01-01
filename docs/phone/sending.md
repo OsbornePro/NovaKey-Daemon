@@ -1,4 +1,18 @@
-# Sending Secrets to a Computer
+# Sending Secrets
+
+Secrets can be sent to a paired computer when needed.
+
+## Sending flow
+1. Select a secret
+2. Choose Send
+3. NovaKey authenticates the user
+4. Secret is transmitted securely
+5. The daemon injects or consumes the secret
+
+## Optional approval
+Some systems may require an approval step on the computer before injection.
+
+NovaKey provides both visual and VoiceOver feedback for success or failure.
 
 ## How sending works
 When you tap **Send**, NovaKey:  

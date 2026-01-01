@@ -1,5 +1,25 @@
 # FAQ
 
+## Is NovaKey accessible?
+Yes. NovaKey supports:
+- VoiceOver
+- Voice Control
+- Dynamic Type
+- Reduced Motion
+- Non-color-only indicators
+
+## Does NovaKey sync secrets?
+No. Secrets remain local to your devices.
+
+## What does Pro unlock?
+The Pro unlock is a one-time, non-consumable purchase that:
+- Removes the 1-listener limit
+- Removes the 1-secret limit
+- Enables clipboard access
+
+## Is Pro a subscription?
+No. Pro is a one-time purchase.
+
 ## Why can’t I view secrets after saving?
 Because the iOS app is designed to avoid “screen exposure” of secrets after capture. Secrets live in Keychain; you can copy or send them with authentication.
 

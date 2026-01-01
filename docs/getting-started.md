@@ -1,5 +1,19 @@
 # Getting Started
 
+## What you need
+- An iPhone running the NovaKey iOS app
+- A computer running NovaKey-Daemon
+- A local network connection (or trusted remote connection)
+
+## High-level flow
+1. Install NovaKey-Daemon on your computer
+2. Install NovaKey on your iPhone
+3. Pair the phone with the computer
+4. Add secrets on the phone
+5. Send secrets securely when needed
+
+NovaKey does not sync secrets via cloud services. All data remains local to your devices.  
+  
 This is the fastest path to “send a secret from iPhone → computer”.
 
 ## On the phone (quick tour)

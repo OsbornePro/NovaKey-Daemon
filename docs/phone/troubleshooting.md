@@ -2,7 +2,21 @@
 
 This page covers common issues when using the **NovaKey iOS app** and how to resolve them quickly.
 
-If something feels “locked down,” that is usually intentional for safety.
+## Cannot add more secrets or listeners
+You are likely using the Free tier.
+
+NovaKey will:
+- Show a clear alert explaining the limit
+- Offer the Pro unlock
+- Continue functioning normally otherwise
+
+## Pairing issues
+- Ensure daemon is running
+- Ensure network connectivity
+- Re-pair if cryptographic validation fails
+
+All critical errors are announced via VoiceOver when enabled.
+If something feels “*locked down*”, that is usually intentional for safety.
 
 ---
 
