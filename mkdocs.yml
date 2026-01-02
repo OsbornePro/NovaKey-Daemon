@@ -44,6 +44,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Accessibility: accessibility.md
+  - Privacy Policy: privacy.md
   - Phone App:
       - Overview: phone/overview.md
       - Pairing: phone/pairing.md
