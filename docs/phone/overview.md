@@ -31,10 +31,10 @@ NovaKey (iOS) acts as the secure vault and control surface:
 ![Main](../assets/screenshots/novakey-main-page.PNG)
 
 ### Settings menu
-![Settings gear options](../assets/screenshots/novakey-settings-gear-options.PNG)
+![Settings gear options](../assets/screenshots/NovaKeyAppFree-GearOptions.png)
 
 ### Settings page
-![Settings](../assets/screenshots/novakey-settings.PNG)
+![Settings](../assets/screenshots/NovaKeyAppFree-Settings.png)
 
 
 ## Main concepts
