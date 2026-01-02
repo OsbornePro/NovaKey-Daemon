@@ -66,3 +66,4 @@ NovaKey is a secure, post-quantum–protected secret injection system:
   - target allow/deny policy
 - Injects into the active application (*injects into the focused field; if injection is blocked and policy allows, the daemon may copy the secret to clipboard and report this explicitly*)
 
+NovaKey is open source. See **Project Links** for repositories and source code.
