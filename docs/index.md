@@ -22,7 +22,7 @@ NovaKey is a secure, post-quantum–protected secret injection system:
 - The computer runs **NovaKey-Daemon**, which injects into the currently focused field
   (*and may fall back to clipboard in constrained environments*).
 
-## NovaKey PHone App
+## NovaKey Phone App
 
 ![NovaKey main page](assets/screenshots/novakey-main-page.PNG)
 
