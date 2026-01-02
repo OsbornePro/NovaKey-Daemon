@@ -1,31 +1,28 @@
 # Glossary
 
-**Listener**  
-A paired computer running NovaKey-Daemon.
-A saved “computer target” (host/IP + port + friendly name) in the iOS app.
+**Listener**
+A saved computer target in the NovaKey app. A Listener represents a paired computer running NovaKey-Daemon and includes its host or IP address, port, and a friendly name.
 
-**Secret**  
-Sensitive data stored securely in the NovaKey app.
+**Secret**
+Sensitive data stored securely in the NovaKey app, such as a password or token.
 
-**Pairing**  
-The process of establishing cryptographic trust between devices.
-A one-time trust bootstrap that establishes mutual authentication and keying material.
+**Pairing**
+The one-time process that securely connects your phone and computer. Pairing establishes mutual trust and enables encrypted, authenticated communication between the devices.
 
-**Pro Unlock**  
-A one-time purchase that removes Free-tier limits.
+**Pro Unlock**
+A one-time purchase that removes Free-tier limits in the NovaKey app.
 
-**Send Target**  
-The Listener marked as default destination for sending secrets.
+**Send Target**
+The Listener selected as the default destination when sending secrets.
 
-**Arming**  
-A local “push-to-type” gate on the daemon: injection is blocked unless armed.
+**Arming**
+A temporary safety gate on the computer that allows secrets to be received for a short time window. If the computer is not armed, injection is blocked.
 
-**Two-Man Mode**  
-A policy gate requiring an approve action before injection is allowed in a short window.
+**Two-Man Mode**
+A security option that requires an explicit approval on the computer before a secret can be injected, within a short time window.
 
-**Injection**  
-Typing the secret into the currently focused text field on the computer.
+**Injection**
+Typing the secret directly into the currently focused text field on the computer.
 
-**Clipboard Mode**  
-When injection is blocked, the daemon may copy the secret to clipboard and report success via clipboard status.
-
+**Clipboard Mode**
+A fallback delivery method where the daemon copies the secret to the computer’s clipboard instead of typing it, and reports this clearly to the user.
