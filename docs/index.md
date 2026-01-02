@@ -3,7 +3,7 @@
 NovaKey is a secure secret delivery system designed to send sensitive data from your phone to a trusted computer **without exposing secrets on the screen**.
 
 NovaKey consists of:
-- **NovaKey iOS App** – stores secrets locally and sends them securely
+- **NovaKey Phone App** – stores secrets locally and sends them securely
 - **NovaKey-Daemon** – runs on the target computer and receives secrets
 
 NovaKey is designed with:
@@ -16,13 +16,13 @@ Secrets are never displayed after saving and are only transmitted to explicitly 
 
 NovaKey is a secure, post-quantum–protected secret injection system:
 
-- Secrets live **only** on your iPhone (*iOS Keychain*).
+- Secrets live **only** on your phone (*iOS Keychain or KeyStore*).
 - Secrets are transmitted **on demand** to a trusted computer using mutual authentication,
   replay protection, and modern cryptography.
 - The computer runs **NovaKey-Daemon**, which injects into the currently focused field
   (*and may fall back to clipboard in constrained environments*).
 
-## NovaKey iOS App
+## NovaKey PHone App
 
 ![NovaKey main page](assets/screenshots/novakey-main-page.PNG)
 
@@ -31,7 +31,7 @@ NovaKey is a secure, post-quantum–protected secret injection system:
 1. Install and run NovaKey-Daemon  
    → See **NovaKey-Daemon → Install**
 
-2. Add a Listener in the iOS app  
+2. Add a Listener in the NovaKey Phone app  
    → See **Phone App → Pairing**
 
 3. Pair via QR  
@@ -53,7 +53,7 @@ NovaKey is a secure, post-quantum–protected secret injection system:
 ## Architecture overview
 
 ### iOS App
-- Stores secrets in the iOS Keychain
+- Stores secrets in the iOS Keychain or Android KeyStore
 - Requires Face ID / passcode to copy or send
 - Never displays secrets after saving
 
