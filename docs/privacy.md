@@ -2,54 +2,42 @@
 
 **Effective date:** January 2026
 
-NovaKey is designed to minimize data collection and maximize user privacy. This policy explains what data NovaKey does and does not collect, and how data is handled on your devices.
+NovaKey is designed to operate without collecting personal data. This Privacy Policy explains how NovaKey handles information on your devices and how your privacy is protected.
 
 ---
 
-## Overview
+## Data Collection Summary
 
-NovaKey is a local-first application for securely storing and sending secrets between your phone and your own computers.
+**NovaKey does not collect any personal data.**
 
-- NovaKey does **not** require an account
-- NovaKey does **not** use cloud storage
-- NovaKey does **not** track users
-- NovaKey does **not** sell or share data
+Specifically:
+- No account information is required
+- No analytics or telemetry are collected
+- No advertising identifiers are used
+- No location data is accessed
+- No usage tracking is performed
+- No data is transmitted to NovaKey-controlled servers
 
-All sensitive data remains under your control.
-
----
-
-## Data We Do Not Collect
-
-NovaKey does **not** collect, store, or transmit:
-
-- Names, email addresses, or account information
-- Analytics or telemetry
-- Advertising identifiers
-- Location data
-- Usage tracking data
-- Crash reports tied to personal identity
-
-NovaKey does not use third-party analytics or advertising SDKs.
+All sensitive data remains under your control and on your devices.
 
 ---
 
-## Data Stored on Your Device
+## Data Stored Locally on Your Device
 
 ### Secrets
 Secrets you add to NovaKey:
-- Are stored **locally on your device**
+- Are stored locally on your device
 - Are protected by the iOS Keychain
-- Are never displayed again after saving
-- Require device authentication (Face ID / Touch ID / passcode) to access
+- Are never displayed after being saved
+- Require Face ID, Touch ID, or device passcode to access
 
-NovaKey cannot read your secrets without your explicit authentication.
+NovaKey cannot access your secrets without your explicit authentication.
 
 ### Pairing Information
-When you pair a computer with NovaKey:
+When you pair NovaKey with a computer:
 - Cryptographic pairing material is stored locally
 - Pairing data is used only to authenticate your devices
-- Pairing data is never shared externally
+- Pairing data is never shared or transmitted to third parties
 
 ---
 
@@ -57,16 +45,15 @@ When you pair a computer with NovaKey:
 
 ### Phone Clipboard
 When you copy a secret:
-- The secret is placed on the **local iOS clipboard**
-- Clipboard contents can be configured to auto-clear
+- The secret is placed on the local iOS clipboard
+- Clipboard use requires explicit user action
+- Clipboard contents may auto-clear after a configurable timeout
 - Clipboard may be cleared when the app moves to the background (if enabled)
-
-Clipboard use always requires explicit user action and authentication.
 
 ### Computer Clipboard (NovaKey-Daemon)
 On supported systems, NovaKey-Daemon may inject a secret into the computer’s clipboard as part of delivery.
 
-NovaKey does not monitor or read clipboard contents beyond the requested operation.
+NovaKey does not monitor, read, or transmit clipboard contents beyond the requested operation.
 
 ---
 
@@ -74,44 +61,26 @@ NovaKey does not monitor or read clipboard contents beyond the requested operati
 
 NovaKey communicates only with:
 - Computers you explicitly pair
-- Over encrypted connections
-- Using cryptographic authentication
+- Over encrypted, authenticated connections
 
-NovaKey does **not** communicate with NovaKey-controlled servers.
+NovaKey does not communicate with analytics, advertising, or tracking services.
 
 ---
 
-## Accessibility Permissions
+## Accessibility and Input Permissions
 
 On some platforms, NovaKey-Daemon may request:
 - Accessibility permissions
 - Input Monitoring permissions
 
-These permissions are required only to perform explicit actions requested by you (such as securely injecting secrets). NovaKey does not monitor keystrokes or user activity outside of those actions.
-
----
-
-## Third-Party Services
-
-NovaKey does not integrate with:
-- Advertising networks
-- Analytics providers
-- Data brokers
-
-The app relies only on system-provided services (such as iOS Keychain and biometric authentication).
-
----
-
-## Children’s Privacy
-
-NovaKey does not knowingly collect personal data from children. The app contains no content targeted specifically at children and does not require personal information to function.
+These permissions are required only to perform explicit actions you request (such as securely injecting secrets). NovaKey does not monitor general user activity or keystrokes.
 
 ---
 
 ## Data Deletion
 
 You can delete your data at any time by:
-- Removing secrets from the app
+- Removing secrets within the app
 - Removing paired listeners
 - Uninstalling the app
 
@@ -119,16 +88,22 @@ Uninstalling NovaKey removes all locally stored data.
 
 ---
 
+## Children’s Privacy
+
+NovaKey does not knowingly collect personal data from children and does not include content targeted specifically at children.
+
+---
+
 ## Changes to This Policy
 
-If this Privacy Policy changes, the updated version will be published with a new effective date.
+If NovaKey’s data practices change, this Privacy Policy will be updated accordingly.
 
 ---
 
 ## Contact
 
-If you have questions about this Privacy Policy or NovaKey’s privacy practices:
+If you have questions about this Privacy Policy:
 
 - Website: https://osbornepro.com
 - Maintainer: Robert Osborne
-- Email: security@novakey.app 
+- Email: security@novakey.app
