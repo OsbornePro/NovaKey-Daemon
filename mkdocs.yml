@@ -61,6 +61,7 @@ nav:
   - Security:
       - Overview: security/overview.md
       - Protocol Summary: security/protocol-summary.md
+  - Project Links: links.md
   - FAQ: faq.md
   - Glossary: glossary.md
 
