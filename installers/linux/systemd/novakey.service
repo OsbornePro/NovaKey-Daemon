@@ -1,27 +1,41 @@
 [Unit]
 Description=NovaKey Secure Typing Service (user session)
-After=graphical-session.target network-online.target
-Wants=graphical-session.target network-online.target
+After=default.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/.local/share/novakey
-Environment=XDG_RUNTIME_DIR=%t
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
 
-ExecStartPre=/usr/bin/mkdir -p %h/.local/share/novakey/logs
-ExecStart=/usr/bin/novakey --config %h/.local/share/novakey/server_config.yaml
+# --- Hardening (what you had before) ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+
+# You WRITE into the home directory, so don't block it entirely.
+# This makes ~ read-only except for the paths listed below.
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/novakey %h/.config/novakey
+
+LockPersonality=true
+MemoryDenyWriteExecute=true
+UMask=0077
 
 Restart=on-failure
 RestartSec=1
 
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=false
-LockPersonality=true
-MemoryDenyWriteExecute=true
-ReadWritePaths=%h/.local/share/novakey %h/.config/novakey
+# --- Installer-safe startup (no WorkingDirectory directive) ---
+# 1) create dirs
+# 2) seed config on first run
+# 3) cd to data dir (so any relative fallback like server_config.json works)
+# 4) exec novakey
+ExecStart=/bin/sh -lc '\
+  set -e; \
+  /bin/mkdir -p "%h/.local/share/novakey/logs" "%h/.config/novakey"; \
+  if [ ! -f "%h/.local/share/novakey/server_config.yaml" ]; then \
+    /bin/cp /usr/share/novakey/server_config.yaml "%h/.local/share/novakey/server_config.yaml"; \
+  fi; \
+  cd "%h/.local/share/novakey"; \
+  exec /usr/bin/novakey --config "%h/.local/share/novakey/server_config.yaml" \
+'
 
 [Install]
 WantedBy=default.target
