@@ -1,6 +1,12 @@
 #define AppName "NovaKey"
 #define AppPublisher "OsbornePro"
+
 #define AppVersion "1.0.0"
+#ifdef MyAppVersion
+  #undef AppVersion
+  #define AppVersion MyAppVersion
+#endif
+
 #define AppExeName "novakey.exe"
 
 #define AppRoot "{localappdata}\NovaKey"
@@ -29,6 +35,8 @@ Name: "{#DataDir}"
 ; App payload
 Source: "..\..\dist\windows\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: ".\helper\out\novakey-installer-helper.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+; Helper also extracted to temp during install for the install-time Run entry
 Source: ".\helper\out\novakey-installer-helper.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 ; Config goes to DATA (runtime). onlyifdoesntexist so user edits survive upgrades/reinstalls.
@@ -42,8 +50,8 @@ Source: "..\..\devices.json"; DestDir: "{#DataDir}"; DestName: "devices.json"; F
 Filename: "{tmp}\novakey-installer-helper.exe"; Parameters: "install ""{app}"" ""{#DataDir}"""; Flags: runhidden
 
 [UninstallRun]
-Filename: "{app}\novakey-installer-helper.exe"; Parameters: "uninstall"; Flags: runhidden; RunOnceId: "NovaKeyUninstallTask"
-Filename: "schtasks"; Parameters: "/Delete /TN ""NovaKey"" /F"; Flags: runhidden
+; Prefer helper uninstall if it exists
+Filename: "{app}\novakey-installer-helper.exe"; Parameters: "uninstall"; Flags: runhidden; RunOnceId: "NovaKeyUninstallHelper"; Check: HelperExists
 
 [UninstallDelete]
 ; Remove app payload
@@ -60,6 +68,20 @@ Type: filesandordirs; Name: "{#DataDir}\tmp"
 [Code]
 var
   KeepServerKeys: Boolean;
+
+function HelperExists: Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\novakey-installer-helper.exe'));
+end;
+
+procedure DeleteTaskFallback;
+var
+  ResultCode: Integer;
+begin
+  { Best-effort: end + delete task. Ignore errors. }
+  Exec('schtasks', '/End /TN "NovaKey"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('schtasks', '/Delete /TN "NovaKey" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
 
 function InitializeUninstall(): Boolean;
 var
@@ -81,11 +103,13 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
+    { If helper is missing for any reason, clean up the scheduled task directly. }
+    if not HelperExists then
+      DeleteTaskFallback;
+
+    { Delete keys only if user chose not to keep them. }
     KeysPath := ExpandConstant('{#DataDir}\server_keys.json');
     if not KeepServerKeys then
-    begin
       DeleteFile(KeysPath);
-    end;
   end;
 end;
-
