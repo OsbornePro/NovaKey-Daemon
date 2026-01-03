@@ -34,7 +34,7 @@ func usage() {
 }
 
 func taskXML(user, exePath, workDir, configPath string) string {
-	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Description>NovaKey secure secret transfer service (per-user)</Description>

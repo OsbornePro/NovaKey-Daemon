@@ -10,15 +10,15 @@
 #define AppExeName "novakey.exe"
 
 #define AppRoot "{localappdata}\NovaKey"
-#define DataDir "{localappdata}\NovaKey\data"
+#define DataDir "{localappdata}\NovaKey"
 
 [Setup]
 AppId={{A5B6D7E8-1234-4A8B-9C9D-111111111111}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-; Install payload into ...\NovaKey\app
-DefaultDirName={#AppRoot}\app
+; Install payload into ...\NovaKey
+DefaultDirName={#AppRoot}
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 OutputDir=.\out
