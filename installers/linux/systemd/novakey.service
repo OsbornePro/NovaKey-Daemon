@@ -1,0 +1,28 @@
+[Unit]
+Description=NovaKey Secure Typing Service (user session)
+After=graphical-session.target network-online.target
+Wants=graphical-session.target network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/novakey
+Environment=XDG_RUNTIME_DIR=%t
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
+
+ExecStartPre=/usr/bin/mkdir -p %h/.local/share/novakey/logs
+ExecStart=/usr/bin/novakey --config %h/.local/share/novakey/server_config.yaml
+
+Restart=on-failure
+RestartSec=1
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=%h/.local/share/novakey %h/.config/novakey
+
+[Install]
+WantedBy=default.target
+

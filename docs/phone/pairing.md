@@ -67,13 +67,13 @@ NovaKey-Daemon is distributed via GitHub and the zip file can be downloaded from
 
    ```powershell
    # Execute the below command from the root directory of the zip file directory you extracted to
-   Unblock-File -Path .\Installers\install-windows.ps1
+   Unblock-File -Path .\installers\legacy\install-windows.ps1
    ```
 
 6. Run the installer:
 
    ```powershell
-   .\Installers\install-windows.ps1
+   .\installers\legacy\install-windows.ps1
    ```
 
 The installer will:
@@ -91,8 +91,8 @@ The installer will:
 cd /tmp
 git clone https://github.com/OsbornePro/NovaKey-Daemon.git
 cd NovaKey-Daemon
-sudo chmod +x Installers/install-macos.sh
-sudo bash Installers/install-macos.sh
+sudo chmod +x installers/legacy/install-macos.sh
+sudo bash installers/legacy\install-macos.sh
 ```
 
 ---
@@ -103,8 +103,8 @@ sudo bash Installers/install-macos.sh
 cd /tmp
 git clone https://github.com/OsbornePro/NovaKey-Daemon.git
 cd NovaKey-Daemon
-sudo chmod +x Installers/install-linux.sh
-sudo bash Installers/install-linux.sh
+sudo chmod +x installers/legacy/install-linux.sh
+sudo bash installers/legacy/install-linux.sh
 ```
 
 ---

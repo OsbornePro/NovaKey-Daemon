@@ -10,7 +10,7 @@
 ### Uninstall Scripts
 If you have used the install script to install your NovaKey-Daemon instance you can utilize the uninstall scripts to remove it or perform a re-freshed installation.
 The uninstall scripts are executed to undo what the install scripts below do. 
-The difference in execution being you would run `./Installers/uninstall-macos.sh` to uninstall instead of `./Installers/install-macos.sh` to install.
+The difference in execution being you would run `./installers/legacy/uninstall-macos.sh` to uninstall instead of `./installers/legacy/install-macos.sh` to install.
 
 ### 0) Build or download a binary
 
@@ -53,10 +53,10 @@ Expand-Archive -Path $env:USERPROFILE\Downloads\NovaKey-Daemon-main.zip -Destina
 Set-ExecutionPolicy RemoteSigned
 
 # Unblock script downloaded from the internet
-Unblock-File .\Installers\install-windows.ps1
+Unblock-File .\installers\legacy\install-windows.ps1
 
 # Run the installer
-.\Installers\install-windows.ps1
+.\installers\legacy\install-windows.ps1
 ```
 
 Linux:
@@ -67,7 +67,7 @@ git clone https://github.com/OsbornePro/NovaKey-Daemon.git
 
 # Install
 cd /tmp/NovaKey-Daemon
-sudo bash Installers/install-linux.sh
+sudo bash installers/legacy/install-linux.sh
 ```
 
 macOS:
@@ -78,7 +78,7 @@ git clone https://github.com/OsbornePro/NovaKey-Daemon.git
 
 # Install
 cd /tmp/NovaKey-Daemon
-sudo bash Installers/install-macos.sh
+sudo bash installers/legacy/install-macos.sh
 ```
 
 ### Verify installation

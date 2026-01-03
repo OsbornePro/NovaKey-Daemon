@@ -1,0 +1,78 @@
+#!/bin/bash
+set -euo pipefail
+
+LABEL="com.osbornepro.novakey"
+PLIST_NAME="${LABEL}.plist"
+
+CONSOLE_USER="$(stat -f %Su /dev/console)"
+if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" ]]; then
+  echo "No console user detected; skipping LaunchAgent bootstrap."
+  exit 0
+fi
+
+USER_HOME="$(dscl . -read /Users/"$CONSOLE_USER" NFSHomeDirectory | awk '{print $2}')"
+UID_NUM="$(id -u "$CONSOLE_USER")"
+USER_GROUP="$(id -gn "$CONSOLE_USER")"
+
+BIN_DST="${USER_HOME}/.local/bin/novakey"
+CONFIG_DIR="${USER_HOME}/.config/novakey"
+DATA_DIR="${USER_HOME}/.local/share/novakey"
+LOG_DIR="${DATA_DIR}/logs"
+LA_DIR="${USER_HOME}/Library/LaunchAgents"
+PLIST_PATH="${LA_DIR}/${PLIST_NAME}"
+
+mkdir -p "${USER_HOME}/.local/bin" "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${LA_DIR}"
+
+# Ownership + permissions
+chown -R "${CONSOLE_USER}:${USER_GROUP}" "${USER_HOME}/.local" "${CONFIG_DIR}" "${LA_DIR}" || true
+chmod 700 "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${USER_HOME}/.local/bin" || true
+chmod 755 "${LA_DIR}" || true
+
+# Payload location (installed by pkg)
+PAYLOAD="/usr/local/novakey"
+
+if [[ -f "${PAYLOAD}/novakey" ]]; then
+  install -m 755 "${PAYLOAD}/novakey" "${BIN_DST}"
+  chown "${CONSOLE_USER}:${USER_GROUP}" "${BIN_DST}" || true
+fi
+
+if [[ -f "${PAYLOAD}/server_config.yaml" ]]; then
+  install -m 600 "${PAYLOAD}/server_config.yaml" "${CONFIG_DIR}/server_config.yaml"
+  install -m 600 "${PAYLOAD}/server_config.yaml" "${DATA_DIR}/server_config.yaml"
+  chown "${CONSOLE_USER}:${USER_GROUP}" "${CONFIG_DIR}/server_config.yaml" "${DATA_DIR}/server_config.yaml" || true
+fi
+
+# Optional devices.json
+if [[ -f "${PAYLOAD}/devices.json" ]]; then
+  install -m 600 "${PAYLOAD}/devices.json" "${CONFIG_DIR}/devices.json"
+  install -m 600 "${PAYLOAD}/devices.json" "${DATA_DIR}/devices.json"
+  chown "${CONSOLE_USER}:${USER_GROUP}" "${CONFIG_DIR}/devices.json" "${DATA_DIR}/devices.json" || true
+else
+  rm -f "${CONFIG_DIR}/devices.json" "${DATA_DIR}/devices.json" 2>/dev/null || true
+fi
+
+# Render LaunchAgent plist
+TEMPLATE="${PAYLOAD}/${PLIST_NAME}.template"
+if [[ -f "${TEMPLATE}" ]]; then
+  sed \
+    -e "s|{{BIN_DST}}|${BIN_DST}|g" \
+    -e "s|{{DATA_DIR}}|${DATA_DIR}|g" \
+    -e "s|{{LOG_DIR}}|${LOG_DIR}|g" \
+    "${TEMPLATE}" > "${PLIST_PATH}"
+  chown "${CONSOLE_USER}:${USER_GROUP}" "${PLIST_PATH}" || true
+  chmod 644 "${PLIST_PATH}"
+fi
+
+DOMAIN="gui/${UID_NUM}"
+sudo -u "$CONSOLE_USER" launchctl bootout "$DOMAIN" "$PLIST_PATH" >/dev/null 2>&1 || true
+sudo -u "$CONSOLE_USER" launchctl bootstrap "$DOMAIN" "$PLIST_PATH"
+sudo -u "$CONSOLE_USER" launchctl enable "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+sudo -u "$CONSOLE_USER" launchctl kickstart -k "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+
+echo ""
+echo "NovaKey installed for ${CONSOLE_USER}."
+echo "IMPORTANT: macOS requires user approval for typing:"
+echo "  System Settings → Privacy & Security → Accessibility"
+echo "  System Settings → Privacy & Security → Input Monitoring"
+echo ""
+

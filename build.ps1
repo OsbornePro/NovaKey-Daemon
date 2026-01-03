@@ -1,185 +1,131 @@
 <#
 .SYNOPSIS
-This cmdlet is a cross-platform build script for NovaKey, nvclient, and nvpair (Windows, Linux, macOS)
-
-
-.DESCRIPTION
-Builds NovaKey, nvclient, and nvpair for Windows, Linux, or macOS (darwin) from a single PowerShell script.
-
-
-.PARAMETER Target
-windows | linux | darwin
-
-.PARAMETER Clean
-Delete previous builds before compiling
-
-.PARAMETER FileName
-Custom output filename (default: NovaKey.exe on Windows, NovaKey on others)
-
-
-.EXAMPLE
-PS> .\build.ps1 -Target windows
-# Builds Windows AMD64
-
-.EXAMPLE
-PS> .\build.ps1 -Target linux
-# Builds Linux AMD64
-
-.EXAMPLE
-PS> .\build.ps1 -Target darwin
-# Builds universal macOS binary
-
-.EXAMPLE
-PS> .\build.ps1 -Target linux -Clean
-# Builds Linux AMD64 and deletes dist directory and its contents
-
+Builds NovaKey, nvclient, nvpair. Default: binaries only.
+Optional: -Package to build installer/package artifacts.
 
 .NOTES
-Author: Robert H. Osborne (OsbornePro)
-Last Modified: 12/07/2025
-Contact: security@novakey.app
-
-
-.LINK
-https://novakey.app/
-https://osbornepro.com/
+- Windows packaging uses installers/windows/build-installer.ps1
+- Linux/macOS packaging should be done on those OSes (this script warns accordingly)
 #>
 [CmdletBinding()]
-    param(
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [ValidateSet("windows", "linux", "darwin", IgnoreCase=$true)]
-        [String]$Target = "windows",
+param(
+  [ValidateSet("windows", "linux", "darwin", IgnoreCase=$true)]
+  [String]$Target = "windows",
 
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [Switch]$Clean,
+  [Switch]$Clean,
 
-        [Parameter(
-            Mandatory=$False
-        )]  # End Parameter
-        [String]$FileName
-    )  # End param
+  [Switch]$Package
+)
 
 $ErrorActionPreference = "Stop"
 $InformationPreference = "Continue"
+
 $ProjectRoot = $PSScriptRoot
 Set-Location -Path $ProjectRoot
 
-Write-Verbose -Message "Verify required tools can be used"
-ForEach ($Tool in "git", "go") {
+foreach ($Tool in @("git", "go")) {
+  if (-not (Get-Command -Name $Tool -ErrorAction SilentlyContinue)) {
+    throw "[x] $Tool is required but not found in PATH"
+  }
+}
 
-    If (-not (Get-Command -Name $Tool -ErrorAction SilentlyContinue)) {
-        Throw "[x] $Tool is required but not found in PATH"
-    }  # End If
+try { $Version = (git describe --tags --abbrev=0 2>$null).Trim() } catch { }
+if (-not $Version) { $Version = "dev" }
 
-}  # End ForEach
+$BuildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+$LdFlags = "-s -w -X main.version=$Version -X main.buildDate=$BuildDate"
 
-# Get version tag
-Try { $Version = (git describe --tags --abbrev=0 2>$Null).Trim() } Catch { }
-If (-not $Version) { $Version = "dev" }
-
-$LdFlags = "-s -w -X main.version=$Version -X main.buildDate=$(Get-Date -Format o)"
 Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy HH:mm:ss') Building NovaKey $Version for $Target"
 
-If ($Clean.IsPresent) {
+if ($Clean.IsPresent) {
+  Write-Information -MessageData "[-] Cleaning dist/"
+  Remove-Item -Recurse -Force -Path dist -ErrorAction SilentlyContinue
+}
 
-    Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy HH:mm:ss') Cleaning previous build artifacts"
-    Remove-Item -Recurse -Force -Path dist -ErrorAction SilentlyContinue
+$DistRoot    = Join-Path $ProjectRoot "dist"
+$DistWindows = Join-Path $DistRoot "windows"
+$DistLinux   = Join-Path $DistRoot "linux"
+$DistMac     = Join-Path $DistRoot "macos"
+New-Item -ItemType Directory -Force -Path $DistWindows,$DistLinux,$DistMac | Out-Null
 
-}  # End If
+switch ($Target.ToLower()) {
 
-$DistDir = Join-Path -Path $ProjectRoot -ChildPath "dist"
-New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
+  "windows" {
+    $env:CGO_ENABLED = "0"
+    $env:GOOS = "windows"
+    $env:GOARCH = "amd64"
 
-Switch ($Target) {
+    $GuiLdFlags = "$LdFlags -H=windowsgui"
 
-    "windows" {
+    Write-Information -MessageData "[-] go build novakey (windows/amd64)"
+    go build -trimpath -ldflags $GuiLdFlags -o (Join-Path $DistWindows "novakey.exe") "./cmd/novakey"
 
-        $env:CGO_ENABLED = 0
-        $env:GOOS = "windows"
-        $OutName = $FileName
-        If ($OutName.Length -eq 0) { $OutName = "novakey-windows-amd64.exe" }
-        If ($OutName -notmatch '\.exe$') { $OutName += ".exe" }
-        $Output = Join-Path -Path $DistDir -ChildPath $OutName
-        $GuiLdFlags = "$LdFlags -H=windowsgui"
-        ForEach ($Arch in @("amd64")) { #, "arm64")) {
+    Write-Information -MessageData "[-] go build nvpair (windows/amd64)"
+    go build -trimpath -ldflags $LdFlags -o (Join-Path $DistWindows "nvpair-windows-amd64.exe") "./cmd/nvpair"
 
-            $env:GOARCH = $Arch
-            Write-Information -MessageData "[-] $OutName go build (windows/$Arch)"
-            go build -trimpath -ldflags $GuiLdFlags -o $Output "./cmd/novakey"
+    Write-Information -MessageData "[-] go build nvclient (windows/amd64)"
+    go build -trimpath -ldflags $LdFlags -o (Join-Path $DistWindows "nvclient-windows-amd64.exe") "./cmd/nvclient"
 
-            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvpair go build (windows/$Arch)"
-            go build -o ".\dist\nvpair-windows-$Arch.exe" ".\cmd\nvpair"
+    Write-Information -MessageData "[✓] Windows binaries built (dist/windows/)"
+  }
 
-            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvclient go build (windows/$Arch)"
-            go build -o ".\dist\nvclient-windows-$Arch.exe" ".\cmd\nvclient"
+  "linux" {
+    $env:CGO_ENABLED = "0"
+    $env:GOOS = "linux"
 
-        }  # End ForEach   
+    foreach ($Arch in @("amd64","arm64")) {
+      $env:GOARCH = $Arch
 
-    } "linux" {
+      Write-Information -MessageData "[-] go build novakey (linux/$Arch)"
+      go build -trimpath -ldflags $LdFlags -o (Join-Path $DistLinux "novakey-linux-$Arch.elf") "./cmd/novakey"
 
-        $env:CGO_ENABLED = 0
-        $env:GOOS = "linux"
-        $OutName = $FileName
-        If ($OutName.Length -eq 0) { $OutName = "novakey-linux" }
-        ForEach ($Arch in @("amd64")) { #, "arm64")) {
+      Write-Information -MessageData "[-] go build nvpair (linux/$Arch)"
+      go build -trimpath -ldflags $LdFlags -o (Join-Path $DistLinux "nvpair-linux-$Arch.elf") "./cmd/nvpair"
 
-            $env:GOARCH = $Arch
-            $Output = Join-Path -Path $DistDir -ChildPath "$OutName-$Arch"
-            Write-Information -MessageData "[-] $OutName go build (linux/$Arch)"
-            go build -trimpath -ldflags $LdFlags -o $Output "./cmd/novakey"
+      Write-Information -MessageData "[-] go build nvclient (linux/$Arch)"
+      go build -trimpath -ldflags $LdFlags -o (Join-Path $DistLinux "nvclient-linux-$Arch.elf") "./cmd/nvclient"
+    }
 
-            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvpair go build (linux/$Arch)"
-            go build -o ".\dist\nvpair-linux-$Arch" ".\cmd\nvpair"
+    Write-Information -MessageData "[✓] Linux binaries built (dist/linux/)"
+  }
 
-            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvclient go build (linux/$Arch)"
-            go build -o ".\dist\nvclient-linux-$Arch" ".\cmd\nvclient"
-
-        }  # End ForEach
-
-    } "darwin" {
-
-        Write-Warning -Message @"
+  "darwin" {
+    Write-Warning @"
 macOS builds must be performed on macOS.
 
-Reason:
-  NovaKey uses CGO + Apple Cocoa / Accessibility APIs,
-  which may not cross-compile cleanly from this host. 
-
-What to do:
-  Run this command on a Mac with Xcode installed:
-      ./build.sh -t darwin
-      ./build.ps1 -Target darwin
+Run on a Mac:
+  ./build.sh -t darwin
+Then package:
+  ./installers/macos/pkg/build-pkg.sh $Version arm64
+  ./installers/macos/pkg/build-pkg.sh $Version amd64
 "@
-        Return
-<#
-# In case it ever becomes possible
-        Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') Attempting build of macOS binaries"
-        $OutName = $FileName
-        $env:GOOS = "darwin"
-        $env:CGO_ENABLED = 0
-        If ($OutName.Length -eq 0) { $OutName = "novakey-darwin" }
-        ForEach ($Arch in @("amd64")) { #, "arm64")) {
+    return
+  }
+}
 
-            $env:GOARCH = $Arch
-            $Output = Join-Path -Path $DistDir -ChildPath "$OutName-$Arch"
-            Write-Information -MessageData "[-] $OutName go build (darwin/$Arch)"
-            go build -trimpath -ldflags $LdFlags -o $Output ./cmd/novakey
+# ---------------- Package (ONLY when requested) ----------------
+if ($Package.IsPresent) {
+  Write-Information -MessageData "[-] Packaging enabled (-Package)"
 
-            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvpair go build (darwin/$Arch)"
-            go build -o ".\dist\nvpair-darwin-$Arch" ".\cmd\nvpair"
+  if ($Target.ToLower() -eq "windows") {
+    $BuildInstaller = Join-Path $ProjectRoot "installers\windows\build-installer.ps1"
+    if (-not (Test-Path $BuildInstaller)) {
+      throw "Missing: $BuildInstaller"
+    }
+    powershell -ExecutionPolicy Bypass -File $BuildInstaller
+    Write-Information -MessageData "[✓] Windows installer built (installers/windows/out/)"
+  }
 
-            Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy hh:mm:ss') nvclient go build (darwin/$Arch)"
-            go build -o ".\dist\nvclient-darwin-$Arch" ".\cmd\nvclient"
+  if ($Target.ToLower() -eq "linux") {
+    Write-Warning "Linux packaging should be run on Linux."
+    Write-Warning "On Linux:"
+    Write-Warning "  cp dist/linux/novakey-linux-amd64.elf dist/linux/novakey"
+    Write-Warning "  chmod +x dist/linux/novakey"
+    Write-Warning "  ./installers/linux/nfpm/build-packages.sh $Version"
+  }
 
-        }  # End ForEach
+  if ($Target.ToLower() -eq "darwin") {
+    Write-Warning "macOS packaging must be run on macOS: installers/macos/pkg/build-pkg.sh"
+  }
+}
 
-        Write-Information "[-] To create a universal binary on macOS:"
-        Write-Information "    lipo -create -output NovaKey NovaKey-darwin-amd64 NovaKey-darwin-arm64"
-#>
-    }  # End Switch Options
-
-}  # End Switch

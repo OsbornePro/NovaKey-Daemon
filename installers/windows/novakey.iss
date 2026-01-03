@@ -1,0 +1,91 @@
+#define AppName "NovaKey"
+#define AppPublisher "OsbornePro"
+#define AppVersion "1.0.0"
+#define AppExeName "novakey.exe"
+
+#define AppRoot "{localappdata}\NovaKey"
+#define DataDir "{localappdata}\NovaKey\data"
+
+[Setup]
+AppId={{A5B6D7E8-1234-4A8B-9C9D-111111111111}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher={#AppPublisher}
+; Install payload into ...\NovaKey\app
+DefaultDirName={#AppRoot}\app
+DisableDirPage=yes
+DisableProgramGroupPage=yes
+OutputDir=.\out
+OutputBaseFilename=NovaKey-Setup
+Compression=lzma
+SolidCompression=yes
+PrivilegesRequired=lowest
+
+[Dirs]
+; Data directory is under LocalAppData; user already owns it so no special permissions needed
+Name: "{#DataDir}"
+
+[Files]
+; App payload
+Source: "..\..\dist\windows\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\helper\out\novakey-installer-helper.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".\helper\out\novakey-installer-helper.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+
+; Config goes to DATA (runtime). onlyifdoesntexist so user edits survive upgrades/reinstalls.
+Source: "..\..\server_config.yaml"; DestDir: "{#DataDir}"; DestName: "server_config.yaml"; Flags: onlyifdoesntexist
+
+; Optional devices.json if you ever ship it. Put it in DATA too.
+Source: "..\..\devices.json"; DestDir: "{#DataDir}"; DestName: "devices.json"; Flags: skipifsourcedoesntexist onlyifdoesntexist
+
+[Run]
+; Create Scheduled Task: exe from {app}, working dir + config in DATA
+Filename: "{tmp}\novakey-installer-helper.exe"; Parameters: "install ""{app}"" ""{#DataDir}"""; Flags: runhidden
+
+[UninstallRun]
+Filename: "{app}\novakey-installer-helper.exe"; Parameters: "uninstall"; Flags: runhidden; RunOnceId: "NovaKeyUninstallTask"
+Filename: "schtasks"; Parameters: "/Delete /TN ""NovaKey"" /F"; Flags: runhidden
+
+[UninstallDelete]
+; Remove app payload
+Type: files; Name: "{app}\novakey.exe"
+Type: files; Name: "{app}\novakey-installer-helper.exe"
+
+; Remove generated runtime artifacts in DATA (except server_keys.json which is user-choice)
+Type: files; Name: "{#DataDir}\novakey-pair.png"
+Type: files; Name: "{#DataDir}\devices.json"
+Type: filesandordirs; Name: "{#DataDir}\logs"
+Type: filesandordirs; Name: "{#DataDir}\log"
+Type: filesandordirs; Name: "{#DataDir}\tmp"
+
+[Code]
+var
+  KeepServerKeys: Boolean;
+
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  ResultCode := MsgBox(
+    'Keep NovaKey pairing keys for future reinstall?' + #13#10 + #13#10 +
+    'Yes = keep server_keys.json (recommended if you plan to reinstall).' + #13#10 +
+    'No  = delete keys (reinstall will require re-pairing).',
+    mbConfirmation, MB_YESNO);
+
+  KeepServerKeys := (ResultCode = IDYES);
+  Result := True;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  KeysPath: String;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    KeysPath := ExpandConstant('{#DataDir}\server_keys.json');
+    if not KeepServerKeys then
+    begin
+      DeleteFile(KeysPath);
+    end;
+  end;
+end;
+
