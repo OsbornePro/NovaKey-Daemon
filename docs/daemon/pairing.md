@@ -84,7 +84,7 @@ Clients must initiate pairing by sending:
 
 ```text
 NOVAK/1 /pair\n
-````
+```
 
 ---
 
