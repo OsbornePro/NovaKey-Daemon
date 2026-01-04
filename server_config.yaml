@@ -57,6 +57,6 @@ arm_token_file: "arm_token.txt"
 arm_token_header: "X-NovaKey-Token"
 allow_newlines: false
 max_inject_len: 256
-two_man_enabled: false
+two_man_enabled: true
 approve_window_ms: 15000
 approve_consume_on_inject: true
