@@ -1,8 +1,3 @@
----
-title: Threat Model
-description: Security assumptions, threats, and mitigations for NovaKey-Daemon
----
-
 # Threat Model
 
 This document describes the **threat model, assumptions, and mitigations** for NovaKey-Daemon.
@@ -345,4 +340,165 @@ denied_process_names:
   - cmd
   - powershell
 allow_newlines: false
+````
+
+---
+
+### ❗ Injection into wrong application (focus race)
+
+**Threat:** Secret typed into unintended window
+
+**Config:**
+
+```yaml
+target_policy_enabled: true
+use_built_in_allowlist: true
+two_man_enabled: true
+arm_duration_ms: 10000
+```
+
+---
+
+### ❗ LAN attacker attempts injection
+
+**Threat:** Remote misuse over local network
+
+**Config:**
+
+```yaml
+listen_addr: "0.0.0.0:60768"
+target_policy_enabled: true
+use_built_in_allowlist: true
+require_sealed_device_store: true
+```
+
+---
+
+### ❗ Compromised or stolen phone
+
+**Threat:** Unauthorized injections
+
+**Config:**
+
+```yaml
+two_man_enabled: true
+arm_consume_on_inject: true
+max_requests_per_min: 30
+```
+
+---
+
+### ❗ Clipboard exfiltration
+
+**Threat:** Clipboard manager or malware reads secret
+
+**Config:**
+
+```yaml
+allow_clipboard_when_disarmed: false
+allow_clipboard_on_inject_failure: false
+```
+
+---
+
+### ❗ Persistent credential theft from disk
+
+**Threat:** Attacker reads device store
+
+**Config:**
+
+```yaml
+require_sealed_device_store: true
+```
+
+---
+
+### ❗ Over-permissive defaults on LAN
+
+**Threat:** False sense of security
+
+**Config:**
+
+```yaml
+target_policy_enabled: true
+use_built_in_allowlist: true
+```
+
+---
+
+## “Secure by Intent” Presets
+
+### Minimal friction (safe for home LAN)
+
+```yaml
+listen_addr: "0.0.0.0:60768"
+target_policy_enabled: true
+use_built_in_allowlist: true
+```
+
+---
+
+### High-assurance workstation
+
+```yaml
+listen_addr: "127.0.0.1:60768"
+require_sealed_device_store: true
+
+target_policy_enabled: true
+allowed_process_names:
+  - 1password
+  - bitwarden
+
+two_man_enabled: true
+arm_duration_ms: 10000
+allow_newlines: false
+```
+
+---
+
+### “Paranoid mode”
+
+```yaml
+listen_addr: "127.0.0.1:60768"
+require_sealed_device_store: true
+
+target_policy_enabled: true
+allowed_process_names:
+  - 1password
+
+denied_process_names:
+  - terminal
+  - powershell
+  - cmd
+
+two_man_enabled: true
+arm_consume_on_inject: true
+allow_clipboard_on_inject_failure: false
+allow_newlines: false
+```
+
+---
+
+## Unsupported configurations
+
+The following configurations are strongly discouraged and may be considered unsafe:
+
+* Listening on LAN with `target_policy_enabled: false`
+* Allowing terminal injection while `allow_newlines: true`
+* Enabling clipboard fallback in high-assurance environments
+
+These configurations are supported for flexibility but not recommended.
+
+---
+
+## Final Notes
+
+NovaKey is safest when:
+
+* Listening on localhost **or**
+* Target policy is enabled
+* Arm windows are short
+* Two-man approval is enabled for sensitive systems
+
+Security is a configuration choice — NovaKey provides the tools, but defaults must be respected and understood.
 
