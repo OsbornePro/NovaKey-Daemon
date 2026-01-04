@@ -435,10 +435,21 @@ target_policy_enabled: false
 
 #### 2) Target policy enabled, but empty rules and no built-in allowlist
 
+> ⚠️ Wayland note (Linux):
+> On Wayland-based desktops (*GNOME Wayland, KDE Wayland, etc.*), NovaKey cannot enforce target/window policy
+> because the compositor does not expose the same process/window metadata needed for policy checks.
+> For this reason, `target_policy_enabled` **must remain `false`** on Wayland Linux devices.
+> If you need target policy enforcement on Linux, use an X11 session (*or XWayland where supported*) instead.
+
+
 ```yaml
 target_policy_enabled: true
 use_built_in_allowlist: false
 ```
+
+> Attempting to set `target_policy_enabled: true` on Wayland may cause injections to be blocked or fall back to clipboard,
+> depending on your `allow_clipboard_on_inject_failure` setting.
+
 
 **Why this is dangerous**
 
