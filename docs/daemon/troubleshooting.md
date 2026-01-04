@@ -23,10 +23,54 @@ Common causes:
 - secure input mode enabled by the active app
 - Wayland / compositor restrictions
 
-## Not paired / pairing doesn’t show QR
-- If a device store exists, the daemon may not regenerate a QR.
-- Confirm your intended re-pair workflow.
-- Ensure the phone is targeting the correct host/port.
+## Pairing issues / QR code not shown
+
+### “I missed the QR code”
+During first startup, NovaKey enters a **time-limited pairing mode**.
+If the QR code is not scanned in time, pairing may not complete.
+
+Depending on platform and security state:
+
+- Restarting the daemon may re-enter pairing mode **if no device store exists**
+- If secure storage was partially initialized, pairing may not automatically restart
+
+On Linux in particular, cancelling keyring unlock prompts or hardware-backed
+authentication (for example YubiKey confirmation) can leave the daemon in a
+non-pairable state.
+
+### Recovery steps
+Try the following, in order:
+
+1. **Restart the daemon**
+   ```bash
+   systemctl --user restart novakey
+   ```
+
+2. **Check for an existing device store**
+
+   * If `devices.json` exists, the daemon may assume pairing already occurred
+
+3. **If pairing still does not appear**
+
+   * Perform a full uninstall
+   * Reinstall the daemon
+   * Complete pairing when the QR code is displayed
+
+This behavior is intentional and designed to prevent indefinite or replayable
+pairing attempts.
+
+## Why pairing can require reinstall
+
+NovaKey treats initial pairing as a high-trust operation.
+
+To reduce the risk of:
+- replay attacks
+- downgrade to weaker storage
+- indefinite pairing windows
+
+The daemon limits how many times secure initialization and pairing can be retried.
+If this process is interrupted or fails in a non-recoverable way, reinstalling
+ensures a clean and verifiable security state.
 
 ## “Not armed”
 - Arm gate is enabled and active.

@@ -1,110 +1,324 @@
-# Installing NovaKey-Daemon
+# Installing NovaKey Daemon
 
-## Supported platforms
-- Windows 11
-- macOS 14+
-- Linux (systemd + glibc, root access for install scripts)
+The **NovaKey Daemon** is a background service that runs on your computer and securely receives secrets from the NovaKey app, then types them into the active application.
 
-## Automatic installation (*recommended*)
+As of **v1.0**, NovaKey provides **native installers** for all supported platforms.
+These installers are the **recommended and supported installation method**.
 
-### Uninstall Scripts
-If you have used the install script to install your NovaKey-Daemon instance you can utilize the uninstall scripts to remove it or perform a re-freshed installation.
-The uninstall scripts are executed to undo what the install scripts below do. 
-The difference in execution being you would run `./installers/legacy/uninstall-macos.sh` to uninstall instead of `./installers/legacy/install-macos.sh` to install.
+> ⚠️ **Important: Pairing is security-sensitive**
+>
+> During first install, the NovaKey Daemon performs a **one-time secure bootstrap** and enters pairing mode.
+> A **time-limited QR code** is displayed for pairing your NovaKey app.
+>
+> If pairing is interrupted, cancelled, or secure storage initialization fails
+> (for example due to keyring, DPAPI, or hardware-backed authentication constraints),
+> the daemon may fall back to a local device store or require a **full reinstall to restart pairing**.
+>
+> For best results:
+> - Have the NovaKey app ready before installing
+> - Complete pairing when the QR code is displayed
 
-### 0) Build or download a binary
+Missing the QR code does not compromise security, but may require restarting or reinstalling the daemon to re-enter pairing mode.
 
-Easiest to use the pre-compiled binaries in the GitHub repository.
-However, if you wish to compile the binary yourself you can use the included build scripts.
+---
 
-Windows:
+## Supported Platforms
+
+* **Windows 11**
+* **macOS 14+**
+* **Linux** (systemd user services, glibc)
+
+---
+
+## Recommended Installation (Installers)
+
+### Download Locations
+
+Installers are available from multiple sources:
+
+* **Windows Primary AMD64:**
+  `https://downloads.novakey.app/Installers/NovaKey-Setup.exe`
+* **RHEL Based Linux Primary AMD64:**
+  `https://downloads.novakey.app/Installers/novakey-1.0.0-1.amd64.rpm`
+* **RHEL Based Linux Primary ARM64:**
+  `https://downloads.novakey.app/Installers/novakey-1.0.0-1.aarch64.rpm`
+* **Debian Based Linux Primary AMD64:**
+  `https://downloads.novakey.app/Installers/novakey-1.0.0.amd64.deb`
+* **Debian Based Linux Primary ARM64:**
+  `https://downloads.novakey.app/Installers/novakey-1.0.0.arm64.deb`
+* **MacOS Primary AMD64:**
+  `https://downloads.novakey.app/Installers/NovaKey-1.0.0-amd64.pkg`
+* **MacOS Primary ARM64:**
+  `https://downloads.novakey.app/Installers/NovaKey-1.0.0-arm64.pkg`
+* **GitHub Releases:**
+  [https://github.com/OsbornePro/NovaKey-Daemon/releases](https://github.com/OsbornePro/NovaKey-Daemon/releases)
+
+Choose the file that matches your operating system and CPU architecture.
+
+---
+
+## Windows Installation
+
+### 1) Download
+
+Download:
+
+```
+NovaKey-Setup.exe
+```
+
+### 2) Run the installer
+
+* Double-click **NovaKey-Setup.exe**
+* Follow the on-screen prompts
+
+The installer:
+
+* Installs NovaKey into your user profile
+* Creates a **per-user Scheduled Task**
+* Starts the daemon automatically at login
+
+No administrator privileges are required.
+
+### 3) Permissions (first run)
+
+Windows may prompt for:
+
+* Firewall access (allow local network access)
+
+---
+
+## macOS Installation
+
+### 1) Download
+
+Download **one** of the following, depending on your Mac:
+
+* Apple Silicon (M1/M2/M3):
+
+  ```
+  NovaKey-<version>-arm64.pkg
+  ```
+* Intel:
+
+  ```
+  NovaKey-<version>-amd64.pkg
+  ```
+
+### 2) Run the installer
+
+* Double-click the `.pkg`
+* Follow the installer prompts
+
+The installer:
+
+* Installs NovaKey into your user profile
+* Registers a **LaunchAgent** that runs at login
+* Starts the daemon automatically
+
+### 3) Required macOS permissions
+
+macOS will require explicit approval for typing automation.
+
+After installation, open:
+
+```
+System Settings → Privacy & Security
+```
+
+Enable **NovaKey** under:
+
+* **Accessibility**
+* **Input Monitoring**
+
+The daemon may not function correctly until both are enabled.
+
+---
+
+## Linux Installation
+
+> ⚠️ **Linux security key / keyring warning**
+>
+> On Linux systems using hardware-backed authentication (for example **YubiKey**, smart cards,
+> or PAM configurations that require external confirmation), NovaKey may be unable to unlock
+> the system keyring during NovaKey-Daemon startup.
+>
+> If secure storage initialization fails or is cancelled multiple times,
+> the daemon may not be able to complete pairing unless
+> `require_sealed_device_store: false` is set in `server_config.yaml`.
+> This setting requires the novakey service be restarted to apply.
+>
+> Restarting alone may not be sufficient if pairing state was already partially created.
+>
+> When restarting is not enough, remove the NovaKey **user configuration and data directories**
+> and run the installer again:
+>
+> - `~/.config/novakey`
+> - `~/.local/share/novakey`
+>
+> These directories are recreated automatically during install.
+>
+> - Fall back to a local device store (`devices.json`), **or**
+> - Enter a state where pairing cannot be restarted automatically
+>
+> In this case, a **full uninstall and reinstall** of the daemon may be required to restart
+> the secure pairing process.
+>
+> For best results on Linux:
+> - Be prepared to complete pairing when the QR code is displayed
+> - If signing in without a password via YubiKey or hardware token, cancel the keyring password prompt that comes up and utilize `require_sealed_device_store: false`
+
+Reinstalling clears the daemon’s pairing state and forces a fresh secure bootstrap.
+
+### 1) Download
+
+Choose the correct package for your distribution and architecture:
+
+* Debian / Ubuntu:
+
+  ```
+  novakey_<version>_amd64.deb
+  novakey_<version>_arm64.deb
+  ```
+* Fedora / RHEL / openSUSE:
+
+  ```
+  novakey-<version>-1.amd64.rpm
+  novakey-<version>-1.aarch64.rpm
+  ```
+
+### 2) Install
+
+**Debian / Ubuntu**
+
+```bash
+sudo apt install ./novakey_<version>_amd64.deb
+systemctl --user enable novakey --now
+```
+
+**Fedora / RHEL**
+
+```bash
+sudo dnf install ./novakey-<version>-1.amd64.rpm
+systemctl --user enable novakey --now
+```
+
+### 3) Service behavior
+
+* Installed as a **systemd user service**
+* Starts automatically when you log in
+* No system-wide daemon required
+
+---
+
+## Verifying Installation
+
+### Windows
+
 ```powershell
-Set-ExecutionPolicy RemoteSigned
-Unblock-File .\build.ps1
-.\build.ps1 -Target Windows
-# dist\novakey-windows-amd64.exe
+Get-ScheduledTask -TaskName NovaKey
 ```
 
-Linux:
-```bash
-./build.sh -t linux
-# dist/novakey-linux-amd64
-```
+Optional (check listener):
 
-macOS:
-```bash
-./build.sh -t darwin
-# dist/novakey-darwin-amd64
-```
-
-Note: macOS builds often need to happen on macOS for correct signing/entitlements behavior.
-
-### 1) Download and Run the installer
-
-Windows:
-```powershell
-# Download from the GitHub repository
-Invoke-WebRequest -Uri https://github.com/OsbornePro/NovaKey-Daemon/archive/refs/heads/main.zip -OutFile $env:USERPROFILE\Downloads\NovaKey-Daemon-main.zip
-
-# Extract the zip file contents
-Expand-Archive -Path $env:USERPROFILE\Downloads\NovaKey-Daemon-main.zip -DestinationPath $env:USERPROFILE\Downloads\ -Force
-
-# Ensure you can execute scripts in your session
-Set-ExecutionPolicy RemoteSigned
-
-# Unblock script downloaded from the internet
-Unblock-File .\installers\legacy\install-windows.ps1
-
-# Run the installer
-.\installers\legacy\install-windows.ps1
-```
-
-Linux:
-```bash
-# Download
-cd /tmp
-git clone https://github.com/OsbornePro/NovaKey-Daemon.git
-
-# Install
-cd /tmp/NovaKey-Daemon
-sudo bash installers/legacy/install-linux.sh
-```
-
-macOS:
-```bash
-# Download
-cd /tmp
-git clone https://github.com/OsbornePro/NovaKey-Daemon.git
-
-# Install
-cd /tmp/NovaKey-Daemon
-sudo bash installers/legacy/install-macos.sh
-```
-
-### Verify installation
-
-On Windows (*example*):
 ```powershell
 Get-NetTcpConnection -State Listen -LocalPort 60768
 ```
-You should see the listening port
 
-On Linux (*example*):
+---
+
+### macOS
+
 ```bash
-systemctl status novakey --user
+launchctl list | grep novakey
+```
+
+---
+
+### Linux
+
+```bash
+systemctl --user status novakey
 ss -tunlp | grep 60768
 ```
-You should see the service running and the listening port
 
-On Linux (*example*):
+---
+
+## First Run & Device Pairing
+
+On first startup, the NovaKey Daemon performs secure initialization and attempts to
+bind itself to the platform’s native secure storage.
+
+If no devices are paired during this phase:
+
+- The daemon enters **pairing mode**
+- A **time-limited QR code** (`novakey-pair.png`) is generated
+- The QR is displayed automatically (Windows/macOS) or logged (Linux)
+
+If pairing does not complete successfully and secure storage cannot be unlocked,
+the daemon may fall back to a local device store (`devices.json`) or require a reinstall
+to restart the pairing process.
+
+This behavior is intentional and is designed to prevent indefinite pairing attempts.
+
+If pairing does not complete as expected, see:
+`docs/daemon/troubleshooting.md`
+
+---
+
+## Uninstalling NovaKey
+
+### Windows
+
+* Use **Apps & Features**
+* During uninstall, you will be asked whether to **preserve pairing keys**
+
+### macOS
+
+* Remove via the installed package
+* Or manually delete the LaunchAgent if needed
+
+### Linux
+
 ```bash
-systemctl status novakey --user
-netstat -at | grep 60768 # May take a little for command to complete
+sudo apt remove novakey
+# or
+sudo dnf remove novakey
 ```
-You should see the listening port
 
-### First run and pairing QR
+---
 
-When there are no paired devices (*missing/empty device store*), the daemon generates a pairing QR (*novakey-pair.png*) at startup.
+## Legacy Installation (Deprecated)
 
+> ⚠️ **Deprecated — use installers instead**
+
+The original shell and PowerShell install scripts are still available for advanced or automated environments but are no longer recommended for end users.
+
+Legacy scripts live under:
+
+```
+installers/legacy/
+```
+
+They may be removed in a future release.
+
+---
+
+## Why pairing is strict
+
+NovaKey treats device pairing as a high-trust operation.
+To prevent downgrade, replay, or brute-force pairing attempts:
+
+- Pairing tokens are time-limited
+- Secure storage failures are not retried indefinitely
+- Manual recovery may require uninstalling and reinstalling the daemon
+
+This ensures that pairing always reflects the user’s current security posture.
+
+
+## Notes
+
+* The daemon always runs **per-user**
+* Secrets are stored securely using platform-native mechanisms
+* No secrets are transmitted unless explicitly initiated by the NovaKey app
 
