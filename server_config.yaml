@@ -47,7 +47,6 @@ allowed_process_names:
 allowed_window_titles: []
 denied_process_names: []
 denied_window_titles: []
-arm_enabled: true
 arm_duration_ms: 20000
 arm_consume_on_inject: true
 allow_clipboard_when_disarmed: false

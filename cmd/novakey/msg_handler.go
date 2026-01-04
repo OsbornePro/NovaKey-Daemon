@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -90,7 +92,8 @@ func handleMsgConn(conn net.Conn) error {
 		return nil
 
 	case MsgTypeApprove:
-        if !boolDeref(cfg.TwoManEnabled, true) {
+		// two_man_enabled defaults true via boolDeref(..., true)
+		if !boolDeref(cfg.TwoManEnabled, true) {
 			logReqf(reqID, "approve message received but two_man_enabled=false; ignoring")
 			respond(StatusBadRequest, StageApprove, ReasonBadRequest, "two-man disabled; approve ignored")
 			return nil
@@ -112,7 +115,7 @@ func handleMsgConn(conn net.Conn) error {
 
 	// ---- INJECT path ----
 	password := string(payload)
-    logReqf(reqID, "decrypted payload from device=%q (len=%d)", deviceID, len(payload))
+	logReqf(reqID, "decrypted payload from device=%q (len=%d)", deviceID, len(payload))
 
 	// Unsafe-text filter
 	if err := validateInjectText(password); err != nil {
@@ -137,10 +140,31 @@ func handleMsgConn(conn net.Conn) error {
 	if err := enforceTargetPolicy(); err != nil {
 		logReqf(reqID, "blocked injection (target policy): %v", err)
 
+		// Wayland: focused app detection is not implemented, so target policy cannot be evaluated.
+		// Return a stable reply so clients can handle it cleanly.
+		xdg := strings.ToLower(strings.TrimSpace(os.Getenv("XDG_SESSION_TYPE")))
+		if xdg == "wayland" || os.Getenv("WAYLAND_DISPLAY") != "" {
+			if allowClipboardWhenBlocked() {
+				if err2 := trySetClipboard(password); err2 != nil {
+					logReqf(reqID, "clipboard set failed: %v", err2)
+					respond(StatusBadRequest, StageInject, ReasonBadRequest, "target policy unavailable on wayland; clipboard failed")
+				} else {
+					logReqf(reqID, "target policy unavailable on wayland; clipboard set")
+					respond(StatusOKClipboard, StageInject, ReasonClipboardFallback, "clipboard set (target policy unavailable on wayland)")
+				}
+				return nil
+			}
+
+			respond(StatusBadRequest, StageInject, ReasonBadRequest,
+				"target policy unavailable on wayland (disable target_policy_enabled, run under X11/Xwayland, or enable allow_clipboard_when_disarmed)")
+			return nil
+		}
+
+		// Normal target policy denial (or other focused-target error)
 		if allowClipboardWhenBlocked() {
 			if err2 := trySetClipboard(password); err2 != nil {
 				logReqf(reqID, "clipboard set failed: %v", err2)
-				respond(StatusBadRequest, StageInject, ReasonBadRequest, "target policy; clipboard failed")
+				respond(StatusBadRequest, StageInject, ReasonBadRequest, "target policy blocked; clipboard failed")
 			} else {
 				logReqf(reqID, "blocked injection (target policy); clipboard set")
 				respond(StatusOKClipboard, StageInject, ReasonClipboardFallback, "clipboard set (target policy blocked)")
@@ -152,11 +176,12 @@ func handleMsgConn(conn net.Conn) error {
 		return nil
 	}
 
+	// Serialize injection to avoid overlapping OS-level input / clipboard behavior.
 	injectMu.Lock()
 	defer injectMu.Unlock()
 
 	// Two-man gate
-    if boolDeref(cfg.TwoManEnabled, true) {
+	if boolDeref(cfg.TwoManEnabled, true) {
 		consume := boolDeref(cfg.ApproveConsumeOnInject, true)
 		if !approvalGate.Consume(deviceID, consume) {
 			until := approvalGate.ApprovedUntil(deviceID)
@@ -183,28 +208,26 @@ func handleMsgConn(conn net.Conn) error {
 		logReqf(reqID, "two-man approval OK; proceeding")
 	}
 
-	// Arm gate
-	if cfg.ArmEnabled {
-		consume := boolDeref(cfg.ArmConsumeOnInject, true)
-		if !armGate.Consume(consume) {
-			logReqf(reqID, "blocked injection (not armed)")
+	// Arm gate (always enforced; controlled by arm_duration_ms + arm_consume_on_inject)
+	consumeArm := boolDeref(cfg.ArmConsumeOnInject, true)
+	if !armGate.Consume(consumeArm) {
+		logReqf(reqID, "blocked injection (not armed)")
 
-			if allowClipboardWhenBlocked() {
-				if err2 := trySetClipboard(password); err2 != nil {
-					logReqf(reqID, "clipboard set failed: %v", err2)
-					respond(StatusNotArmed, StageInject, ReasonNotArmed, "not armed; clipboard failed")
-				} else {
-					logReqf(reqID, "blocked injection (not armed); clipboard set")
-					respond(StatusOKClipboard, StageInject, ReasonClipboardFallback, "clipboard set (not armed)")
-				}
-				return nil
+		if allowClipboardWhenBlocked() {
+			if err2 := trySetClipboard(password); err2 != nil {
+				logReqf(reqID, "clipboard set failed: %v", err2)
+				respond(StatusNotArmed, StageInject, ReasonNotArmed, "not armed; clipboard failed")
+			} else {
+				logReqf(reqID, "blocked injection (not armed); clipboard set")
+				respond(StatusOKClipboard, StageInject, ReasonClipboardFallback, "clipboard set (not armed)")
 			}
-
-			respond(StatusNotArmed, StageInject, ReasonNotArmed, "not armed")
 			return nil
 		}
-		logReqf(reqID, "armed gate open; proceeding with injection")
+
+		respond(StatusNotArmed, StageInject, ReasonNotArmed, "not armed")
+		return nil
 	}
+	logReqf(reqID, "armed gate open; proceeding with injection")
 
 	// Perform injection
 	if err := InjectPasswordToFocusedControl(password); err != nil {
@@ -236,3 +259,4 @@ func handleMsgConn(conn net.Conn) error {
 	respond(StatusOK, StageInject, ReasonOK, "ok")
 	return nil
 }
+

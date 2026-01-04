@@ -172,7 +172,6 @@ NovaKey supports YAML (*preferred*) or JSON configuration.
 
 | Option                  | Default | Description                                                       |
 | ----------------------- | ------- | ----------------------------------------------------------------- |
-| `arm_enabled`           | `true`  | Blocks injection unless locally armed.                            |
 | `arm_duration_ms`       | `20000` | Duration (*ms*) the daemon remains armed after arming is triggered. |
 | `arm_consume_on_inject` | `true`  | If true, a successful injection consumes the armed state.         |
 
@@ -182,15 +181,6 @@ NovaKey supports YAML (*preferred*) or JSON configuration.
 | ----------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------- |
 | `allow_clipboard_when_disarmed`     | `false`                       | Allows clipboard use when blocked by gates/policy. Use with care.                  |
 | `allow_clipboard_on_inject_failure` | `true` on Linux, else `false` | Allows clipboard use when injection fails after gates pass (*Wayland, perms, etc.*). |
-
-### Local Arm API (*Loopback Only*)
-
-| Option             | Default             | Description                                                                        |
-| ------------------ | ------------------- | ---------------------------------------------------------------------------------- |
-| `arm_api_enabled`  | `true`              | Enables the local HTTP arm API.                                                    |
-| `arm_listen_addr`  | `"127.0.0.1:60769"` | Address the Arm API binds to. Must resolve to loopback or it will refuse to start. |
-| `arm_token_file`   | `"arm_token.txt"`   | Path to the Arm API authentication token file.                                     |
-| `arm_token_header` | `"X-NovaKey-Token"` | Header name used to supply the Arm API token.                                      |
 
 ### Injection safety
 
