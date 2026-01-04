@@ -7,9 +7,9 @@ NovaKey-Daemon supports YAML (**preferred**) or JSON configuration files:
 * `server_config.json`
 
 The daemon loads configuration from its **WorkingDirectory**.
-Installers set this directory so that **relative paths work correctly**.
+Installers set this directory so that **relative paths resolve correctly**.
 
-Relative paths such as `devices.json`, `server_keys.json`, `./logs`, and `arm_token.txt`
+Relative paths such as `devices.json`, `server_keys.json`, and `./logs`
 are resolved relative to the WorkingDirectory.
 
 ---
@@ -28,7 +28,7 @@ If multiple config files exist, NovaKey loads the first one found:
 
 ### `listen_addr` (string)
 
-Address and port to bind the TCP listener.
+Address and port to bind the NovaKey TCP listener.
 
 **Default (code):**
 
@@ -40,16 +40,16 @@ Address and port to bind the TCP listener.
 
 * Local only (safest): `127.0.0.1:60768`
 * LAN access: `0.0.0.0:60768`
-* Specific LAN IP: `10.0.0.10:60768`
+* Specific LAN IP: `192.168.1.50:60768`
 
-> Binding to `0.0.0.0` increases attack surface.
-> Use target policy if listening on LAN.
+> ⚠️ Binding to `0.0.0.0` increases attack surface.
+> If listening on LAN, **target policy is strongly recommended**.
 
 ---
 
 ### `max_payload_len` (int)
 
-Maximum request payload size in bytes.
+Maximum size (bytes) of a single incoming message.
 
 **Default:** `4096`
 
@@ -57,7 +57,7 @@ Maximum request payload size in bytes.
 
 ### `max_requests_per_min` (int)
 
-Per-client rate limit for incoming requests.
+Per-device rate limit for incoming requests.
 
 **Default:** `60`
 
@@ -68,20 +68,21 @@ Per-client rate limit for incoming requests.
 ### `devices_file` (string)
 
 Path to the device store.
-Contains paired device identities and metadata.
+
+Stores:
+
+* Paired device identities
+* Per-device cryptographic material
 
 **Default:** `devices.json`
 
-May be:
-
-* Sealed/encrypted via OS keyring
-* Plain JSON fallback if sealed storage fails (platform-dependent)
+On supported platforms, the device store may be **sealed/encrypted** using OS facilities.
 
 ---
 
 ### `server_keys_file` (string)
 
-Path to server cryptographic key material.
+Path to server cryptographic keys.
 
 Includes:
 
@@ -94,18 +95,17 @@ Includes:
 
 ### `require_sealed_device_store` (bool)
 
-If `true`, NovaKey **fails closed** when sealed/secure storage cannot be unlocked.
+If `true`, NovaKey **fails closed** if secure/sealed storage cannot be unlocked.
 
 This is a **security-critical option**.
 
 **Default (code):** `false`
 **Recommended:** `true`
-**Your shipped YAML:** `true`
 
-Linux note:
+Linux notes:
 
-* Hardware-backed auth (YubiKey / PAM) may block keyring unlock
-* Cancelling unlock repeatedly may require reinstall or manual cleanup
+* Hardware-backed keyrings (PAM, YubiKey) may require user interaction
+* Cancelling unlock repeatedly may require manual cleanup
 
 ---
 
@@ -113,12 +113,12 @@ Linux note:
 
 ### `rotate_kyber_keys` (bool)
 
-If `true`, server Kyber keys rotate **on every service restart**.
+Rotate server Kyber keys on **every service start**.
 
-Effect:
+Effects:
 
-* Forces **full re-pairing** of all devices
-* Invalidates all existing pairings
+* Invalidates all existing device pairings
+* Forces full re-pairing
 
 **Default:** `false`
 
@@ -126,7 +126,7 @@ Effect:
 
 ### `rotate_device_psk_on_repair` (bool)
 
-If `true`, device PSKs rotate during re-pair / repair flows.
+Rotate device PSKs during re-pair / repair flows.
 
 **Default:** `false`
 
@@ -134,9 +134,10 @@ If `true`, device PSKs rotate during re-pair / repair flows.
 
 ### `pair_hello_max_per_min` (int)
 
-Per-IP rate limit for `/pair` handshake “hello” messages.
+Per-IP rate limit for pairing “hello” messages.
 
-This limiter is **in-memory only**.
+* Applies only to pairing
+* In-memory only (resets on restart)
 
 **Default:** `30`
 
@@ -150,9 +151,7 @@ This limiter is **in-memory only**.
 
 Directory for log files.
 
-May be relative (`./logs`) or absolute.
-
-**Default behavior:** stderr logging only
+**Default behavior:** stderr only
 **Common:** `./logs`
 
 ---
@@ -160,9 +159,8 @@ May be relative (`./logs`) or absolute.
 ### `log_file` (string)
 
 Explicit log file path.
-Overrides `log_dir` if set.
 
-**Default:** unset
+Overrides `log_dir` if set.
 
 ---
 
@@ -192,7 +190,7 @@ Emit logs to stderr.
 
 ### `log_redact` (bool)
 
-Redacts secrets and sensitive fields from logs (best effort).
+Redacts secrets and sensitive values from logs (best effort).
 
 **Default:** `true`
 **Strongly recommended:** keep enabled
@@ -201,25 +199,24 @@ Redacts secrets and sensitive fields from logs (best effort).
 
 ## Arming (“push-to-type”)
 
-### `arm_enabled` (bool)
+NovaKey uses a **protocol-level arming gate** (not HTTP).
 
-Enables arming gate. Injection is blocked unless armed.
-
-**Default:** `true`
-
----
+The phone app sends an **Arm** message, opening a time window during which
+a secret may be injected.
 
 ### `arm_duration_ms` (int)
 
-How long the daemon remains armed after arming.
+How long NovaKey remains armed after an Arm message.
 
-**Default:** `20000` (20s)
+**Default:** `20000` (20 seconds)
+
+> The phone app may override this per-arm request.
 
 ---
 
 ### `arm_consume_on_inject` (bool)
 
-Consumes armed state after a successful injection.
+Consumes the armed state after a successful injection.
 
 **Default:** `true`
 
@@ -229,7 +226,7 @@ Consumes armed state after a successful injection.
 
 ### `allow_clipboard_when_disarmed` (bool)
 
-Allows clipboard fallback **even when arming blocks injection**.
+Allows clipboard fallback **even when injection is blocked by gates**.
 
 **Default:** `false`
 **Recommended:** `false`
@@ -248,45 +245,11 @@ Allows clipboard fallback **after gates pass but injection fails**
 
 ---
 
-## Arm API (local-only)
-
-### `arm_api_enabled` (bool)
-
-Enables a local HTTP endpoint to arm NovaKey programmatically.
-
-**Default:** `false`
-
----
-
-### `arm_listen_addr` (string)
-
-Address for Arm API listener.
-
-**Default:** unset (must be explicit)
-
----
-
-### `arm_token_file` (string)
-
-Path to Arm API token file.
-
-**Default:** `arm_token.txt`
-
----
-
-### `arm_token_header` (string)
-
-HTTP header name for Arm API token.
-
-**Default:** `X-NovaKey-Token`
-
----
-
 ## Injection safety
 
 ### `allow_newlines` (bool)
 
-Allows injected secrets to include newline characters.
+Allow injected secrets to contain newline characters.
 
 **Default:** `false`
 **Recommended:** `false`
@@ -303,12 +266,15 @@ Maximum length of injected text.
 
 ## Two-Man approval
 
-### `two_man_enabled` (bool)
-
 Requires explicit local approval before injection.
 
+### `two_man_enabled` (bool)
+
+Enable two-man approval.
+
 **Default (code):** `true`
-**Your shipped YAML:** `false`
+
+If disabled, injections proceed without local confirmation.
 
 ---
 
@@ -316,7 +282,7 @@ Requires explicit local approval before injection.
 
 Approval validity window.
 
-**Default:** `15000`
+**Default:** `15000` (15 seconds)
 
 ---
 
@@ -328,29 +294,64 @@ Consumes approval after a successful injection.
 
 ---
 
-## Target policy
+## Target policy (application / window allowlists)
 
-Restricts which applications/windows NovaKey may type into.
+Target policy restricts **which applications or windows NovaKey is allowed to type into**.
+
+This is your **primary mitigation** when listening on LAN.
+
+---
 
 ### `target_policy_enabled` (bool)
 
-Enables target policy enforcement.
+Master switch for target policy enforcement.
+
+* `false` → no target checks at all
+* `true` → enforcement enabled
 
 **Default:** `false`
 
 ---
 
+### Allow / deny list precedence
+
+When target policy is enabled, NovaKey evaluates rules in this order:
+
+1. **Denied process names**
+2. **Denied window titles**
+3. **Allowed process names**
+4. **Allowed window titles**
+5. **Built-in allowlist (optional fallback)**
+
+If any deny rule matches → injection is blocked.
+If allow rules exist → **at least one must match**.
+
+---
+
 ### `use_built_in_allowlist` (bool)
 
-Uses NovaKey’s built-in allowlist if no explicit lists are provided.
+Controls behavior **only when target policy is enabled AND no allow/deny lists are provided**.
 
-**Default:** auto-enabled when target policy is on and lists are empty
+* `true` → restrict to NovaKey’s built-in allowlist
+* `false` → allow all targets
+
+**Default:** `false`
+**Auto-enabled:** when target policy is enabled and all lists are empty
 
 ---
 
 ### `allowed_process_names` (list)
 
-Allowed process names (e.g. `chrome`, `firefox`, `notepad`).
+Allowed process names (case-insensitive, normalized).
+
+Examples:
+
+```yaml
+allowed_process_names:
+  - chrome
+  - firefox
+  - notepad
+```
 
 ---
 
@@ -358,11 +359,21 @@ Allowed process names (e.g. `chrome`, `firefox`, `notepad`).
 
 Allowed window title substrings.
 
+Example:
+
+```yaml
+allowed_window_titles:
+  - "Password"
+  - "Login"
+```
+
 ---
 
 ### `denied_process_names` (list)
 
 Explicitly denied process names.
+
+Always override allow rules.
 
 ---
 
@@ -370,16 +381,263 @@ Explicitly denied process names.
 
 Explicitly denied window title substrings.
 
+Always override allow rules.
+
 ---
 
-## Recommended baseline (most users)
+## Recommended baselines
+
+### Local-only (default-safe)
 
 ```yaml
 listen_addr: "127.0.0.1:60768"
 require_sealed_device_store: true
-arm_enabled: true
-allow_clipboard_when_disarmed: false
 ```
 
-If listening on LAN, strongly consider enabling **target policy allowlists**.
+---
 
+### LAN-exposed (recommended)
+
+```yaml
+listen_addr: "0.0.0.0:60768"
+require_sealed_device_store: true
+target_policy_enabled: true
+use_built_in_allowlist: true
+```
+
+For tighter control, replace the built-in allowlist with explicit allow/deny rules.
+
+Perfect — below is an **expanded drop-in continuation** you can append to the configuration document (or integrate inline).
+It adds **dangerous vs safe examples**, **documents the built-in allowlist**, and includes a **security-levels table** that maps cleanly to how NovaKey actually behaves.
+
+Everything here matches your current code and defaults.
+
+---
+
+## Target policy examples (dangerous vs safe)
+
+### ❌ Dangerous configurations (do not use on LAN)
+
+#### 1) Listening on LAN with no target policy
+
+```yaml
+listen_addr: "0.0.0.0:60768"
+target_policy_enabled: false
+```
+
+**Why this is dangerous**
+
+* Any paired device can inject into *any focused window*
+* Malware or a compromised phone can type into terminals, password prompts, or admin dialogs
+* This is equivalent to “remote keyboard access”
+
+---
+
+#### 2) Target policy enabled, but empty rules and no built-in allowlist
+
+```yaml
+target_policy_enabled: true
+use_built_in_allowlist: false
+```
+
+**Why this is dangerous**
+
+* Target policy is technically “on”
+* But with no allow/deny rules and built-in disabled, **everything is allowed**
+* This gives a false sense of security
+
+---
+
+## ✅ Safe configurations
+
+### 1) Safe-by-default (built-in allowlist fallback)
+
+```yaml
+target_policy_enabled: true
+use_built_in_allowlist: true
+```
+
+**What this does**
+
+* Restricts injection to NovaKey’s built-in allowlist
+* No custom rules required
+* Good baseline for LAN use
+
+---
+
+### 2) Explicit allowlist (recommended for power users)
+
+```yaml
+target_policy_enabled: true
+allowed_process_names:
+  - chrome
+  - firefox
+  - 1password
+  - bitwarden
+```
+
+**What this does**
+
+* Only these processes may receive injected text
+* All others are blocked by default
+* Built-in allowlist is ignored because explicit rules exist
+
+---
+
+### 3) Allow browser logins, deny terminals (defense-in-depth)
+
+```yaml
+target_policy_enabled: true
+allowed_process_names:
+  - chrome
+  - firefox
+denied_process_names:
+  - terminal
+  - powershell
+  - cmd
+  - bash
+  - zsh
+```
+
+**What this does**
+
+* Explicitly blocks dangerous targets even if focused
+* Deny rules always win
+
+---
+
+### 4) Window-title-based targeting (advanced)
+
+```yaml
+target_policy_enabled: true
+allowed_window_titles:
+  - "Sign in"
+  - "Login"
+  - "Password"
+denied_window_titles:
+  - "Terminal"
+  - "Administrator"
+```
+
+**What this does**
+
+* Allows injection only into specific dialogs
+* Useful for kiosk or SSO-style flows
+* More fragile (titles change), but very restrictive
+
+---
+
+## Built-in allowlist (exact contents)
+
+When `use_built_in_allowlist: true` is active **and no explicit allow/deny lists are provided**, NovaKey allows injection only into the following **process names** (case-insensitive, normalized):
+
+### Browsers
+
+* `chrome`
+* `chromium`
+* `msedge`
+* `brave`
+* `firefox`
+* `safari`
+* `opera`
+* `vivaldi`
+
+### Password managers
+
+* `1password`
+* `bitwarden`
+* `lastpass`
+* `dashlane`
+* `keeper`
+* `nordpass`
+* `protonpass`
+* `roboform`
+
+### Text editors (low-privilege)
+
+* `notepad`
+* `textedit`
+* `gedit`
+* `kate`
+
+> ⚠️ Not included:
+>
+> * Terminals (`bash`, `zsh`, `cmd`, `powershell`)
+> * IDEs
+> * Admin tools
+> * System dialogs
+
+This list is intentionally conservative.
+
+---
+
+## Security levels (recommended profiles)
+
+| Level                  | Intended use           | Key settings             | Risk     |
+| ---------------------- | ---------------------- | ------------------------ | -------- |
+| **Local-only**         | Single-user machine    | `listen_addr: 127.0.0.1` | Very low |
+| **LAN-safe (default)** | Home / trusted LAN     | Built-in allowlist       | Low      |
+| **Explicit allowlist** | Power users            | Custom allow rules       | Very low |
+| **High-assurance**     | Sensitive environments | Allow + deny + two-man   | Minimal  |
+| **Dangerous**          | ❌ Not recommended      | No target policy         | High     |
+
+---
+
+### 🟢 Level 1: Local-only (default-safe)
+
+```yaml
+listen_addr: "127.0.0.1:60768"
+require_sealed_device_store: true
+```
+
+---
+
+### 🟡 Level 2: LAN-safe (recommended baseline)
+
+```yaml
+listen_addr: "0.0.0.0:60768"
+require_sealed_device_store: true
+target_policy_enabled: true
+use_built_in_allowlist: true
+```
+
+---
+
+### 🟢 Level 3: Explicit allowlist (recommended)
+
+```yaml
+listen_addr: "0.0.0.0:60768"
+target_policy_enabled: true
+allowed_process_names:
+  - chrome
+  - firefox
+  - 1password
+```
+
+---
+
+### 🔐 Level 4: High-assurance (strongest)
+
+```yaml
+listen_addr: "0.0.0.0:60768"
+require_sealed_device_store: true
+
+target_policy_enabled: true
+allowed_process_names:
+  - 1password
+  - bitwarden
+denied_process_names:
+  - terminal
+  - powershell
+  - cmd
+
+two_man_enabled: true
+arm_consume_on_inject: true
+```
+
+**Threat model covered**
+
+* Compromised phone
+* Malware on LAN
+* Accidental injection into wrong window
+* Privilege escalation via terminal injection

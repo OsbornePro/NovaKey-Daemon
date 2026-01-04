@@ -58,6 +58,7 @@ nav:
       - Install: daemon/install.md
       - Pairing: daemon/pairing.md
       - Configuration: daemon/config.md
+      - ThreatModel: daemon/threat-model.md
       - Troubleshooting: daemon/troubleshooting.md
   - Security:
       - Overview: security/overview.md
