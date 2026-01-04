@@ -262,6 +262,3 @@ Thank you for helping keep NovaKey secure.
 
 — Robert H. Osborne (OsbornePro)  
 Maintainer, NovaKey-Daemon
-````
-
----
