@@ -19,10 +19,10 @@ type ServerConfig struct {
 	DevicesFile       string `json:"devices_file" yaml:"devices_file"`
 	ServerKeysFile    string `json:"server_keys_file" yaml:"server_keys_file"`
 
-	// NEW: require encrypted-at-rest device store on non-Windows
+	// require encrypted-at-rest device store on non-Windows
 	RequireSealedDeviceStore bool `json:"require_sealed_device_store" yaml:"require_sealed_device_store"`
 
-	// NEW: key rotation / pairing hardening
+	// key rotation / pairing hardening
 	RotateKyberKeys         bool `json:"rotate_kyber_keys" yaml:"rotate_kyber_keys"`
 	RotateDevicePSKOnRepair bool `json:"rotate_device_psk_on_repair" yaml:"rotate_device_psk_on_repair"`
 	PairHelloMaxPerMin      int  `json:"pair_hello_max_per_min" yaml:"pair_hello_max_per_min"` // per-IP, /pair only (in-memory)
@@ -38,13 +38,12 @@ type ServerConfig struct {
 	LogRedact   *bool  `json:"log_redact" yaml:"log_redact"`
 
 	// Arm gate
-	ArmEnabled         bool  `json:"arm_enabled" yaml:"arm_enabled"`
 	ArmDurationMs      int   `json:"arm_duration_ms" yaml:"arm_duration_ms"`
 	ArmConsumeOnInject *bool `json:"arm_consume_on_inject" yaml:"arm_consume_on_inject"`
 
 	// Clipboard policy
-    // - allow_clipboard_when_disarmed: if true, clipboard may be used when blocked by policy/gates
-    // - allow_clipboard_on_inject_failure: if true, clipboard may be used when injection fails after gates pass (Wayland, permissions, etc.)
+	// - allow_clipboard_when_disarmed: if true, clipboard may be used when blocked by policy/gates
+	// - allow_clipboard_on_inject_failure: if true, clipboard may be used when injection fails after gates pass (Wayland, permissions, etc.)
 	AllowClipboardWhenDisarmed    *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
 	AllowClipboardOnInjectFailure *bool `json:"allow_clipboard_on_inject_failure" yaml:"allow_clipboard_on_inject_failure"`
 
@@ -53,9 +52,9 @@ type ServerConfig struct {
 	MaxInjectLen  int  `json:"max_inject_len" yaml:"max_inject_len"`
 
 	// Two-man items
-	TwoManEnabled             bool   `json:"two_man_enabled" yaml:"two_man_enabled"`
-	ApproveWindowMs           int    `json:"approve_window_ms" yaml:"approve_window_ms"`
-	ApproveConsumeOnInject    *bool  `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
+	TwoManEnabled          *bool `json:"two_man_enabled" yaml:"two_man_enabled"`
+	ApproveWindowMs        int   `json:"approve_window_ms" yaml:"approve_window_ms"`
+	ApproveConsumeOnInject *bool `json:"approve_consume_on_inject" yaml:"approve_consume_on_inject"`
 
 	// Target policy
 	TargetPolicyEnabled bool     `json:"target_policy_enabled" yaml:"target_policy_enabled"`
@@ -155,11 +154,10 @@ func applyDefaults() {
 		cfg.LogRedact = &v
 	}
 
-	if !cfg.ArmEnabled {
-		cfg.ArmEnabled = true
-	}
-	if !cfg.TwoManEnabled {
-		cfg.TwoManEnabled = true
+	// Two-man default: ON unless explicitly set false in config
+	if cfg.TwoManEnabled == nil {
+		v := true
+		cfg.TwoManEnabled = &v
 	}
 
 	if cfg.ArmDurationMs == 0 {
@@ -171,13 +169,10 @@ func applyDefaults() {
 	}
 
 	// Clipboard defaults
-	// Safer default: clipboard when blocked OFF unless explicitly enabled
 	if cfg.AllowClipboardWhenDisarmed == nil {
 		v := false
 		cfg.AllowClipboardWhenDisarmed = &v
 	}
-	// Platform-friendly default: on Linux, injection may be impossible (Wayland),
-	// so allow clipboard on injection failure by default unless explicitly disabled.
 	if cfg.AllowClipboardOnInjectFailure == nil {
 		v := runtime.GOOS == "linux"
 		cfg.AllowClipboardOnInjectFailure = &v
@@ -204,3 +199,4 @@ func applyDefaults() {
 		cfg.UseBuiltInAllowlist = true
 	}
 }
+

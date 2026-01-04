@@ -90,7 +90,7 @@ func handleMsgConn(conn net.Conn) error {
 		return nil
 
 	case MsgTypeApprove:
-		if !cfg.TwoManEnabled {
+        if !boolDeref(cfg.TwoManEnabled, true) {
 			logReqf(reqID, "approve message received but two_man_enabled=false; ignoring")
 			respond(StatusBadRequest, StageApprove, ReasonBadRequest, "two-man disabled; approve ignored")
 			return nil
@@ -156,7 +156,7 @@ func handleMsgConn(conn net.Conn) error {
 	defer injectMu.Unlock()
 
 	// Two-man gate
-	if cfg.TwoManEnabled {
+    if boolDeref(cfg.TwoManEnabled, true) {
 		consume := boolDeref(cfg.ApproveConsumeOnInject, true)
 		if !approvalGate.Consume(deviceID, consume) {
 			until := approvalGate.ApprovedUntil(deviceID)

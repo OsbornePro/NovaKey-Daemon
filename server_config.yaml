@@ -52,7 +52,6 @@ arm_duration_ms: 20000
 arm_consume_on_inject: true
 allow_clipboard_when_disarmed: false
 allow_clipboard_on_inject_failure: true
-arm_api_enabled: true
 allow_newlines: false
 max_inject_len: 256
 two_man_enabled: true
