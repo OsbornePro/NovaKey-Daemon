@@ -18,7 +18,6 @@ func main() {
 	}
 
 	maybeStartPairingQR()
-	startArmAPI()
 
 	if err := startUnifiedListener(); err != nil {
 		log.Fatalf("startUnifiedListener failed: %v", err)

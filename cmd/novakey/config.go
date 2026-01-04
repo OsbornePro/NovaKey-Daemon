@@ -48,12 +48,6 @@ type ServerConfig struct {
 	AllowClipboardWhenDisarmed    *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
 	AllowClipboardOnInjectFailure *bool `json:"allow_clipboard_on_inject_failure" yaml:"allow_clipboard_on_inject_failure"`
 
-	// Local-only arming endpoint
-	ArmAPIEnabled  bool   `json:"arm_api_enabled" yaml:"arm_api_enabled"`
-	ArmListenAddr  string `json:"arm_listen_addr" yaml:"arm_listen_addr"`
-	ArmTokenFile   string `json:"arm_token_file" yaml:"arm_token_file"`
-	ArmTokenHeader string `json:"arm_token_header" yaml:"arm_token_header"`
-
 	// Injection safety
 	AllowNewlines bool `json:"allow_newlines" yaml:"allow_newlines"`
 	MaxInjectLen  int  `json:"max_inject_len" yaml:"max_inject_len"`
@@ -139,7 +133,6 @@ func applyDefaults() {
 	}
 
 	// RequireSealedDeviceStore default false
-	// (If you want a stricter shipped default, set it in your YAML instead.)
 
 	// Pairing hardening defaults
 	if cfg.PairHelloMaxPerMin == 0 {
@@ -162,7 +155,6 @@ func applyDefaults() {
 		cfg.LogRedact = &v
 	}
 
-	// Your defaults
 	if !cfg.ArmEnabled {
 		cfg.ArmEnabled = true
 	}
@@ -189,14 +181,6 @@ func applyDefaults() {
 	if cfg.AllowClipboardOnInjectFailure == nil {
 		v := runtime.GOOS == "linux"
 		cfg.AllowClipboardOnInjectFailure = &v
-	}
-
-	// Arm API defaults
-	if cfg.ArmTokenFile == "" {
-		cfg.ArmTokenFile = "arm_token.txt"
-	}
-	if cfg.ArmTokenHeader == "" {
-		cfg.ArmTokenHeader = "X-NovaKey-Token"
 	}
 
 	// Safety defaults
