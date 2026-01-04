@@ -45,7 +45,4 @@ Deleting removes:
 - the Keychain entry
 
 ## Clipboard access
-Secrets can only be copied to the clipboard in the Pro tier.
-
-This prevents secrets from being accidentally exposed through system pasteboards in the Free tier.
-
+Secrets can be copied to the clipboard in the Free and Pro tier.
