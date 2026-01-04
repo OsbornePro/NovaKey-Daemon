@@ -27,10 +27,10 @@ This is the fastest path to “send a secret from iPhone → computer”.
 ### Pair by scanning a QR
 ![Scan QR](assets/screenshots/novakey-scan-qr.PNG)
 
-
 ## Step 0 — Install NovaKey-Daemon
 
-Follow: **NovaKey-Daemon → Install**
+Follow: **NovaKey-Daemon → Install** and complete the installer for your platform.  
+The daemon will start automatically after installation.
 
 **If you want phone → computer over Wi-Fi:** the daemon must listen on a LAN-reachable address (not `127.0.0.1`).
 
@@ -48,12 +48,14 @@ Follow: **NovaKey-Daemon → Install**
 ## Step 2 — Pair via QR
 
 1. On your computer, start NovaKey-Daemon.
-2. If there are no paired devices, it will generate a pairing QR.
+2. If there are no paired devices, the daemon enters pairing mode and generates a **time-limited pairing QR**.
 3. On iOS:
    - Listeners → select your listener → Pair → Scan QR
 4. Scan the QR.
 
 You should see **Paired**.
+
+If you miss the QR code, restart the daemon or see the NovaKey-Daemon troubleshooting guide.
 
 ## Step 3 — Add a secret
 
