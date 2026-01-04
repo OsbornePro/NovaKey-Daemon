@@ -57,8 +57,9 @@ These installers are the **supported and recommended** way to install NovaKey-Da
 Download the installer that matches your system from:
 
 ```
-https://downloads.novakey.app/Installers/
+https://downloads.novakey.app/Installers/<file name>
 ```
+See the "Project Links" in the left menu pane for the latest download links.  
 
 Or from GitHub Releases:
 
