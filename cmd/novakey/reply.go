@@ -29,6 +29,9 @@ const (
 	ReasonNotArmed     ReplyReason = "not_armed"
 	ReasonNeedsApprove ReplyReason = "needs_approve"
 	ReasonNotPaired    ReplyReason = "not_paired"
+
+	// NOTE: These are valid server reasons, but older iOS clients may not
+	// include them in their decoding enums and may crash if they appear.
 	ReasonBadRequest   ReplyReason = "bad_request"
 	ReasonBadTimestamp ReplyReason = "bad_timestamp"
 	ReasonReplay       ReplyReason = "replay"
@@ -47,13 +50,35 @@ type ServerReply struct {
 	ReqID  uint64      `json:"req_id"`
 }
 
+// safeReasonForClient returns a reason that is less likely to crash strict iOS decoders.
+// It preserves the true reason by prefixing the message when we have to downgrade.
+func safeReasonForClient(st RespStatus, reason ReplyReason, msg string) (ReplyReason, string) {
+	// These are the ones that most clients tend to support.
+	// (OK + the common gating outcomes.)
+	switch reason {
+	case ReasonOK, ReasonNotArmed, ReasonNeedsApprove, ReasonClipboardFallback, ReasonInjectUnavailableWayland:
+		return reason, msg
+	}
+
+	// For any other reason, keep Status accurate, but downgrade Reason to "ok"
+	// so strict Swift enums won’t crash on unknown cases.
+	//
+	// IMPORTANT: We embed the real reason in msg so it’s not lost.
+	if msg == "" {
+		msg = "error"
+	}
+	// Example: "reason=bad_request; target policy blocked"
+	return ReasonOK, "reason=" + string(reason) + "; " + msg
+}
+
 func writeReplyLine(conn net.Conn, r ServerReply) {
 	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 	defer func() { _ = conn.SetWriteDeadline(time.Time{}) }()
 
 	b, err := json.Marshal(r)
 	if err != nil {
-		b = []byte(`{"v":1,"status":127,"stage":"msg","reason":"internal_error","msg":"marshal failed","ts_unix":0,"req_id":0}` + "\n")
+		// Keep this extremely stable and minimal.
+		b = []byte(`{"v":1,"status":127,"stage":"msg","reason":"ok","msg":"reason=internal_error; marshal failed","ts_unix":0,"req_id":0}` + "\n")
 	} else {
 		b = append(b, '\n')
 	}
@@ -71,12 +96,14 @@ func writeReplyLine(conn net.Conn, r ServerReply) {
 }
 
 func makeReply(reqID uint64, st RespStatus, stage ReplyStage, reason ReplyReason, msg string) ServerReply {
+	safeReason, safeMsg := safeReasonForClient(st, reason, msg)
+
 	return ServerReply{
 		V:      replyVersion,
 		Status: uint8(st),
 		Stage:  stage,
-		Reason: reason,
-		Msg:    msg,
+		Reason: safeReason,
+		Msg:    safeMsg,
 		TsUnix: time.Now().Unix(),
 		ReqID:  reqID,
 	}
