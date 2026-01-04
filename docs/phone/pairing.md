@@ -1,21 +1,3 @@
-You’re right — this doc is **good content-wise**, but it’s now **structurally outdated** because it treats *legacy install scripts as the primary path*. The fix is **not** to delete them, but to:
-
-* Make **modern native installers the default**
-* Clearly mark **legacy scripts as deprecated**
-* Keep the rest of the pairing flow unchanged (because it *is* still correct)
-
-Below is a **full drop-in replacement** for `docs/phone/pairing.md` that:
-
-* Preserves your screenshots and phone flow
-* Adds modern installers (Windows / macOS / Linux packages)
-* Keeps legacy installers (clearly labeled)
-* Reduces user friction and anxiety
-* Matches your current installer + pairing + security model
-
-You can replace the file **entirely** with this.
-
----
-
 # 📱 Getting Started (Phone → Computer Pairing)
 
 This guide walks you through everything you need to do after installing the **NovaKey phone app**, from installing the desktop companion to sending your first secret.
@@ -245,31 +227,4 @@ Most issues are caused by:
 * Firewall blocking port `60768`
 * Daemon bound to `127.0.0.1` instead of a LAN address
 * Pairing window missed (restart daemon if needed)
-
----
-
-## You’re ready
-
-NovaKey is now paired and ready to securely send secrets
-**from your phone to your computer — on demand, with intent.**
-
----
-
-## Final verdict
-
-This version:
-
-* ✅ Keeps legacy paths without encouraging them
-* ✅ Makes modern installers the clear default
-* ✅ Matches your security posture
-* ✅ Reduces confusion and support load
-* ✅ Aligns phone docs with daemon docs
-
-If you want next, I can:
-
-* add a **short “Why pairing expires” sidebar**
-* unify screenshots across phone + daemon docs
-* prep a **README excerpt** for GitHub
-
-Just say the word.
 
