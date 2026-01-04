@@ -18,6 +18,25 @@ NovaKey is composed of several open-source components. Each repository serves a 
 - Repository: https://github.com/osbornepro/NovaKeyKEMBridge
 - Description: Cryptographic bridge library used for key encapsulation and secure channel setup.
 
+# Download NovaKey-Daemon for Computer
+
+* **Windows Primary AMD64:**
+  `https://downloads.novakey.app/Installers/NovaKey-Setup.exe`
+* **RHEL Based Linux Primary AMD64:**
+  `https://downloads.novakey.app/Installers/novakey-1.0.0-1.amd64.rpm`
+* **RHEL Based Linux Primary ARM64:**
+  `https://downloads.novakey.app/Installers/novakey-1.0.0-1.aarch64.rpm`
+* **Debian Based Linux Primary AMD64:**
+  `https://downloads.novakey.app/Installers/novakey-1.0.0.amd64.deb`
+* **Debian Based Linux Primary ARM64:**
+  `https://downloads.novakey.app/Installers/novakey-1.0.0.arm64.deb`
+* **MacOS Primary AMD64:**
+  `https://downloads.novakey.app/Installers/NovaKey-1.0.0-amd64.pkg`
+* **MacOS Primary ARM64:**
+  `https://downloads.novakey.app/Installers/NovaKey-1.0.0-arm64.pkg`
+* **GitHub Release Downloads:**
+  [https://github.com/OsbornePro/NovaKey-Daemon/releases](https://github.com/OsbornePro/NovaKey-Daemon/releases)
+
 ---
 
 ## Project & Author
