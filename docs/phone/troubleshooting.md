@@ -109,6 +109,24 @@ This is a safety feature to prevent unattended injection.
 
 ---
 
+### “Decrypt auth error” after switching target computer
+
+**What it means:**  
+An Arm command was previously sent to a computer that was offline instead of the desired computer, leaving the authentication state out of sync when switching to a different listener.
+
+**Fix:**
+- Restart the NovaKey service on the target computer
+- Retry sending the Arm command from the phone
+
+Although the in-app troubleshooting prompt may suggest re-pairing, this is not required in this scenario.
+Restarting the service restores a valid authentication session.  
+  
+**Why this happens:**
+When the Arm command is sent to a computer that is not online, the authentication state can become out of sync.
+Switching listeners and retrying the command may cause the app to attempt to reuse an invalid or stale authentication session, resulting in the decrypt error.
+
+---
+
 ### “Needs approval”
 
 **What it means:**  
