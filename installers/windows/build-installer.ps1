@@ -11,5 +11,5 @@ If (-NOT (Test-Path -Path $ISCCPath)) {
   Throw "ISCC.exe not found. Install Inno Setup 6, or update path in build-installer.ps1"
 }  # End If
 
-& $ISCC "/DMyAppVersion=$($Version)" "$($PSScriptRoot)\novakey.iss"
+& $ISCCPath "/DMyAppVersion=$($Version)" "$($PSScriptRoot)\novakey.iss"
 Write-Output -InputObject "Built installer at installers/windows/out/NovaKey-Setup.exe"
