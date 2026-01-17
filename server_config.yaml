@@ -12,7 +12,7 @@ log_keep: 10
 log_stderr: true
 log_redact: true
 require_sealed_device_store: true
-target_policy_enabled: false
+target_policy_enabled: true
 use_built_in_allowlist: false
 allowed_process_names:
   - msedge
