@@ -8,7 +8,7 @@ Set-Location -Path $Root
 
 # Sanity check inputs
 $NK = Join-Path -Path $Root -ChildPath "dist\windows\novakey.exe"
-If (-NOT (Test-Path $nk)) {
+If (-NOT (Test-Path -Path $NK)) {
   Throw "Missing $($NK). Build binaries first (build.ps1 / build.sh)."
 }  # End If
 
