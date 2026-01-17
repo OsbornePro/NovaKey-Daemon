@@ -27,7 +27,6 @@ allowed_process_names:
   - ecosia
   - aloha
   - 1password
-  - bitwarden
   - lastpass
   - dashlane
   - keeper
@@ -44,7 +43,8 @@ allowed_process_names:
   - kate
   - vim
   - nano
-allowed_window_titles: []
+allowed_window_titles: 
+  - Bitwarden
 denied_process_names: []
 denied_window_titles: []
 arm_duration_ms: 20000
