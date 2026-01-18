@@ -58,7 +58,9 @@ NovaKey packages are distributed via **official signed repositories** and instal
 Download:
 
 ```
+
 NovaKey-Setup.exe
+
 ```
 
 ### 2) Run the installer
@@ -90,14 +92,18 @@ Download **one** of the following, depending on your Mac:
 
 * Apple Silicon (M1/M2/M3):
 
-  ```
-  NovaKey-<version>-arm64.pkg
-  ```
+```
+
+NovaKey-<version>-arm64.pkg
+
+```
 * Intel:
 
-  ```
-  NovaKey-<version>-amd64.pkg
-  ```
+```
+
+NovaKey-<version>-amd64.pkg
+
+```
 
 ### 2) Run the installer
 
@@ -117,7 +123,9 @@ macOS requires explicit approval for typing automation.
 Open:
 
 ```
+
 System Settings → Privacy & Security
+
 ```
 
 Enable **NovaKey** under:
@@ -143,6 +151,15 @@ The daemon will not function correctly until both are enabled.
 > If pairing state becomes partially initialized, a **full uninstall and reinstall**
 > may be required to restart pairing.
 
+### Package signing key (Linux)
+
+NovaKey Linux packages and repositories are signed with:
+
+* **Signing Key Fingerprint:**
+  `0405 FB0D FB68 0F27 2E40  D353 C9D4 4266 5653 AEB5`
+* **Key URL:**
+  `https://repo.novakey.app/keys/novakey-repo-public.asc`
+
 ---
 
 ### RPM-Based Distributions (Rocky, RHEL, Fedora, Alma)
@@ -167,12 +184,6 @@ EOF
 sudo rpm --import https://repo.novakey.app/keys/novakey-repo-public.asc
 ```
 
-Verify the fingerprint:
-
-```
-0405 FB0D FB68 0F27 2E40 D353 C9D4 4266 5653 AEB5
-```
-
 #### 3) Install NovaKey
 
 ```bash
@@ -191,14 +202,33 @@ systemctl --user enable novakey --now
 
 ### Debian / Ubuntu (APT)
 
-```bash
-sudo mkdir -p /usr/share/keyrings
-curl -fsSL https://repo.novakey.app/keys/novakey-repo-public.asc \
-  | gpg --dearmor | sudo tee /usr/share/keyrings/novakey.gpg >/dev/null
+#### 1) Install prerequisites
 
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+```
+
+#### 2) Install the NovaKey repo signing key (keyring)
+
+```bash
+sudo install -d -m 0755 /usr/share/keyrings
+
+curl -fsSL https://repo.novakey.app/keys/novakey-repo-public.asc \
+  | gpg --dearmor \
+  | sudo tee /usr/share/keyrings/novakey.gpg >/dev/null
+```
+
+#### 3) Add the NovaKey APT repository
+
+```bash
 echo "deb [signed-by=/usr/share/keyrings/novakey.gpg] https://repo.novakey.app/apt stable main" \
   | sudo tee /etc/apt/sources.list.d/novakey.list >/dev/null
+```
 
+#### 4) Install NovaKey
+
+```bash
 sudo apt update
 sudo apt install -y novakey
 systemctl --user enable novakey --now
