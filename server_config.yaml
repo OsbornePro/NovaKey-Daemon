@@ -57,4 +57,4 @@ approve_consume_on_inject: true
 allow_typing_fallback: true
 macos_prefer_clipboard: true
 allow_clipboard_when_disarmed: false
-allow_clipboard_on_inject_failure: false
+allow_clipboard_on_inject_failure: true
