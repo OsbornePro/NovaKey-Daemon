@@ -39,7 +39,7 @@ Author: Robert H. Osborne
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet("windows", "linux", "darwin", IgnoreCase=$true)]
+  [ValidateSet("windows", "linux", "darwin", IgnoreCase=$True)]
   [String]$Target = "windows",
 
   [Switch]$Clean,
@@ -67,7 +67,7 @@ $LdFlags = "-s -w -X main.version=$Version -X main.buildDate=$BuildDate"
 
 Write-Information -MessageData "[-] $(Get-Date -Format 'MM-dd-yyyy HH:mm:ss') Building NovaKey $Version for $Target"
 If ($Clean.IsPresent) {
-  Write-Information -MessageData "[-] Cleaning dist/"
+  Write-Information -MessageData '[-] Cleaning dist/'
   Remove-Item -Recurse -Force -Path dist -ErrorAction SilentlyContinue
 }
 
@@ -87,15 +87,15 @@ Switch ($Target.ToLower()) {
     $GuiLdFlags = "$LdFlags -H=windowsgui"
 
     Write-Information -MessageData "[-] go build novakey (windows/amd64)"
-    go build -trimpath -ldflags $GuiLdFlags -o (Join-Path $DistWindows "novakey.exe") "./cmd/novakey"
+    go build -trimpath -ldflags $GuiLdFlags -o (Join-Path -Path $DistWindows "novakey.exe") './cmd/novakey'
 
     Write-Information -MessageData "[-] go build nvpair (windows/amd64)"
-    go build -trimpath -ldflags $LdFlags -o (Join-Path $DistWindows "nvpair-windows-amd64.exe") "./cmd/nvpair"
+    go build -trimpath -ldflags $LdFlags -o (Join-Path -Path $DistWindows "nvpair-windows-amd64.exe") './cmd/nvpair'
 
     Write-Information -MessageData "[-] go build nvclient (windows/amd64)"
-    go build -trimpath -ldflags $LdFlags -o (Join-Path $DistWindows "nvclient-windows-amd64.exe") "./cmd/nvclient"
+    go build -trimpath -ldflags $LdFlags -o (Join-Path -Path $DistWindows "nvclient-windows-amd64.exe") './cmd/nvclient'
 
-    Write-Information -MessageData "[✓] Windows binaries built (dist/windows/)"
+    Write-Information -MessageData "[-] Windows binaries built (dist/windows/)"
   } "linux" {
     $env:CGO_ENABLED = "0"
     $env:GOOS = "linux"
@@ -104,18 +104,18 @@ Switch ($Target.ToLower()) {
       $env:GOARCH = $Arch
 
       Write-Information -MessageData "[-] go build novakey (linux/$Arch)"
-      go build -trimpath -ldflags $LdFlags -o (Join-Path $DistLinux "novakey-linux-$Arch.elf") "./cmd/novakey"
+      go build -trimpath -ldflags $LdFlags -o (Join-Path -Path $DistLinux "novakey-linux-$Arch.elf") './cmd/novakey'
 
       Write-Information -MessageData "[-] go build nvpair (linux/$Arch)"
-      go build -trimpath -ldflags $LdFlags -o (Join-Path $DistLinux "nvpair-linux-$Arch.elf") "./cmd/nvpair"
+      go build -trimpath -ldflags $LdFlags -o (Join-Path -Path $DistLinux "nvpair-linux-$Arch.elf") './cmd/nvpair'
 
       Write-Information -MessageData "[-] go build nvclient (linux/$Arch)"
-      go build -trimpath -ldflags $LdFlags -o (Join-Path $DistLinux "nvclient-linux-$Arch.elf") "./cmd/nvclient"
+      go build -trimpath -ldflags $LdFlags -o (Join-Path -Path $DistLinux "nvclient-linux-$Arch.elf") './cmd/nvclient'
     }
 
-    Write-Information -MessageData "[✓] Linux binaries built (dist/linux/)"
+    Write-Information -MessageData '[-] Linux binaries built (dist/linux/)'
   } "darwin" {
-    Write-Warning -Message @"
+    Write-Warning -Message '
 macOS builds must be performed on macOS.
 
 Run on a Mac:
@@ -123,17 +123,17 @@ Run on a Mac:
 Then package:
   ./installers/macos/pkg/build-pkg.sh $Version arm64
   ./installers/macos/pkg/build-pkg.sh $Version amd64
-"@
+'
     Return
   }
 }
 
 # ---------------- Package (ONLY when requested) ----------------
 If ($Package.IsPresent) {
-  Write-Information -MessageData "[-] Packaging enabled (-Package)"
+  Write-Information -MessageData '[-] Packaging enabled (-Package)'
 
   If ($Target.ToLower() -eq "windows") {
-    $BuildInstaller = Join-Path $ProjectRoot "installers\windows\build-installer.ps1"
+    $BuildInstaller = Join-Path -Path $ProjectRoot "installers\windows\build-installer.ps1"
     If (-not (Test-Path -Path $BuildInstaller)) {
       Throw "Missing: $BuildInstaller"
     }
