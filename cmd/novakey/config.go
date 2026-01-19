@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -46,6 +45,14 @@ type ServerConfig struct {
 	// - allow_clipboard_on_inject_failure: if true, clipboard may be used when injection fails after gates pass (Wayland, permissions, etc.)
 	AllowClipboardWhenDisarmed    *bool `json:"allow_clipboard_when_disarmed" yaml:"allow_clipboard_when_disarmed"`
 	AllowClipboardOnInjectFailure *bool `json:"allow_clipboard_on_inject_failure" yaml:"allow_clipboard_on_inject_failure"`
+
+	// Typing fallback policy
+	// - allow_typing_fallback: if true, daemon may use an "auto-typing" fallback when primary injection fails
+	AllowTypingFallback *bool `json:"allow_typing_fallback" yaml:"allow_typing_fallback"`
+
+	// macOS preference:
+	// - macos_prefer_clipboard: if true, macOS injection will try clipboard paste first, then optional AppleScript typing fallback.
+	MacOSPreferClipboard *bool `json:"macos_prefer_clipboard" yaml:"macos_prefer_clipboard"`
 
 	// Injection safety
 	AllowNewlines bool `json:"allow_newlines" yaml:"allow_newlines"`
@@ -116,7 +123,7 @@ func fileExists(path string) bool {
 
 func applyDefaults() {
 	if cfg.ListenAddr == "" {
-		cfg.ListenAddr = "127.0.0.1:60768"
+		cfg.ListenAddr = "0.0.0.0:60768"
 	}
 	if cfg.MaxPayloadLen == 0 {
 		cfg.MaxPayloadLen = 4096
@@ -130,8 +137,6 @@ func applyDefaults() {
 	if cfg.ServerKeysFile == "" {
 		cfg.ServerKeysFile = "server_keys.json"
 	}
-
-	// RequireSealedDeviceStore default false
 
 	// Pairing hardening defaults
 	if cfg.PairHelloMaxPerMin == 0 {
@@ -169,13 +174,26 @@ func applyDefaults() {
 	}
 
 	// Clipboard defaults
+	// IMPORTANT: per your notes, do NOT enable clipboard fallback by default (Linux/Windows included).
 	if cfg.AllowClipboardWhenDisarmed == nil {
 		v := false
 		cfg.AllowClipboardWhenDisarmed = &v
 	}
 	if cfg.AllowClipboardOnInjectFailure == nil {
-		v := runtime.GOOS == "linux"
+		v := false
 		cfg.AllowClipboardOnInjectFailure = &v
+	}
+
+	// Typing fallback defaults: enabled, but can be turned off by user.
+	if cfg.AllowTypingFallback == nil {
+		v := true
+		cfg.AllowTypingFallback = &v
+	}
+
+	// macOS preference defaults: prefer clipboard first (keylogger risk with AppleScript typing)
+	if cfg.MacOSPreferClipboard == nil {
+		v := true
+		cfg.MacOSPreferClipboard = &v
 	}
 
 	// Safety defaults

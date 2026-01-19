@@ -12,7 +12,13 @@
 ### Windows
 - Some UAC contexts and secure desktop prompts can block injection.
 
-## Clipboard mode happened (status okClipboard)
+## Clipboard mode happened (status 0x09 — OK_CLIPBOARD / okClipboard)
+The daemon also returns a semantic `reason` to explain what happened:
+
+- `clipboard_fallback` — clipboard was used (either paste was executed or user must paste)
+- `typing_fallback` — auto-typing fallback was used
+- `inject_unavailable_wayland` — injection unavailable on Wayland; clipboard fallback path used
+
 This means:
 - injection was blocked or denied
 - **but** the daemon successfully copied the secret to clipboard

@@ -1,10 +1,11 @@
 // cmd/novakey/inject_other.go
-//go:build !linux && !darwin && !windows
+//go:build !windows && !darwin && !linux
 
 package main
 
 import "fmt"
 
-func InjectPasswordToFocusedControl(password string) error {
-	return fmt.Errorf("InjectPasswordToFocusedControl not implemented on this OS")
+func InjectPasswordToFocusedControl(password string) (InjectMethod, error) {
+	return "", fmt.Errorf("injection not supported on this OS")
 }
+

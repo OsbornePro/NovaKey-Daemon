@@ -21,8 +21,10 @@ echo ""
 echo "[✓] Built:"
 ls -1 "installers/macos/pkg/NovaKey-${VERSION}-arm64.pkg" "installers/macos/pkg/NovaKey-${VERSION}-amd64.pkg"
 
-echo ""
-echo "NOTE: For downloadable distribution you should sign+notarize."
-echo "You currently do NOT have a 'Developer ID Installer' identity in Keychain."
-echo "Create one in Xcode -> Settings -> Accounts -> Manage Certificates -> '+' -> Developer ID Installer"
+if security find-identity -v -p basic | grep -q "Developer ID Installer"; then
+  echo "Developer ID Installer identity found."
+else
+  echo "You do NOT have a 'Developer ID Installer' identity in Keychain."
+  echo "Create one in Xcode -> Settings -> Accounts -> Manage Certificates -> '+' -> Developer ID Installer"
+fi
 

@@ -33,7 +33,7 @@ Address and port to bind the NovaKey TCP listener.
 **Default (code):**
 
 ```
-127.0.0.1:60768
+0.0.0.0:60768
 ```
 
 **Common values:**
@@ -240,8 +240,31 @@ Allows clipboard fallback **after gates pass but injection fails**
 
 **Default:**
 
-* Linux: `true`
-* Other platforms: `false`
+* All platforms: `false`
+
+---
+
+## Typing fallback
+
+### `allow_typing_fallback` (bool)
+
+Allows an auto-typing fallback when direct injection is not possible.
+
+**Default:** `true`
+
+> Note: auto-typing may be observable by keyloggers with sufficient privileges. Disable this in higher-assurance environments.
+
+---
+
+## macOS injection preference
+
+### `macos_prefer_clipboard` (bool)
+
+On macOS, prefer clipboard paste injection over AppleScript keystroke typing.
+
+**Default:** `true`
+
+> This default is chosen to reduce exposure to keylogger-style input capture where possible.
 
 ---
 

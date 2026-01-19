@@ -35,6 +35,7 @@ NovaKey uses:
 - two-man approval
 - focused target allow/deny lists
 - injection safety rules (newline/length)
+- configurable clipboard and auto-typing fallbacks (disabled unless needed; can be restricted or disabled)
 
 For wire details, see **Protocol Summary**.
 

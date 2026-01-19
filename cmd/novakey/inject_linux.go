@@ -11,11 +11,13 @@ import (
 	"strings"
 )
 
-// InjectPasswordToFocusedControl on Linux:
+// Linux injection:
 //
 // - Wayland: do NOT attempt keystroke injection; return ErrInjectUnavailableWayland.
-// - X11/Xwayland: set clipboard async (best effort) + type via xdotool.
-func InjectPasswordToFocusedControl(password string) error {
+// - X11/Xwayland: type via xdotool.
+// - IMPORTANT: do NOT set clipboard unless the user enabled clipboard fallback AND injection failed;
+//   that logic lives in msg_handler.go via allowClipboardOnInjectFailure().
+func InjectPasswordToFocusedControl(password string) (InjectMethod, error) {
 	display := os.Getenv("DISPLAY")
 	session := strings.ToLower(strings.TrimSpace(os.Getenv("XDG_SESSION_TYPE")))
 
@@ -25,22 +27,15 @@ func InjectPasswordToFocusedControl(password string) error {
 	// Wayland path
 	if session == "wayland" || os.Getenv("WAYLAND_DISPLAY") != "" {
 		log.Printf("[linux] Wayland session detected; keystroke injection not supported")
-		return ErrInjectUnavailableWayland
+		return "", ErrInjectUnavailableWayland
 	}
 
-	// X11 / Xwayland path: clipboard best-effort in background
-	go func(p string) {
-		if err := trySetClipboard(p); err != nil {
-			log.Printf("[linux] async trySetClipboard failed: %v", err)
-		}
-	}(password)
-
-	// Type via xdotool
+	// X11 / Xwayland typing via xdotool
 	if err := injectViaXdotoolType(password); err != nil {
-		return fmt.Errorf("xdotool typing failed: %w", err)
+		return "", fmt.Errorf("xdotool typing failed: %w", err)
 	}
 
-	return nil
+	return InjectMethodTyping, nil
 }
 
 func injectViaXdotoolType(password string) error {
@@ -55,3 +50,4 @@ func injectViaXdotoolType(password string) error {
 	}
 	return nil
 }
+

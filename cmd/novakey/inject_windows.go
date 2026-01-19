@@ -26,7 +26,7 @@ var (
 	procGlobalLock   = kernel32.NewProc("GlobalLock")
 	procGlobalUnlock = kernel32.NewProc("GlobalUnlock")
 
-	// keyboard alternate path 
+	// keyboard alternate path
 	procKeybdEvent     = user32.NewProc("keybd_event")
 	procVkKeyScanW     = user32.NewProc("VkKeyScanW")
 	procMapVirtualKeyW = user32.NewProc("MapVirtualKeyW")
@@ -60,28 +60,23 @@ func getWindowClass(hwnd windows.Handle) (string, error) {
 	return syscall.UTF16ToString(buf[:r1]), nil
 }
 
-// InjectPasswordToFocusedControl on Windows:
+// Windows injection:
 //
-//  1. Copy password to clipboard (best-effort).
-//  2. Get HWND of focused control.
-//  3. Try EM_REPLACESEL / WM_SETTEXT.
-//  4. Alternate typing to keybd_event typing.
-func InjectPasswordToFocusedControl(password string) error {
+//  1) Find focused control
+//  2) Try direct messages (EM_REPLACESEL / WM_SETTEXT) for known-safe Edit/RichEdit controls
+//  3) If direct fails and allow_typing_fallback=true, use keybd_event typing
+//
+// IMPORTANT: We do NOT touch clipboard here. Clipboard fallback (if enabled) is handled in msg_handler.go
+// only after injection failure.
+func InjectPasswordToFocusedControl(password string) (InjectMethod, error) {
 	log.Printf("[windows] InjectPasswordToFocusedControl called; len=%d", len(password))
-
-	// clipboard first (best-effort)
-	if err := setClipboardText(password); err != nil {
-		log.Printf("[windows] setClipboardText failed: %v", err)
-	} else {
-		log.Printf("[windows] password copied to clipboard")
-	}
 
 	hwnd, err := getFocusedControl()
 	if err != nil {
-		return fmt.Errorf("getFocusedControl: %w", err)
+		return "", fmt.Errorf("getFocusedControl: %w", err)
 	}
 	if hwnd == 0 {
-		return fmt.Errorf("no focused control")
+		return "", fmt.Errorf("no focused control")
 	}
 
 	className, err := getWindowClass(hwnd)
@@ -104,23 +99,27 @@ func InjectPasswordToFocusedControl(password string) error {
 
 			if beforeLen >= 0 && afterLen >= 0 && afterLen != beforeLen {
 				log.Printf("[windows] direct message injection succeeded (len %d -> %d)", beforeLen, afterLen)
-				return nil
+				return InjectMethodDirect, nil
 			}
-			log.Printf("[windows] direct message injection uncertain/no change (len %d -> %d), falling back to keybd_event", beforeLen, afterLen)
+			log.Printf("[windows] direct message injection uncertain/no change (len %d -> %d), will consider typing fallback", beforeLen, afterLen)
 		} else {
-			log.Printf("[windows] direct message injection failed, falling back to keybd_event: %v", err)
+			log.Printf("[windows] direct message injection failed: %v", err)
 		}
 	} else {
-		log.Printf("[windows] control class %q not in safe list; using keybd_event", className)
+		log.Printf("[windows] control class %q not in safe list; skipping direct injection", className)
 	}
 
-	// Alternate typing path
+	// Optional typing fallback
+	if !boolDeref(cfg.AllowTypingFallback, true) {
+		return "", fmt.Errorf("direct injection failed and typing fallback disabled")
+	}
+
 	if err := injectViaKeybdEvent(password); err != nil {
 		log.Printf("[windows] keybd_event typing failed: %v", err)
-		return fmt.Errorf("keybd_event typing failed: %w", err)
+		return "", fmt.Errorf("keybd_event typing failed: %w", err)
 	}
-	log.Printf("[windows] keybd_event typing path succeeded")
-	return nil
+	log.Printf("[windows] keybd_event typing path succeeded (fallback)")
+	return InjectMethodTyping, nil
 }
 
 func injectViaMessages(hwnd windows.Handle, password string) error {
@@ -314,3 +313,4 @@ func utf16FromString(s string) ([]uint16, error) {
 	}
 	return u, nil
 }
+

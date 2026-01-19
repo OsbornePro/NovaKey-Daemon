@@ -10,10 +10,12 @@ It is designed to:
 
 The daemon does not expose a web interface.
 
-It’s designed for cases where you don’t want to type high-value secrets on your desktop keyboard:
+It is designed for cases where you don’t want to type high-value secrets on your desktop keyboard:
 - the secret lives on your phone
 - delivery is encrypted and authenticated
 - the daemon injects into the focused control (*with optional clipboard mode*)
+
+NovaKey prefers direct injection; clipboard and auto-typing are fallback options used only when required by OS limitations and can be disabled via configuration.
 
 ## One port, two routes
 NovaKey listens on one TCP address (`listen_addr`, default `0.0.0.0:60768`)

@@ -1,84 +1,82 @@
 # NovaKey Wire Protocol
 
-NovaKey uses a single TCP listener (`listen_addr`, default `0.0.0.0:60768`) and routes each connection by an initial ASCII line (**required**):
+NovaKey uses a single TCP listener (`listen_addr`, default `0.0.0.0:60768`) and routes each connection by an initial ASCII preface line (**required**):
 
 - `NOVAK/1 /pair\n` — pairing (*Pairing Protocol v1*)
 - `NOVAK/1 /msg\n`  — encrypted messages (*Protocol v3*)
 
 Connections that do not begin with one of these exact lines are rejected before any cryptographic processing.
 
-### Message Types (Protocol v3)
-
-All `/msg` requests decrypt to a timestamp followed by a **required inner typed message frame (v1)**.
-Exactly one inner message type (1–4) is permitted per request:
-
-| Type | Name    | Description                                                                            |
-| ---- | ------- | -------------------------------------------------------------------------------------- |
-| 1    | Inject  | Injects the secret payload into the currently focused field (subject to policy gates). |
-| 2    | Approve | Opens a short approval window allowing a subsequent Inject (Two-Man Mode).             |
-| 3    | Arm     | Arms the daemon for a limited duration, enabling injection (“push-to-type”).           |
-| 4    | Disarm  | Clears the armed state immediately, blocking further injection.                        |
-
-This table is normative for all NovaKey documentation; other pages must reference this section rather than restating message types.
-
-Messages that do not contain a valid **Inner Message Frame v1** with one of the above types are rejected.
-There is no legacy or untyped message support.
-
 ---
 
 ## 1) Transport and Routing
 
 ### Listener
-- TCP
-- address: `listen_addr`
+
+- Protocol: TCP
+- Address: `listen_addr`
 
 ### Route preface (required)
 
-The client must begin with exactly one of:
+Each client connection **must** begin with exactly one of:
 
-- `NOVAK/1 /pair\n`
-- `NOVAK/1 /msg\n`
+```text
+NOVAK/1 /pair\n
+NOVAK/1 /msg\n
+````
 
-After this line, the remaining bytes are interpreted by the selected route.
+Routing is performed strictly by this ASCII preface line.
+
+Connections without a valid preface are rejected immediately and closed.
 
 ### Connection lifetime
 
-Each TCP connection handles exactly one request:
+Each TCP connection handles exactly **one request**:
 
-- `/pair`: one pairing exchange
-- `/msg`: one typed message (*approve/arm/disarm/inject*)
+* `/pair`: one pairing exchange
+* `/msg`: one typed message (approve / arm / disarm / inject)
 
 The server enforces read/write deadlines and closes idle or stalled connections.
-Clients must open a new connection for each request.
+Clients must open a new TCP connection for each request.
 
 ---
 
 ## 2) Pairing Protocol v1 (`/pair`)
 
 Pairing uses:
-- one-time pairing token (*base64 raw URL;* `base64.RawURLEncoding`)
-- ML-KEM-768
-- HKDF-SHA-256
-- XChaCha20-Poly1305
 
-A typical QR payload uses a custom URI scheme, for example:
+* One-time pairing token
+* ML-KEM-768
+* HKDF-SHA-256
+* XChaCha20-Poly1305
 
-- `novakey://pair?v=4&host=<host>&port=<port>&token=<b64url>&fp=<fp16hex>&exp=<unix>`
+Pairing occurs only when no devices are currently paired (empty or missing device store).
 
-(*Exact QR payload format is an application-level choice; keep stable once clients depend on it.*)
+A typical QR payload uses an application-defined URI scheme, for example:
+
+```text
+novakey://pair?v=4&host=<host>&port=<port>&token=<b64url>&fp=<fp16hex>&exp=<unix>
+```
+
+(*Exact QR payload format is application-defined but should remain stable once clients depend on it.*)
+
+---
 
 ### 2.1 Hello (plaintext JSON line)
 
 Client → Server:
+
 ```text
 {"op":"hello","v":1,"token":"<b64url>"}\n
-````
+```
 
 Rules:
 
 * `op` must be `"hello"`
 * `v` must be `1`
-* token is one-time and expires (*server-side TTL*)
+* `token` must be valid, unexpired, and unused
+
+---
 
 ### 2.2 Server key (plaintext JSON line)
 
@@ -88,17 +86,23 @@ Server → Client:
 {"op":"server_key","v":1,"kid":"1","kyber_pub_b64":"...","fp16_hex":"...","expires_unix":...}\n
 ```
 
-Fingerprint:
+Fingerprint calculation:
 
-* `fp16_hex = hex( sha256(pubkey)[0:16] )`
+```text
+fp16_hex = hex( sha256(pubkey)[0:16] )
+```
 
-Client should verify `fp16_hex` matches what the QR indicated.
+Clients must verify that `fp16_hex` matches the fingerprint embedded in the QR code.
+
+---
 
 ### 2.3 Register (encrypted binary frame)
 
 Client encapsulates:
 
-* `ct, ss = MLKEM768_Encapsulate(serverPub)`
+```text
+ct, ss = MLKEM768_Encapsulate(serverPub)
+```
 
 Client sends:
 
@@ -106,22 +110,29 @@ Client sends:
 [ctLen u16 BE][ct bytes][nonce 24][ciphertext...]
 ```
 
-Key derivation:
+#### Key derivation
 
-* `K = HKDF-SHA256(IKM=ss, salt=tokenBytes, info="NovaKey v3 Pair AEAD", outLen=32)`
+```text
+K = HKDF-SHA256(
+  IKM  = ss,
+  salt = tokenBytes,
+  info = "NovaKey v3 Pair AEAD",
+  outLen = 32
+)
+```
 
-AEAD:
+#### AEAD
 
-* XChaCha20-Poly1305
-* `nonce` = 24 random bytes
+* Algorithm: XChaCha20-Poly1305
+* Nonce: 24 random bytes
 
-AAD:
+#### AAD
 
 ```text
 AAD = "PAIR" || ct || nonce
 ```
 
-Plaintext JSON:
+#### Plaintext JSON
 
 ```json
 {"op":"register","v":1,"device_id":"...","device_key_hex":"..."}
@@ -132,7 +143,9 @@ If `device_id` or `device_key_hex` is empty, the server assigns:
 * `device_id = "ios-" + randHex(8)`
 * `device_key_hex = randHex(32)` (32 bytes)
 
-Server persists device keys and reloads device keys.
+The server persists device keys and reloads the device store.
+
+---
 
 ### 2.4 Ack (encrypted)
 
@@ -161,8 +174,10 @@ AAD = "PAIR" || ct || ackNonce
 ### 3.1 TCP outer framing
 
 ```text
-[ u16 length (big-endian) ][ payload bytes... ]
+[u16 length (big-endian)][payload bytes...]
 ```
+
+---
 
 ### 3.2 v3 payload layout
 
@@ -181,22 +196,26 @@ K = H + 2 + kemCtLen
 [K+24 : end]       = ciphertext (AEAD output)
 ```
 
-AAD:
+#### AAD
 
 ```text
 AAD = payload[0 : K]
 ```
+
+---
 
 ### 3.3 Plaintext inside AEAD (required)
 
 After decrypting the AEAD ciphertext, the plaintext is:
 
 ```text
-[0..7]   = timestamp (uint64 BE unix seconds)
+[0..7]   = timestamp (uint64 BE, unix seconds)
 [8..end] = inner typed frame (v1)
 ```
 
 Messages that do not contain a valid inner typed frame are rejected.
+
+---
 
 ### 3.4 Inner typed message frame (v1)
 
@@ -207,18 +226,25 @@ Messages that do not contain a valid inner typed frame are rejected.
 [4:8] = payloadLen  (u32 BE)
 [..]  = deviceID bytes (UTF-8)
 [..]  = payload bytes
+```
 
 Rules:
 
-* inner `deviceID` must match outer `deviceID`
-* `payload` is UTF-8 text (may be empty depending on message type)
+* Inner `deviceID` **must** match the outer `deviceID`
+* Payload is UTF-8 text (may be empty depending on message type)
 
-Inner `msgType` values:
+#### Inner message types
 
-* `1` = Inject (payload is the secret string)
-* `2` = Approve (payload ignored; may be empty)
-* `3` = Arm (payload optional JSON: `{"ms":15000}`)
-* `4` = Disarm (payload typically empty)
+| Type | Name    | Description                          |
+| ---- | ------- | ------------------------------------ |
+| 1    | Inject  | Inject secret into the focused field |
+| 2    | Approve | Opens approval window (Two-Man Mode) |
+| 3    | Arm     | Arms injection gate for a duration   |
+| 4    | Disarm  | Immediately clears armed state       |
+
+Only these message types are accepted.
+
+---
 
 ### 3.5 `/msg` key schedule
 
@@ -230,4 +256,48 @@ Algorithms:
 
 Key derivation:
 
-* `K = HKDF-SHA256(IKM=kemShared, salt=deviceKey(32), info="NovaKey v3 AEAD key", outLen=32)`
+```text
+K = HKDF-SHA256(
+  IKM  = kemShared,
+  salt = deviceKey (32 bytes),
+  info = "NovaKey v3 AEAD key",
+  outLen = 32
+)
+```
+
+---
+
+## 4) Injection Result Signaling
+
+After processing a `/msg` Inject request, the server replies with:
+
+* a numeric `status`
+* a semantic `reason`
+
+These fields allow clients to present accurate user feedback.
+
+### Relevant `reason` values
+
+| Reason                       | Meaning                                              |
+| ---------------------------- | ---------------------------------------------------- |
+| `ok`                         | Direct injection succeeded                           |
+| `typing_fallback`            | Auto-typing fallback was used                        |
+| `clipboard_fallback`         | Clipboard paste or clipboard-only fallback           |
+| `inject_unavailable_wayland` | Injection unavailable on Wayland; clipboard fallback |
+
+### Clipboard-only indication
+
+A `status` value of `OK_CLIPBOARD` indicates:
+
+* the clipboard was set by the daemon
+* the user must manually paste to complete insertion
+
+Clients should present a clear visual cue in this case.
+
+---
+
+## Security Notes
+
+* NovaKey is designed for LAN or local use
+* Do not expose the daemon directly to the public Internet
+* Use host firewall rules to restrict access as appropriate

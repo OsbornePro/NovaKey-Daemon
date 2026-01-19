@@ -1,18 +1,28 @@
 #!/bin/bash
-set -euo pipefail
+set -u  # NOT -e; installer scripts must be resilient
 
 LABEL="com.osbornepro.novakey"
 PLIST_NAME="${LABEL}.plist"
 
-CONSOLE_USER="$(stat -f %Su /dev/console)"
-if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" ]]; then
-  echo "No console user detected; skipping LaunchAgent bootstrap."
+log() { echo "[NovaKey postinstall] $*"; }
+
+# Determine console user
+CONSOLE_USER="$(stat -f %Su /dev/console 2>/dev/null || true)"
+
+if [[ -z "${CONSOLE_USER}" || "${CONSOLE_USER}" == "root" ]]; then
+  log "No console user detected (installer context)."
+  log "Installed payload to /usr/local/novakey. LaunchAgent will be created on first run by user, or you can run bootstrap manually."
   exit 0
 fi
 
-USER_HOME="$(dscl . -read /Users/"$CONSOLE_USER" NFSHomeDirectory | awk '{print $2}')"
-UID_NUM="$(id -u "$CONSOLE_USER")"
-USER_GROUP="$(id -gn "$CONSOLE_USER")"
+USER_HOME="$(dscl . -read /Users/"$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+UID_NUM="$(id -u "$CONSOLE_USER" 2>/dev/null || true)"
+USER_GROUP="$(id -gn "$CONSOLE_USER" 2>/dev/null || true)"
+
+if [[ -z "${USER_HOME}" || -z "${UID_NUM}" || -z "${USER_GROUP}" ]]; then
+  log "Could not determine user context (home/uid/group)."
+  exit 0
+fi
 
 BIN_DST="${USER_HOME}/.local/bin/novakey"
 CONFIG_DIR="${USER_HOME}/.config/novakey"
@@ -21,32 +31,33 @@ LOG_DIR="${DATA_DIR}/logs"
 LA_DIR="${USER_HOME}/Library/LaunchAgents"
 PLIST_PATH="${LA_DIR}/${PLIST_NAME}"
 
-mkdir -p "${USER_HOME}/.local/bin" "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${LA_DIR}"
+mkdir -p "${USER_HOME}/.local/bin" "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${LA_DIR}" || true
 
-# Ownership + permissions
-chown -R "${CONSOLE_USER}:${USER_GROUP}" "${USER_HOME}/.local" "${CONFIG_DIR}" "${LA_DIR}" || true
-chmod 700 "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${USER_HOME}/.local/bin" || true
-chmod 755 "${LA_DIR}" || true
+# Ownership + permissions (best-effort)
+chown -R "${CONSOLE_USER}:${USER_GROUP}" "${USER_HOME}/.local" "${CONFIG_DIR}" "${LA_DIR}" 2>/dev/null || true
+chmod 700 "${CONFIG_DIR}" "${DATA_DIR}" "${LOG_DIR}" "${USER_HOME}/.local/bin" 2>/dev/null || true
+chmod 755 "${LA_DIR}" 2>/dev/null || true
 
 # Payload location (installed by pkg)
 PAYLOAD="/usr/local/novakey"
 
 if [[ -f "${PAYLOAD}/novakey" ]]; then
-  install -m 755 "${PAYLOAD}/novakey" "${BIN_DST}"
-  chown "${CONSOLE_USER}:${USER_GROUP}" "${BIN_DST}" || true
+  install -m 755 "${PAYLOAD}/novakey" "${BIN_DST}" || true
+  chown "${CONSOLE_USER}:${USER_GROUP}" "${BIN_DST}" 2>/dev/null || true
+else
+  log "Missing payload binary at ${PAYLOAD}/novakey"
 fi
 
 if [[ -f "${PAYLOAD}/server_config.yaml" ]]; then
-  install -m 600 "${PAYLOAD}/server_config.yaml" "${CONFIG_DIR}/server_config.yaml"
-  install -m 600 "${PAYLOAD}/server_config.yaml" "${DATA_DIR}/server_config.yaml"
-  chown "${CONSOLE_USER}:${USER_GROUP}" "${CONFIG_DIR}/server_config.yaml" "${DATA_DIR}/server_config.yaml" || true
+  install -m 600 "${PAYLOAD}/server_config.yaml" "${CONFIG_DIR}/server_config.yaml" || true
+  install -m 600 "${PAYLOAD}/server_config.yaml" "${DATA_DIR}/server_config.yaml" || true
+  chown "${CONSOLE_USER}:${USER_GROUP}" "${CONFIG_DIR}/server_config.yaml" "${DATA_DIR}/server_config.yaml" 2>/dev/null || true
 fi
 
-# Optional devices.json
 if [[ -f "${PAYLOAD}/devices.json" ]]; then
-  install -m 600 "${PAYLOAD}/devices.json" "${CONFIG_DIR}/devices.json"
-  install -m 600 "${PAYLOAD}/devices.json" "${DATA_DIR}/devices.json"
-  chown "${CONSOLE_USER}:${USER_GROUP}" "${CONFIG_DIR}/devices.json" "${DATA_DIR}/devices.json" || true
+  install -m 600 "${PAYLOAD}/devices.json" "${CONFIG_DIR}/devices.json" || true
+  install -m 600 "${PAYLOAD}/devices.json" "${DATA_DIR}/devices.json" || true
+  chown "${CONSOLE_USER}:${USER_GROUP}" "${CONFIG_DIR}/devices.json" "${DATA_DIR}/devices.json" 2>/dev/null || true
 else
   rm -f "${CONFIG_DIR}/devices.json" "${DATA_DIR}/devices.json" 2>/dev/null || true
 fi
@@ -58,21 +69,26 @@ if [[ -f "${TEMPLATE}" ]]; then
     -e "s|{{BIN_DST}}|${BIN_DST}|g" \
     -e "s|{{DATA_DIR}}|${DATA_DIR}|g" \
     -e "s|{{LOG_DIR}}|${LOG_DIR}|g" \
-    "${TEMPLATE}" > "${PLIST_PATH}"
-  chown "${CONSOLE_USER}:${USER_GROUP}" "${PLIST_PATH}" || true
-  chmod 644 "${PLIST_PATH}"
+    "${TEMPLATE}" > "${PLIST_PATH}" || true
+
+  chown "${CONSOLE_USER}:${USER_GROUP}" "${PLIST_PATH}" 2>/dev/null || true
+  chmod 644 "${PLIST_PATH}" 2>/dev/null || true
+else
+  log "Missing LaunchAgent template at ${TEMPLATE}"
 fi
 
+# Best-effort launchctl bootstrap (DO NOT FAIL INSTALL if this doesn't work)
 DOMAIN="gui/${UID_NUM}"
+
+log "Attempting to (re)load LaunchAgent for ${CONSOLE_USER} (${DOMAIN})..."
 sudo -u "$CONSOLE_USER" launchctl bootout "$DOMAIN" "$PLIST_PATH" >/dev/null 2>&1 || true
-sudo -u "$CONSOLE_USER" launchctl bootstrap "$DOMAIN" "$PLIST_PATH"
+sudo -u "$CONSOLE_USER" launchctl bootstrap "$DOMAIN" "$PLIST_PATH" >/dev/null 2>&1 || true
 sudo -u "$CONSOLE_USER" launchctl enable "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
 sudo -u "$CONSOLE_USER" launchctl kickstart -k "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
 
-echo ""
-echo "NovaKey installed for ${CONSOLE_USER}."
-echo "IMPORTANT: macOS requires user approval for typing:"
-echo "  System Settings → Privacy & Security → Accessibility"
-echo "  System Settings → Privacy & Security → Input Monitoring"
-echo ""
+log "Installed for ${CONSOLE_USER}."
+log "IMPORTANT: macOS requires user approval for typing:"
+log "  System Settings → Privacy & Security → Accessibility"
+log "  System Settings → Privacy & Security → Input Monitoring"
+exit 0
 

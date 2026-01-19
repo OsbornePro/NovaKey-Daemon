@@ -229,8 +229,9 @@ func handleMsgConn(conn net.Conn) error {
 	}
 	logReqf(reqID, "armed gate open; proceeding with injection")
 
-	// Perform injection
-	if err := InjectPasswordToFocusedControl(password); err != nil {
+	// Perform injection (now returns method + err)
+	method, err := InjectPasswordToFocusedControl(password)
+	if err != nil {
 		logReqf(reqID, "InjectPasswordToFocusedControl error: %v", err)
 
 		if allowClipboardOnInjectFailure() {
@@ -240,14 +241,14 @@ func handleMsgConn(conn net.Conn) error {
 				return nil
 			}
 
-			// Wayland sentinel => clipboard counts as success
+			// Wayland sentinel => clipboard counts as success (paste required)
 			if errors.Is(err, ErrInjectUnavailableWayland) {
 				respond(StatusOKClipboard, StageInject, ReasonInjectUnavailableWayland, "clipboard set (wayland; paste to insert)")
 				return nil
 			}
 
-			// Non-wayland failure: clipboard is side-effect, still overall error
-			respond(StatusInternal, StageInject, ReasonInternal, "inject failed; clipboard set")
+			// Non-wayland failure: clipboard is now the fallback path => also a success-with-paste
+			respond(StatusOKClipboard, StageInject, ReasonClipboardFallback, "clipboard set (inject failed; paste to insert)")
 			return nil
 		}
 
@@ -255,8 +256,20 @@ func handleMsgConn(conn net.Conn) error {
 		return nil
 	}
 
-	logReqf(reqID, "injection complete")
-	respond(StatusOK, StageInject, ReasonOK, "ok")
+	// Success: include deterministic reason for UI cues
+	logReqf(reqID, "injection complete; method=%s", method)
+	switch method {
+	case InjectMethodDirect:
+		respond(StatusOK, StageInject, ReasonOK, "ok")
+	case InjectMethodTyping:
+		respond(StatusOK, StageInject, ReasonTypingFallback, "auto-typing used")
+	case InjectMethodClipboard:
+		// macOS clipboard+Cmd+V succeeded (actual paste occurred)
+		respond(StatusOK, StageInject, ReasonClipboardFallback, "clipboard paste used")
+	default:
+		// Defensive: should not happen, but don't crash client logic
+		respond(StatusOK, StageInject, ReasonOK, "ok")
+	}
 	return nil
 }
 

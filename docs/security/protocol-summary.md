@@ -38,6 +38,17 @@ This table is normative for all NovaKey documentation; other pages must referenc
 Messages that do not contain a valid **Inner Message Frame v1** with one of the above types are rejected.
 There is no legacy or untyped message support.
 
+## Injection Result Signaling (client-visible)
+
+For Inject requests, the daemon replies with both a numeric `status` and a semantic `reason`.
+Clients should display a clear visual cue based on these fields:
+
+- `status=OK`, `reason=ok` — direct injection succeeded
+- `status=OK`, `reason=typing_fallback` — auto-typing fallback was used
+- `status=OK`, `reason=clipboard_fallback` — clipboard paste injection was used
+- `status=OK_CLIPBOARD`, `reason=clipboard_fallback` — clipboard was set; user must paste manually
+- `status=OK_CLIPBOARD`, `reason=inject_unavailable_wayland` — Wayland: clipboard was set; user must paste manually
+
 
 ## Pairing route (`/pair`)
 Pairing is a one-time trust bootstrap:

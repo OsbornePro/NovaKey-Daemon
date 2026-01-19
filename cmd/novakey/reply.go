@@ -24,6 +24,7 @@ type ReplyReason string
 const (
 	ReasonOK                      ReplyReason = "ok"
 	ReasonClipboardFallback        ReplyReason = "clipboard_fallback"
+	ReasonTypingFallback           ReplyReason = "typing_fallback"
 	ReasonInjectUnavailableWayland ReplyReason = "inject_unavailable_wayland"
 
 	ReasonNotArmed     ReplyReason = "not_armed"
@@ -54,20 +55,15 @@ type ServerReply struct {
 // It preserves the true reason by prefixing the message when we have to downgrade.
 func safeReasonForClient(st RespStatus, reason ReplyReason, msg string) (ReplyReason, string) {
 	// These are the ones that most clients tend to support.
-	// (OK + the common gating outcomes.)
 	switch reason {
-	case ReasonOK, ReasonNotArmed, ReasonNeedsApprove, ReasonClipboardFallback, ReasonInjectUnavailableWayland:
+	case ReasonOK, ReasonNotArmed, ReasonNeedsApprove, ReasonClipboardFallback, ReasonTypingFallback, ReasonInjectUnavailableWayland:
 		return reason, msg
 	}
 
-	// For any other reason, keep Status accurate, but downgrade Reason to "ok"
-	// so strict Swift enums won’t crash on unknown cases.
-	//
-	// IMPORTANT: We embed the real reason in msg so it’s not lost.
+	// Downgrade unknown reason to "ok" but keep status accurate and embed true reason in msg.
 	if msg == "" {
 		msg = "error"
 	}
-	// Example: "reason=bad_request; target policy blocked"
 	return ReasonOK, "reason=" + string(reason) + "; " + msg
 }
 
@@ -77,7 +73,6 @@ func writeReplyLine(conn net.Conn, r ServerReply) {
 
 	b, err := json.Marshal(r)
 	if err != nil {
-		// Keep this extremely stable and minimal.
 		b = []byte(`{"v":1,"status":127,"stage":"msg","reason":"ok","msg":"reason=internal_error; marshal failed","ts_unix":0,"req_id":0}` + "\n")
 	} else {
 		b = append(b, '\n')

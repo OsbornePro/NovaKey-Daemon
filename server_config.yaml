@@ -56,3 +56,7 @@ max_inject_len: 256
 two_man_enabled: true
 approve_window_ms: 15000
 approve_consume_on_inject: true
+allow_typing_fallback: true
+macos_prefer_clipboard: true
+allow_clipboard_when_disarmed: false
+allow_clipboard_on_inject_failure: false

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 VERSION="${1:-1.0.0}"
-KEYCHAIN_PROFILE="${2:-novakey-notary}"   # optional: name you used in notarytool store-credentials
+KEYCHAIN_PROFILE="${2:-novakey-notary}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
@@ -13,42 +13,56 @@ AMD_PKG="installers/macos/pkg/NovaKey-${VERSION}-amd64.pkg"
 test -f "$ARM_PKG" || { echo "Missing $ARM_PKG (build first)"; exit 1; }
 test -f "$AMD_PKG" || { echo "Missing $AMD_PKG (build first)"; exit 1; }
 
-CERT_LINE="$(security find-identity -v -p basic | grep 'Developer ID Installer' | head -n 1 || true)"
-if [[ -z "$CERT_LINE" ]]; then
-  echo "[x] No 'Developer ID Installer' identity found in Keychain."
-  echo "Create one in Xcode -> Settings -> Accounts -> Manage Certificates -> '+' -> Developer ID Installer"
-  exit 1
-fi
+check_pkg_sig () {
+  local pkg="$1"
+  echo ""
+  echo "[*] pkgutil --check-signature: $pkg"
+  pkgutil --check-signature "$pkg" | sed -n '1,120p'
 
-CERT_NAME="$(echo "$CERT_LINE" | sed -n 's/.*"\(Developer ID Installer:.*\)".*/\1/p')"
-if [[ -z "$CERT_NAME" ]]; then
-  echo "[x] Could not parse certificate name."
-  echo "$CERT_LINE"
-  exit 1
-fi
+  if ! pkgutil --check-signature "$pkg" | grep -q "Developer ID Installer"; then
+    echo "[x] Package is NOT signed with Developer ID Installer."
+    echo "    Fix signing (productbuild --sign \"Developer ID Installer: ...\") and rebuild."
+    exit 1
+  fi
+}
 
-echo "[*] Using certificate:"
-echo "    $CERT_NAME"
+notarize_one () {
+  local pkg="$1"
 
-ARM_SIGNED="installers/macos/pkg/NovaKey-${VERSION}-arm64-signed.pkg"
-AMD_SIGNED="installers/macos/pkg/NovaKey-${VERSION}-amd64-signed.pkg"
+  check_pkg_sig "$pkg"
 
-echo "[*] Signing pkgs..."
-productsign --sign "$CERT_NAME" "$ARM_PKG" "$ARM_SIGNED"
-productsign --sign "$CERT_NAME" "$AMD_PKG" "$AMD_SIGNED"
+  echo ""
+  echo "[*] Submitting to notary service: $pkg"
+  local out status id
+  out="$(xcrun notarytool submit "$pkg" --keychain-profile "$KEYCHAIN_PROFILE" --wait --output-format json)"
+  echo "$out"
 
-echo "[*] Verifying signatures..."
-pkgutil --check-signature "$ARM_SIGNED"
-pkgutil --check-signature "$AMD_SIGNED"
+  status="$(printf '%s' "$out" | /usr/bin/python3 -c 'import sys,json; print(json.load(sys.stdin).get("status",""))')"
+  id="$(printf '%s' "$out" | /usr/bin/python3 -c 'import sys,json; print(json.load(sys.stdin).get("id",""))')"
 
-echo "[*] Notarizing (requires notarytool credentials profile: ${KEYCHAIN_PROFILE})..."
-xcrun notarytool submit "$ARM_SIGNED" --keychain-profile "$KEYCHAIN_PROFILE" --wait
-xcrun notarytool submit "$AMD_SIGNED" --keychain-profile "$KEYCHAIN_PROFILE" --wait
+  echo "[*] Notary status: $status"
+  echo "[*] Notary id: $id"
 
-echo "[*] Stapling..."
-xcrun stapler staple "$ARM_SIGNED"
-xcrun stapler staple "$AMD_SIGNED"
+  if [[ "$status" != "Accepted" ]]; then
+    echo ""
+    echo "[x] Notarization NOT accepted. Fetching log:"
+    xcrun notarytool log "$id" --keychain-profile "$KEYCHAIN_PROFILE"
+    exit 1
+  fi
 
+  echo "[*] Stapling..."
+  xcrun stapler staple "$pkg"
+  xcrun stapler validate "$pkg"
+
+  echo "[✓] Stapled: $pkg"
+  echo "[*] Gatekeeper assessment (install):"
+  spctl -a -vv --type install "$pkg" || true
+}
+
+notarize_one "$ARM_PKG"
+notarize_one "$AMD_PKG"
+
+echo ""
 echo "[✓] Done:"
-ls -1 "$ARM_SIGNED" "$AMD_SIGNED"
+ls -1 "$ARM_PKG" "$AMD_PKG"
 
