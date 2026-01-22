@@ -99,11 +99,11 @@ When there are no paired devices (*missing/empty device store*), the daemon gene
 
 Pairing uses the `/pair` route on the same TCP listener. Clients must send the route preface:
 
-``text
+```text
 NOVAK/1 /pair\n
 ```
 
-High-level flow:
+### High-level flow:
 
 1. Client sends a hello JSON line containing a one-time token:
 
