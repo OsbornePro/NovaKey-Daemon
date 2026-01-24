@@ -3,10 +3,10 @@
 NovaKey is designed as a password manager for password managers (*e.g., Bitwarden, LastPass, KeePass, 1Pass, Keeper*)
 In technical terms this is a secure secret delivery system designed to send sensitive data such as a password from your phone to a trusted computer **without exposing secrets on the screen**.  
   
-NovaKey consists of:
-- **NovaKey Phone App** – stores secrets/passwords in a phones native vault with the ability to send them securely to a computer
-- **NovaKey-Daemon** – runs on the target computer and receives secrets from the phone
-
+NovaKey consists of:  
+- **NovaKey Phone App** – stores secrets/passwords in a phones native vault with the ability to send them securely to a computer  
+- **NovaKey-Daemon** – runs on the target computer and receives secrets from the phone  
+  
 [Download NovaKey-Daemon for your computer](https://github.com/OsbornePro/NovaKey-Daemon/releases/tag/v1.0.0)
 
 ### Download NovaKey from the App Store 
