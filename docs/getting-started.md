@@ -3,7 +3,7 @@
 ## What you need
 - An iPhone running the NovaKey iOS app
 - A computer running NovaKey-Daemon
-- A local network connection (or trusted remote connection)
+- A local network connection (*or trusted remote connection*)
 
 
 ### Download from the App Store 
@@ -33,17 +33,17 @@ This is the fastest path to “send a secret from iPhone → computer”.
 
 ## Step 0 — Install NovaKey-Daemon
 
-Follow: **NovaKey-Daemon → Install** and complete the installer for your platform.  
+Follow: **NovaKey-Daemon → [Install](https://novakey.app/en/latest/daemon/install/)** and complete the installer for your platform.  
 The daemon will start automatically after installation.
 
-**If you want phone → computer over Wi-Fi:** the daemon must listen on a LAN-reachable address (not `127.0.0.1`).
+**If you want phone → computer over Wi-Fi:** the daemon must listen on a LAN-reachable address (*not* `127.0.0.1`).
 
 
 
 ## Step 1 — Open NovaKey and add a Listener
 
 1. Open **NovaKey**
-2. Tap **Listeners** (antenna icon)
+2. Tap **Listeners** (*antenna icon*)
 3. Add Listener:
    - Name: “My Desktop”
    - Host/IP: your computer’s LAN IP/hostname
@@ -51,16 +51,58 @@ The daemon will start automatically after installation.
 4. Turn on **Make Send Target**
 5. Tap **Add**
 
+Yes — it’s mostly clear, but a few small edits will make it **much clearer, more accurate, and more professional**, especially for Windows/macOS users and troubleshooting.
+
+Here’s a polished version with improved clarity and correctness:
+
+---
+
 ## Step 2 — Pair via QR
 
-1. On your computer, start NovaKey-Daemon.
+1. On your computer, start NovaKey-Daemon. 
+Note this will happen automatically for you after you run the NovaKey-Daemon installer. 
+If you are doing things manually for whatever reason you can use these methods:
+
+   * **Linux:** Open a terminal and run
+
+     ```bash
+     systemctl --user start novakey.service
+     ```
+
+   * **Windows:** Open **Task Scheduler** and run the task named **NovaKey**
+
+   * **macOS:** Open a terminal and run
+
+     ```bash
+     launchctl kickstart -k gui/$(id -u)/com.osbornepro.novakey
+     ```
 2. If there are no paired devices, the daemon enters pairing mode and generates a **time-limited pairing QR**.
+
+> **TROUBLESHOOTING NOTE:**
+> The pairing QR token may expire if not scanned quickly enough.
+> If this happens:
+>
+> * Delete the generated files: `novakey-pair.png`, `server_keys.json`, and (if present) `devices.json`
+> * Stop the NovaKey-Daemon
+> * Start it again
+>
+> On Windows this is done via **Task Scheduler**.
+> On Linux and macOS, this can be done from the terminal.
+
+
 3. On iOS:
-   - Listeners → select your listener → Pair → Scan QR
+
+   * **Listeners → select your listener → Pair → Scan QR**
+
 4. Scan the QR.
 
-You should see **Paired**.
-
+You will see a prompt on your phone asking you to confirm the device you are pairing with.  
+Take note of the IP address shown.  
+  
+It is strongly recommended to set your device’s default IP address in NovaKey-Daemon’s `server_config.yaml` file for reliability.  
+  
+Using a VPN or having virtual interfaces from a hypervisor will not impact NovaKey’s functionality.  
+  
 If you miss the QR code, restart the daemon or see the NovaKey-Daemon troubleshooting guide.
 
 ## Step 3 — Add a secret
@@ -83,7 +125,7 @@ Success outcomes:
 
 ## If something doesn’t work
 
-Start with:
-- **Phone App → Troubleshooting**
-- **NovaKey-Daemon → Troubleshooting**
+Start with:  
+- **Phone App → Troubleshooting**  
+- **NovaKey-Daemon → Troubleshooting**  
 
