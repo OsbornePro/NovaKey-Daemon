@@ -6,6 +6,9 @@ NovaKey consists of:
 - **NovaKey Phone App** – stores secrets locally and sends them securely
 - **NovaKey-Daemon** – runs on the target computer and receives secrets
 
+### Download from the App Store 
+![NovaKey-iOS-App Download](assets/screenshots/novakey-ios-qr.png)
+
 NovaKey is designed with:
 - Strong cryptography
 - Minimal attack surface
