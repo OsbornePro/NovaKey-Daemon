@@ -29,16 +29,16 @@ NovaKey is designed with:
 ## Quick start
 
 1. Install and run NovaKey-Daemon  
-   → See **NovaKey-Daemon → Install**
+   → See **NovaKey-Daemon → [Install](https://novakey.app/en/latest/daemon/install/)**
 
 2. Add a Listener in the NovaKey Phone app  
-   → See **Phone App → Pairing**
+   → See **Phone App → [Pairing](https://novakey.app/en/latest/daemon/pairing/)**
 
 3. Pair via QR  
-   → See **Phone App → Pairing**
+   → See **Phone App → [Pairing](https://novakey.app/en/latest/phone/pairing/)**
 
 4. Add secrets and send  
-   → See **Phone App → Secrets** and **Phone App → Sending**
+   → See **Phone App → [Secrets](https://novakey.app/en/latest/phone/secrets/)** and **Phone App → [Sending](https://novakey.app/en/latest/phone/sending/)**
 
 ## What NovaKey is (and isn’t)
 
