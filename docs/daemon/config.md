@@ -36,9 +36,25 @@ Address and port to bind the NovaKey TCP listener.
 0.0.0.0:60768
 ```
 
+It is highly recommedned to set your devices IP address in the `server_config.yaml` file rather than use the default `0.0.0.0`.
+This will ensure if you use a VPN or virtualization your device can still receive TCP communications from your phone.  
+  
+Below are some commands to get your devices IP address:
+
+```bash
+# On Windows
+ipconfig
+
+# On Linux
+hostname -I || ip a
+
+# On MacOS
+ifconfig | grep 'inet '
+``` 
+
 **Common values:**
 
-* Local only (safest): `127.0.0.1:60768`
+* Local only (*safest because unreachable from anything but your local computer*): `127.0.0.1:60768`
 * LAN access: `0.0.0.0:60768`
 * Specific LAN IP: `192.168.1.50:60768`
 

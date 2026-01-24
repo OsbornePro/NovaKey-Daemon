@@ -42,13 +42,13 @@ NovaKey is designed with:
 
 ## What NovaKey is (and isn’t)
 
-**NovaKey is:**
-- A local-first, explicit “*send secret now*” tool.
-- Opinionated about safety: no silent fallbacks, no cloud dependency.
-
+**NovaKey is:**  
+- A local-first, explicit “*send secret now*” tool.  
+- Opinionated about safety: no silent fallbacks, no cloud dependency.  
+  
 **NovaKey is not:**
-- A password manager UI that displaysi or updates secrets later.
-- A cloud sync service.
+- A password manager UI that displays or updates secrets later.  
+- A cloud sync service.  
 
 ## Architecture overview
 
@@ -66,4 +66,4 @@ NovaKey is designed with:
   - target allow/deny policy
 - Injects into the active application (*injects into the focused field; if injection is blocked and policy allows, the daemon may copy the secret to clipboard and report this explicitly*)
 
-NovaKey is open source. See **Project Links** for repositories and source code.
+NovaKey is open source. See **[Project Links](https://novakey.app/en/latest/links/)** for repositories and source code.

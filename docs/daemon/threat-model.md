@@ -340,7 +340,7 @@ denied_process_names:
   - cmd
   - powershell
 allow_newlines: false
-````
+```
 
 ---
 
