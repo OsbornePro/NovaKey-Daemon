@@ -47,18 +47,29 @@ non-pairable state.
 ### Recovery steps
 Try the following, in order:
 
-1. **Restart the daemon**
+1. **Restart the daemon under your user account. DO NOT use `sudo` or elevated admin permissions**
    ```bash
+   # On Linux
    systemctl --user restart novakey
+
+   # On macOS
+   launchctl kickstart -k gui/$(id -u)/com.osbornepro.novakey
+
+   # On Windows open Task Scheduler and stop/start the 'NovaKey' task
+   Stop-ScheduledTask -TaskName "NovaKey"
+   Start-ScheduledTask -TaskName "NovaKey"
    ```
 
 2. **Check for an existing device store**
 
-   * If `devices.json` exists, the daemon may assume pairing already occurred
+   * In cases where you have needed to enabled a `devices.json` file, the daemon may assume pairing already occurred. Delete this file and restart the service to start again.
 
 3. **If pairing still does not appear**
 
-   * Perform a full uninstall
+   * Perform a full uninstall ensuring 
+   * On Windows verify `%LOCALAPPDATA%\NovaKey` does not exist
+   * On Linux verify `~/.local/share/novakey` and `~/.config/novakey` and `/usr/share/novakey` don't exist
+   * On macOS verify `~/.local/share/novakey` and `~/.config/novakey` and `~/Library/Application Support/NovaKey` don't exist
    * Reinstall the daemon
    * Complete pairing when the QR code is displayed
 
