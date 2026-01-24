@@ -30,22 +30,6 @@ This is the fastest path to:
 
 ---
 
-## On the phone (quick tour)
-
-### Main screen
-
-![Main screen](../assets/screenshots/novakey-main-page.PNG)
-
-### Add a secret
-
-![New secret](../assets/screenshots/novakey-new-secret.PNG)
-
-### Pair by scanning a QR code
-
-![Scan QR](../assets/screenshots/novakey-scan-qr.PNG)
-
----
-
 ## Step 0 — Install NovaKey-Daemon on your computer
 
 NovaKey-Daemon is the **free desktop companion** that receives secrets from your phone.
@@ -59,7 +43,7 @@ Download the installer that matches your system from:
 ```
 https://downloads.novakey.app/Installers/<file name>
 ```
-See the "Project Links" in the left menu pane for the latest download links.  
+See the [Project Links](https://novakey.app/en/latest/links/) in the left menu pane for the latest download links.  
 
 Or from GitHub Releases:
 
