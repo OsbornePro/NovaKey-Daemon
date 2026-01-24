@@ -255,6 +255,9 @@ Get-ScheduledTask -TaskName NovaKey
 Get-NetTcpConnection -State Listen -LocalPort 60768
 ```
 
+![What successfully running Windows task looks like](assets/screenshots/windows-verified-novakey-running.png)
+![What successfully running Windows task looks like in Task Scheduler UI](assets/screenshots/windows-verified-novakey-task-running.png)
+
 ---
 
 ### macOS
@@ -272,6 +275,8 @@ lsof -iTCP:60768 -sTCP:LISTEN
 systemctl --user status novakey
 ss -tunlp | grep 60768
 ```
+
+![What successfully running Linux service looks like](assets/screenshots/linux-verified-novakey-running.png)
 
 ---
 
