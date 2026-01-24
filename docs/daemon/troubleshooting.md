@@ -19,15 +19,15 @@ The daemon also returns a semantic `reason` to explain what happened:
 - `typing_fallback` — auto-typing fallback was used
 - `inject_unavailable_wayland` — injection unavailable on Wayland; clipboard fallback path used
 
-This means:
-- injection was blocked or denied
-- **but** the daemon successfully copied the secret to clipboard
-
-Common causes:
-- focus target denied by target policy
-- OS permissions missing
-- secure input mode enabled by the active app
-- Wayland / compositor restrictions
+This means:  
+- injection was blocked or denied  
+- **but** the daemon successfully copied the secret to clipboard  
+  
+Common causes:  
+- focus target denied by target policy  
+- OS permissions missing  
+- secure input mode enabled by the active app  
+- Wayland / compositor restrictions  
 
 ## Pairing issues / QR code not shown
 
