@@ -3,17 +3,17 @@
 NovaKey-Daemon is a cross-platform Go agent that receives authenticated secrets from a trusted device and injects them into the currently focused text field.
 NovaKey-Daemon runs on your computer and receives secrets from the phone.
 
-It is designed to:
-- Accept connections only from paired devices
-- Reject replayed or malformed messages
-- Never store secrets longer than required
+It is designed to:  
+- Accept connections only from paired devices  
+- Reject replayed or malformed messages  
+- Never store secrets longer than required  
 
 The daemon does not expose a web interface.
 
-It is designed for cases where you don’t want to type high-value secrets on your desktop keyboard:
-- the secret lives on your phone
-- delivery is encrypted and authenticated
-- the daemon injects into the focused control (*with optional clipboard mode*)
+It is designed for cases where you don’t want to type high-value secrets on your desktop keyboard:  
+- the secret lives on your phone  
+- delivery is encrypted and authenticated  
+- the daemon injects into the focused control (*with optional clipboard mode*)  
 
 NovaKey prefers direct injection; clipboard and auto-typing are fallback options used only when required by OS limitations and can be disabled via configuration.
 
