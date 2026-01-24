@@ -41,23 +41,23 @@ The methods below are the recommended and supported installation paths for each 
 
 NovaKey packages are distributed via **official signed repositories** and installers:
 
-* **Windows (AMD64):**
+* **Windows (AMD64):**  
   [Download Windows NovaKey-Daemon Installer](https://downloads.novakey.app/Installers/NovaKey-Setup.exe)  
   [Download Windows NovaKey-Daemon Installer from GitHub](https://github.com/OsbornePro/NovaKey-Daemon/releases/download/v1.0.0/NovaKey-Setup.exe)  
 
-* **macOS (Apple Silicon / Intel):**
-  [Download macOS NovaKey-Daemon Intel Installer](https://downloads.novakey.app/Installers/NovaKey-1.0.0-amd64.pkg)
-  [Download macOS NovaKey-Daemon Apple Silicon Installer](https://downloads.novakey.app/Installers/NovaKey-1.0.0-arm64.pkg)
+* **macOS (Apple Silicon / Intel):**  
+  [Download macOS NovaKey-Daemon Intel Installer](https://downloads.novakey.app/Installers/NovaKey-1.0.0-amd64.pkg)  
+  [Download macOS NovaKey-Daemon Apple Silicon Installer](https://downloads.novakey.app/Installers/NovaKey-1.0.0-arm64.pkg)  
 
-* **Linux (RPM & APT repositories):**
-  [Linux Repository Parent URL](https://repo.novakey.app/)
-  [Linux Debian AMD64 Installer Download](https://downloads.novakey.app/Installers/novakey_1.0.0_amd64.deb)
-  [Linux Debian ARM64 Installer Download](https://downloads.novakey.app/Installers/novakey_1.0.0_arm64.deb)
-  [Linux Fedora AMD64 Installer Download](https://downloads.novakey.app/Installers/novakey-1.0.0-1.amd64.rpm)
-  [Linux Fedora AARCH64 Installer Download](https://downloads.novakey.app/Installers/novakey-1.0.0-1.aarch64.rpm)
+* **Linux (RPM & APT repositories):**  
+  [Linux Repository Parent URL](https://repo.novakey.app/)  
+  [Linux Debian AMD64 Installer Download](https://downloads.novakey.app/Installers/novakey_1.0.0_amd64.deb)  
+  [Linux Debian ARM64 Installer Download](https://downloads.novakey.app/Installers/novakey_1.0.0_arm64.deb)  
+  [Linux Fedora AMD64 Installer Download](https://downloads.novakey.app/Installers/novakey-1.0.0-1.amd64.rpm)  
+  [Linux Fedora AARCH64 Installer Download](https://downloads.novakey.app/Installers/novakey-1.0.0-1.aarch64.rpm)  
 
-* **GitHub Releases (all platforms):**
-  [https://github.com/OsbornePro/NovaKey-Daemon/releases](https://github.com/OsbornePro/NovaKey-Daemon/releases)
+* **GitHub Releases (all platforms):**  
+  [https://github.com/OsbornePro/NovaKey-Daemon/releases](https://github.com/OsbornePro/NovaKey-Daemon/releases)  
 
 ---
 
