@@ -13,16 +13,16 @@ NovaKey consists of:
 ![NovaKey-iOS-App Download](assets/screenshots/novakey-ios-qr.png)
 
 **Why should I trust NovaKey to not expose my passwords?**  
-NovaKey is designed with:
-- Strong post-quantum cryptography
-- Minimal attack surface
-- Accessibility-first UI
-- Secrets live **only** on your phone (*iOS Keychain or KeyStore*).
-- Secrets are transmitted **on demand** to a trusted computer using mutual authentication, replay protection, and modern cryptography.
+NovaKey is designed with:  
+- Strong post-quantum cryptography  
+- Minimal attack surface  
+- Accessibility-first UI  
+- Secrets live **only** on your phone (*iOS Keychain or KeyStore*).  
+- Secrets are transmitted **on demand** to a trusted computer using mutual authentication, replay protection, and modern cryptography.  
 - The computer runs **NovaKey-Daemon**, which injects into the currently focused field.
-  (*and may fall back to clipboard in constrained environments*).
-- NovaKey does not inject new lines or submit button clicks by pressing [ENTER] for you
-- Secrets are never displayed after saving and are only transmitted to explicitly paired devices.
+  (*and may fall back to clipboard in constrained environments*).  
+- NovaKey does not inject new lines or submit button clicks by pressing [ENTER] for you  
+- Secrets are never displayed after saving and are only transmitted to explicitly paired devices.  
 
 # NovaKey Phone App
 
