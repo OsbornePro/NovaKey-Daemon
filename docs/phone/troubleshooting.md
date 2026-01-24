@@ -106,6 +106,8 @@ The daemon has **arming (“push-to-type”) enabled**, and injection is blocked
 - Then retry sending from the phone
 
 This is a safety feature to prevent unattended injection.
+  
+If you did send the arming code, restart the NovaKey-Daemon service on your device then try arming and sending again from your phone.
 
 ---
 
