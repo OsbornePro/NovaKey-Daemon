@@ -1,10 +1,9 @@
 # Pairing (Daemon side)
 
-Pairing is the process by which a NovaKey client device (for example the iOS app)
+Pairing is the process by which a NovaKey client device (*for example the iOS app*)
 establishes a trusted cryptographic relationship with the NovaKey Daemon.
 
-Pairing happens over the same TCP listener as normal messages, but uses the
-dedicated `/pair` route.
+Pairing happens over the same TCP listener as normal messages, but uses the dedicated `/pair` route.
 
 ---
 
@@ -50,7 +49,7 @@ pairing state.
 On Linux, pairing depends on access to the system keyring or other
 secure storage mechanisms.
 
-If secure storage initialization fails (for example due to:
+If secure storage initialization fails for example due to:
 
 - hardware-backed authentication such as **YubiKey**
 - cancelled keyring unlock prompts
@@ -108,8 +107,7 @@ For exact wire-format and cryptographic details, see:
 
 ## Pairing rate limits
 
-The daemon enforces in-memory rate limits on pairing requests
-(for example `/pair` hello messages).
+The daemon enforces in-memory rate limits on pairing requests (*for example* `/pair` *hello messages*).
 
 These limits protect against:
 

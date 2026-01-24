@@ -2,8 +2,12 @@
 
 The **NovaKey Daemon** is a background service that runs on your computer and securely receives secrets from the NovaKey app, then types them into the active application.
 
-As of **v1.0**, NovaKey provides **native, signed installers and repositories** for all supported platforms.
-These are the **recommended and supported installation methods**.
+As of **v1.0**, NovaKey provides **native, signed installers and repositories** for all supported Linux and macOS platforms.  
+  
+Windows installers currently do not ship with a code-signing certificate, as obtaining and maintaining one involves significant cost. 
+If demand justifies it, a signed Windows installer will be provided in a future release.  
+  
+The methods below are the recommended and supported installation paths for each operating system.
 
 > ⚠️ **Important: Pairing is security-sensitive**
 >
@@ -11,7 +15,7 @@ These are the **recommended and supported installation methods**.
 > A **time-limited QR code** is displayed for pairing your NovaKey app.
 >
 > If pairing is interrupted, cancelled, or secure storage initialization fails
-> (for example due to keyring, DPAPI, or hardware-backed authentication constraints),
+> (*for example due to keyring, DPAPI, or hardware-backed authentication constraints*),
 > the daemon may fall back to a local device store or require a **full reinstall to restart pairing**.
 >
 > For best results:
@@ -27,7 +31,7 @@ These are the **recommended and supported installation methods**.
 
 * **Windows 11**
 * **macOS 14+**
-* **Linux** (systemd user services, glibc)
+* **Linux** (*systemd user services, glibc*)
 
 ---
 
@@ -38,13 +42,19 @@ These are the **recommended and supported installation methods**.
 NovaKey packages are distributed via **official signed repositories** and installers:
 
 * **Windows (AMD64):**
-  `https://downloads.novakey.app/Installers/NovaKey-Setup.exe`
+  [Download Windows NovaKey-Daemon Installer](https://downloads.novakey.app/Installers/NovaKey-Setup.exe)  
+  [Download Windows NovaKey-Daemon Installer from GitHub](https://github.com/OsbornePro/NovaKey-Daemon/releases/download/v1.0.0/NovaKey-Setup.exe)  
 
 * **macOS (Apple Silicon / Intel):**
-  `https://downloads.novakey.app/Installers/`
+  [Download macOS NovaKey-Daemon Intel Installer](https://downloads.novakey.app/Installers/NovaKey-1.0.0-amd64.pkg)
+  [Download macOS NovaKey-Daemon Apple Silicon Installer](https://downloads.novakey.app/Installers/NovaKey-1.0.0-arm64.pkg)
 
 * **Linux (RPM & APT repositories):**
-  `https://repo.novakey.app`
+  [Linux Repository Parent URL](https://repo.novakey.app/)
+  [Linux Debian AMD64 Installer Download](https://downloads.novakey.app/Installers/novakey_1.0.0_amd64.deb)
+  [Linux Debian ARM64 Installer Download](https://downloads.novakey.app/Installers/novakey_1.0.0_arm64.deb)
+  [Linux Fedora AMD64 Installer Download](https://downloads.novakey.app/Installers/novakey-1.0.0-1.amd64.rpm)
+  [Linux Fedora AARCH64 Installer Download](https://downloads.novakey.app/Installers/novakey-1.0.0-1.aarch64.rpm)
 
 * **GitHub Releases (all platforms):**
   [https://github.com/OsbornePro/NovaKey-Daemon/releases](https://github.com/OsbornePro/NovaKey-Daemon/releases)
@@ -80,7 +90,7 @@ No administrator privileges are required.
 
 Windows may prompt for:
 
-* Firewall access (allow local network access)
+* Firewall access (*allow local network access*)
 
 ---
 
@@ -90,7 +100,7 @@ Windows may prompt for:
 
 Download **one** of the following, depending on your Mac:
 
-* Apple Silicon (M1/M2/M3):
+* Apple Silicon (*M1/M2/M3*):
 
 ```
 
@@ -141,8 +151,8 @@ The daemon will not function correctly until both are enabled.
 
 > ⚠️ **Linux security key / keyring warning**
 >
-> On Linux systems using hardware-backed authentication (for example **YubiKey**, smart cards,
-> or PAM configurations that require external confirmation), NovaKey may be unable to unlock
+> On Linux systems using hardware-backed authentication (*for example **YubiKey**, smart cards,
+> or PAM configurations that require external confirmation*), NovaKey may be unable to unlock
 > the system keyring during startup.
 >
 > If secure storage initialization fails repeatedly, pairing may not complete unless
@@ -242,6 +252,7 @@ systemctl --user enable novakey --now
 
 ```powershell
 Get-ScheduledTask -TaskName NovaKey
+Get-NetTcpConnection -State Listen -LocalPort 60768
 ```
 
 ---
@@ -250,6 +261,7 @@ Get-ScheduledTask -TaskName NovaKey
 
 ```bash
 launchctl list | grep novakey
+lsof -iTCP:60768 -sTCP:LISTEN
 ```
 
 ---
@@ -272,7 +284,7 @@ If no devices are paired during this phase:
 
 * The daemon enters **pairing mode**
 * A **time-limited QR code** (`novakey-pair.png`) is generated
-* The QR is displayed automatically (Windows/macOS) or logged (Linux)
+* The QR is displayed automatically (*Windows/macOS*) or logged (*Linux*)
 
 If pairing does not complete successfully and secure storage cannot be unlocked,
 the daemon may fall back to a local device store (`devices.json`) or require a reinstall
