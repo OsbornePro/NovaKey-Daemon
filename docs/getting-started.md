@@ -5,6 +5,10 @@
 - A computer running NovaKey-Daemon
 - A local network connection (or trusted remote connection)
 
+
+### Download from the App Store 
+![NovaKey-iOS-App Download](assets/screenshots/novakey-ios-qr.png)
+
 ## High-level flow
 1. Install NovaKey-Daemon on your computer
 2. Install NovaKey on your iPhone
@@ -34,26 +38,6 @@ The daemon will start automatically after installation.
 
 **If you want phone → computer over Wi-Fi:** the daemon must listen on a LAN-reachable address (not `127.0.0.1`).
 
-<section class="nv-apps">
-  <h2 class="nv-apps__title">Get the apps</h2>
-  <p class="nv-apps__subtitle">Download the mobile apps</p>
-
-  <div class="nv-apps__grid">
-    <!-- Card 1 -->
-    <article class="nv-apps__card">
-      <div class="nv-apps__qr">
-        <img src="_static/qr/novakey.png" alt="NovaKey Phone App QR code" loading="lazy" />
-      </div>
-      <div class="nv-apps__name">NovaKey</div>
-      <div class="nv-apps__meta">iOS</div>
-    <div class="nv-apps__badges">
-      <a class="nv-badge" href="https://apps.apple.com/us/app/novakey-app/id6757251186" rel="noopener">
-        <img src="_static/badges/app-store.svg" alt="Download from the Apple App Store" />
-      </a>
-    </div>
-    </article>
-  </div>
-</section>
 
 
 ## Step 1 — Open NovaKey and add a Listener
