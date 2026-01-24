@@ -151,8 +151,12 @@ If the daemon is listening, you’re ready to pair.
    * **Port:** `60768`
 5. Enable **Make Send Target**
 6. Tap **Add**
+![NovaKey-iOS-App Add Listener](https://novakey.app/en/latest/assets/screenshots/Fill-In-Listener-Info.png)
 
-> ⚠️ A Send Target must be selected to pair or send secrets.
+You will now see your listener added.
+![NovaKey-iOS-App shows Listener Added](https://novakey.app/en/latest/assets/screenshots/You-Will-See-Listener-Added.png)
+
+> ⚠️  A Send Target must be selected to pair or send secrets.
 
 ---
 
@@ -161,10 +165,14 @@ If the daemon is listening, you’re ready to pair.
 ### On your phone
 
 1. Go to **Listeners**
-2. Select your listener (or swipe right)
+![NovaKey-iOS-App Go to Listeners](https://novakey.app/en/latest/assets/screenshots/Go-To-Listeners.png)
+2. Select your listener (*or swipe right*)
 3. Tap **Pair**
+![NovaKey-iOS-App Pair](https://novakey.app/en/latest/assets/screenshots/novakey-swipe-pair-send-listener.PNG)
 4. Tap **Scan QR Code**
+![NovaKey-iOS-App Scan QR](https://novakey.app/en/latest/assets/screenshots/novakey-scan-qr.PNG)
 5. Allow camera access if prompted
+![NovaKey-iOS-App Approve Camera Access](https://novakey.app/en/latest/assets/screenshots/Approve-Camera-Access.png)
 
 ---
 
@@ -186,6 +194,7 @@ If the daemon is listening, you’re ready to pair.
 3. Allow local network access when prompted
 
 When pairing succeeds, the listener will show **Paired**.
+![NovaKey-iOS-App Allow NovaKey to find devices on the local network](https://novakey.app/en/latest/assets/screenshots/Allow-NovaKey-Local-Net-Access.png)
 
 ---
 
@@ -193,6 +202,7 @@ When pairing succeeds, the listener will show **Paired**.
 
 1. Tap **+**
 2. Enter a label and secret
+![NovaKey-iOS-App New Secret](https://novakey.app/en/latest/assets/screenshots/novakey-new-secret.PNG)
 3. Confirm and tap **Save**
 
 NovaKey intentionally never displays secrets again after saving.
@@ -203,7 +213,11 @@ NovaKey intentionally never displays secrets again after saving.
 
 1. Tap the secret
 2. Tap **Arm Computer**
+![NovaKey-iOS-App Arm Computer](https://novakey.app/en/latest/assets/screenshots/Select-Arm-Computer.png)  
+![NovaKey-iOS-App Successful Arm Message](https://novakey.app/en/latest/assets/screenshots/Successful-Arm-Message.png)  
 3. Tap **Send**
+![NovaKey-iOS-App Send Secret](https://novakey.app/en/latest/assets/screenshots/Select-Send-Secret.png)
+![NovaKey-iOS-App Successful Sent Secret](https://novakey.app/en/latest/assets/screenshots/Successfully-Inject-Secret-On-Remote-Device.png)  
 4. Authenticate with Face ID or device passcode
 
 Possible outcomes:
