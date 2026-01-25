@@ -6,7 +6,7 @@ This guide walks you through everything you need to do after installing the **No
 
 ## What you need
 
-* An iPhone with the **NovaKey** app installed
+* An Phone with the **NovaKey** app installed
 * A computer running **NovaKey-Daemon** (Windows, macOS, or Linux)
 * A local network connection (phone and computer on the same network)
 
