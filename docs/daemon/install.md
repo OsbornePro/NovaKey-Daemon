@@ -145,7 +145,8 @@ Enable **NovaKey** under:
 * **Accessibility**
 * **Input Monitoring**
 
-The daemon will not function correctly until both are enabled.
+The daemon will not function correctly until both are enabled.  
+To add the accessibility permissions you need to add the novakey binary in `~/.local/share/novakey/bin/novakey` to **System Settings** > **Privacy & Security** > **Accessibility**   
 
 ![Screenshot where to add accessibility permissions](https://novakey.app/en/latest/assets/screenshots/macos-accessibilty-options.png)
 ![Screenshot of added accessibility permissions](https://novakey.app/en/latest/assets/screenshots/macos-added-accessibility-perms.png)
