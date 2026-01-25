@@ -176,6 +176,7 @@ You will now see your listener added.
 
 1. Verify the device information on your phone
 2. Tap **Pair**
+![NovaKey-iOS-App Verify Pairing](https://novakey.app/en/latest/assets/screenshots/Verify-IP-Port-Select-Pair.png)
 3. Allow local network access when prompted
 
 When pairing succeeds, the listener will show **Paired**.
