@@ -1,5 +1,9 @@
 # NovaKey-Daemon Troubleshooting
 
+**If you purchased the phone app and you can't get it to work please reach out so I can help.**  
+[Email Me](mailto:help@osbornepro.on.spiceworks.com)  
+  
+
 ## “Nothing types” / injection fails
 ### Linux
 - Wayland may block injection depending on compositor and security settings.
