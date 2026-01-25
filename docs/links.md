@@ -40,7 +40,7 @@ NovaKey is composed of several open-source components. Each repository serves a 
 ---
 
 ## Project & Author
-- Website: [https://novakey.app/en/latest/links/](https://osbornepro.com)
+- Developer Website: [https://osbornepro.com/](https://osbornepro.com)
 - Maintainer: Robert H. Osborne
 
 The website provides project background, contact information, and related work.
