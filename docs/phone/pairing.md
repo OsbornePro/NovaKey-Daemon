@@ -7,8 +7,8 @@ This guide walks you through everything you need to do after installing the **No
 ## What you need
 
 * An Phone with the **NovaKey** app installed
-* A computer running **NovaKey-Daemon** (Windows, macOS, or Linux)
-* A local network connection (phone and computer on the same network)
+* A computer running **NovaKey-Daemon** (*Windows, macOS, or Linux*)
+* A local network connection (*phone and computer on the same network*)
 
 NovaKey does **not** use cloud services.
 All secrets remain local to your devices.
