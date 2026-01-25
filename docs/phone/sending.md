@@ -43,8 +43,12 @@ If the computer is not armed, sending is blocked.
 5. Watch for a result message:
    - **Sent to <Computer>**
    - or **📋 Copied to clipboard on <Computer>** (*when injection is blocked*)
+![Screenshot where Linux cannot inject and copies to clipboard](https://novakey.app/en/latest/assets/screenshots/linux-clipboard-fallback.png)
 
 > If no Send Target is selected, sending is blocked.
+> If you armed the computer and received a message it was not armed, restart the novakey service and try again.
+
+![Screenshot where Linux cannot inject and copies to clipboard](https://novakey.app/en/latest/assets/screenshots/linux-requires-restart-service.png)
 
 ---
 
@@ -83,3 +87,5 @@ When this happens:
 - NovaKey clearly indicates clipboard delivery, for example:
   - **📋 Copied to clipboard on <Computer>**
 - Any additional message from the daemon is shown when available
+
+![Screenshot where Linux cannot inject and copies to clipboard](https://novakey.app/en/latest/assets/screenshots/linux-clipboard-fallback.png)

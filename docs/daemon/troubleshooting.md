@@ -100,6 +100,9 @@ ensures a clean and verifiable security state.
 ## “Not armed”
 - Arm gate is enabled and active.
 - Trigger arming locally (or via the Arm API if enabled and loopback-only).
+- Restart the novakey service on your computer and try again.
+
+![Screenshot where Linux cannot inject and copies to clipboard](https://novakey.app/en/latest/assets/screenshots/linux-requires-restart-service.png)
 
 ## “Needs approval”
 - Two-Man Mode is enabled and injection requires an approve step inside an approval window.

@@ -112,6 +112,8 @@ This is a safety feature to prevent unattended injection.
   
 If you did send the arming code, restart the NovaKey-Daemon service on your device then try arming and sending again from your phone.
 
+![Screenshot where Linux cannot inject and copies to clipboard](https://novakey.app/en/latest/assets/screenshots/linux-requires-restart-service.png)
+
 ---
 
 ### “Decrypt auth error” after switching target computer
