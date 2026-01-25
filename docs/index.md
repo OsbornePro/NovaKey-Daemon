@@ -1,5 +1,8 @@
 # NovaKey Apps
 
+**If you purchased the phone app and you can't get it to work please reach out so I can help.**  
+[Email Me](mailto:security@novakey.app)  
+  
 NovaKey is designed as a password manager for password managers (*e.g., Bitwarden, LastPass, KeePass, 1Pass, Keeper*)  
   
 In technical terms this is a secure secret delivery system designed to send sensitive data such as a password from your phone to a trusted computer **without exposing secrets on the screen**.  

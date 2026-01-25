@@ -1,5 +1,9 @@
 # Getting Started
 
+**If you purchased the phone app and you can't get it to work please reach out so I can help.**  
+[Email Me](mailto:security@novakey.app)  
+  
+
 ## What you need
 - An iPhone running the NovaKey iOS app
 - A computer running NovaKey-Daemon
