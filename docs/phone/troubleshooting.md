@@ -6,7 +6,7 @@ NovaKey is intentionally strict about pairing and message delivery.
 If something feels “locked down,” that is usually by design for safety.
   
 **If you purchased the phone app and you can't get it to work please reach out so I can help.**  
-[Email Me](mailto:security@novakey.app)
+[Email Me](mailto:help@osbornepro.on.spiceworks.com)
 
 ---
 

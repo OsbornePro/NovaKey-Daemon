@@ -1,7 +1,7 @@
 # Getting Started
 
 **If you purchased the phone app and you can't get it to work please reach out so I can help.**  
-[Email Me](mailto:security@novakey.app)  
+[Email Me](mailto:help@osbornepro.on.spiceworks.com)  
   
 
 ## What you need
