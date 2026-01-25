@@ -85,6 +85,7 @@ The installer:
 * Creates a **per-user Scheduled Task**
 * Starts the daemon automatically at login
 
+![Screenshot of Scheduled Task on Windows](https://novakey.app/en/latest/assets/screenshots/windows-verified-novakey-task-running.png)
 No administrator privileges are required.
 
 ### 3) Permissions (first run)
