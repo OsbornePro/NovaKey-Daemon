@@ -78,6 +78,8 @@ NovaKey-Setup.exe
 * Double-click **NovaKey-Setup.exe**
 * Follow the on-screen prompts
 
+![Screenshot of pkg installer on macos](https://novakey.app/en/latest/assets/screenshots/macos-installer-in-finder.png)
+
 The installer:
 
 * Installs NovaKey into your user profile
@@ -144,6 +146,9 @@ Enable **NovaKey** under:
 * **Input Monitoring**
 
 The daemon will not function correctly until both are enabled.
+
+![Screenshot where to add accessibility permissions](https://novakey.app/en/latest/assets/screenshots/macos-accessibilty-options.png)
+![Screenshot of added accessibility permissions](https://novakey.app/en/latest/assets/screenshots/macos-added-accessibility-perms.png)
 
 ---
 
@@ -266,6 +271,8 @@ Get-NetTcpConnection -State Listen -LocalPort 60768
 launchctl list | grep novakey
 lsof -iTCP:60768 -sTCP:LISTEN
 ```
+
+![What successfully running macOS Service looks like](https://novakey.app/en/latest/assets/screenshots/macos-successfully-running-service.png)
 
 ---
 
