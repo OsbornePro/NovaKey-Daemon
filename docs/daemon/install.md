@@ -78,7 +78,6 @@ NovaKey-Setup.exe
 * Double-click **NovaKey-Setup.exe**
 * Follow the on-screen prompts
 
-![Screenshot of pkg installer on macos](https://novakey.app/en/latest/assets/screenshots/macos-installer-in-finder.png)
 
 The installer:
 
@@ -121,6 +120,8 @@ NovaKey-<version>-amd64.pkg
 
 * Double-click the `.pkg`
 * Follow the installer prompts
+
+![Screenshot of pkg installer on macos](https://novakey.app/en/latest/assets/screenshots/macos-installer-in-finder.png)
 
 The installer:
 
