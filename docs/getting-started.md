@@ -55,10 +55,6 @@ The daemon will start automatically after installation.
 4. Turn on **Make Send Target**
 5. Tap **Add**
 
-Yes — it’s mostly clear, but a few small edits will make it **much clearer, more accurate, and more professional**, especially for Windows/macOS users and troubleshooting.
-
-Here’s a polished version with improved clarity and correctness:
-
 ---
 
 ## Step 2 — Pair via QR
