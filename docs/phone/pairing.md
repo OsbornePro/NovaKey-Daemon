@@ -127,6 +127,7 @@ If the daemon is listening, you’re ready to pair.
 
 1. Open the **NovaKey** app
 2. Tap **Listeners** (antenna icon)
+![NovaKey-iOS-App Go to Listeners](https://novakey.app/en/latest/assets/screenshots/Go-To-Listeners.png)
 3. Tap **Add Listener**
 4. Enter:
 
