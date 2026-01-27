@@ -104,6 +104,6 @@ If NovaKey’s data practices change, this Privacy Policy will be updated accord
 
 If you have questions about this Privacy Policy:
 
-- Website: https://osbornepro.com
+- Website: [https://osbornepro.com](https://osbornepro.com)
 - Maintainer: Robert Osborne
-- Email: security@novakey.app
+- Email: [security@novakey.app](mailto:security@novakey.app)
