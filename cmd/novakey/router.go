@@ -14,6 +14,7 @@ import (
 const (
 	routerMagic  = "NOVAK/1"
 	routerMaxHdr = 1024 // max bytes to read for the first route line
+    runnerClient *RunnerClient
 )
 
 func startUnifiedListener() error {

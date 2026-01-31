@@ -13,6 +13,10 @@ func main() {
 	}
 	initLoggingFromConfig()
 
+    if cfg.ActionsEnabled {
+        runnerClient = NewRunnerClient()
+    }
+
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)
 	}

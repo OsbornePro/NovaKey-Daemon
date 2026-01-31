@@ -70,6 +70,16 @@ type ServerConfig struct {
 	AllowedWindowTitles []string `json:"allowed_window_titles" yaml:"allowed_window_titles"`
 	DeniedProcessNames  []string `json:"denied_process_names" yaml:"denied_process_names"`
 	DeniedWindowTitles  []string `json:"denied_window_titles" yaml:"denied_window_titles"`
+
+    // NovaKey-Runner Options
+    // Runner / Actions
+    ActionsEnabled        bool   `json:"actions_enabled" yaml:"actions_enabled"`
+    RunnerTransport       string `json:"runner_transport" yaml:"runner_transport"` // unix|tcp|auto
+    RunnerAddr            string `json:"runner_addr" yaml:"runner_addr"`           // /run/novakey/runner.sock OR 127.0.0.1:60769
+    RunnerMaxFrameBytes   int    `json:"runner_max_frame_bytes" yaml:"runner_max_frame_bytes"`
+
+    ArmConsumeOnAction    *bool  `json:"arm_consume_on_action" yaml:"arm_consume_on_action"`
+    ApproveConsumeOnAction *bool `json:"approve_consume_on_action" yaml:"approve_consume_on_action"`
 }
 
 var cfg ServerConfig
@@ -216,5 +226,29 @@ func applyDefaults() {
 		len(cfg.DeniedProcessNames) == 0 && len(cfg.DeniedWindowTitles) == 0 {
 		cfg.UseBuiltInAllowlist = true
 	}
+
+    // NovaKey-Runner Defaults
+    if cfg.RunnerTransport == "" {
+    cfg.RunnerTransport = "auto"
+    }
+    if cfg.RunnerAddr == "" {
+        // match runner defaults
+        if runtime.GOOS == "windows" {
+            cfg.RunnerAddr = "127.0.0.1:60769"
+        } else {
+            cfg.RunnerAddr = "/run/novakey/runner.sock"
+        }
+    }
+    if cfg.RunnerMaxFrameBytes == 0 {
+        cfg.RunnerMaxFrameBytes = 1 << 20 // 1MB
+    }
+    if cfg.ArmConsumeOnAction == nil {
+        v := true
+        cfg.ArmConsumeOnAction = &v
+    }
+    if cfg.ApproveConsumeOnAction == nil {
+        v := true
+        cfg.ApproveConsumeOnAction = &v
+    }
 }
 

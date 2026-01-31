@@ -58,3 +58,13 @@ allow_typing_fallback: true
 macos_prefer_clipboard: true
 allow_clipboard_when_disarmed: false
 allow_clipboard_on_inject_failure: true
+# On Linux
+actions_enabled: true
+runner_transport: auto
+runner_addr: /run/novakey/runner.sock
+arm_consume_on_action: true
+runner_max_frame_bytes: 1048576
+approve_consume_on_action: true
+# on Windows
+#runner_transport: tcp
+#runner_addr: 127.0.0.1:60769

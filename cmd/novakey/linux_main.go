@@ -7,11 +7,16 @@ import (
 	"log"
 )
 
+
 func main() {
 	if err := loadConfig(); err != nil {
 		log.Fatalf("loadConfig failed: %v", err)
 	}
 	initLoggingFromConfig()
+
+    if cfg.ActionsEnabled {
+        runnerClient = NewRunnerClient()
+    }
 
 	if err := initCrypto(); err != nil {
 		log.Fatalf("initCrypto failed: %v", err)

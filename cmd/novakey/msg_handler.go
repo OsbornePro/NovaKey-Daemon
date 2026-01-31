@@ -13,6 +13,13 @@ import (
 	"time"
 )
 
+type execEnvelope struct {
+    Op    string         `json:"op"`
+    Action string        `json:"action"`
+    Params map[string]any `json:"params"`
+    Req   string         `json:"req"`
+    TTLMS int            `json:"ttl_ms"`
+}
 // handleMsgConn is used by router.go for "/msg".
 // It owns the connection and must close it.
 func handleMsgConn(conn net.Conn) error {
@@ -115,6 +122,54 @@ func handleMsgConn(conn net.Conn) error {
 
 	// ---- INJECT path ----
 	password := string(payload)
+
+    // If payload looks like an exec request, route to runner (no shell).
+    if cfg.ActionsEnabled && len(payload) > 0 && payload[0] == '{' {
+        var env execEnvelope
+        if err := json.Unmarshal(payload, &env); err == nil && env.Op == "exec" && env.Action != "" && env.Req != "" {
+            // Enforce gates (same posture as injection)
+            if boolDeref(cfg.TwoManEnabled, true) {
+                consume := boolDeref(cfg.ApproveConsumeOnAction, true)
+                if !approvalGate.Consume(deviceID, consume) {
+                    respond(StatusNeedsApprove, StageInject, ReasonNeedsApprove, "needs approve")
+                    return nil
+                }
+            }
+
+            consumeArm := boolDeref(cfg.ArmConsumeOnAction, true)
+            if !armGate.Consume(consumeArm) {
+                respond(StatusNotArmed, StageInject, ReasonNotArmed, "not armed")
+                return nil
+            }
+
+            // Call runner
+            if runnerClient == nil {
+                respond(StatusInternal, StageInject, ReasonInternal, "runner not configured")
+                return nil
+            }
+
+            ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+            defer cancel()
+
+            rresp, err := runnerClient.Exec(ctx, env.Req, env.Action, env.Params, deviceID, remote)
+            if err != nil {
+                logReqf(reqID, "runner exec failed: %v", err)
+                respond(StatusInternal, StageInject, ReasonInternal, "exec failed")
+                return nil
+            }
+            if !rresp.OK {
+                // Keep client-safe reason; include details in msg
+                respond(StatusInternal, StageInject, ReasonInternal,
+                    fmt.Sprintf("exec error action=%s exit=%d err=%s", env.Action, rresp.ExitCode, rresp.Error))
+                return nil
+            }
+
+            respond(StatusOK, StageInject, ReasonOK,
+                fmt.Sprintf("exec ok action=%s exit=%d", env.Action, rresp.ExitCode))
+            return nil
+        }
+    }
+
 	logReqf(reqID, "decrypted payload from device=%q (len=%d)", deviceID, len(payload))
 
 	// Unsafe-text filter
