@@ -2,15 +2,16 @@
 package main
 
 import (
-	"encoding/binary"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net"
-	"os"
-	"strings"
-	"time"
+    "context"
+    "encoding/binary"
+    "encoding/json"
+    "errors"
+    "fmt"
+    "io"
+    "net"
+    "os"
+    "strings"
+    "time"
 )
 
 type execEnvelope struct {
@@ -20,6 +21,7 @@ type execEnvelope struct {
     Req   string         `json:"req"`
     TTLMS int            `json:"ttl_ms"`
 }
+
 // handleMsgConn is used by router.go for "/msg".
 // It owns the connection and must close it.
 func handleMsgConn(conn net.Conn) error {

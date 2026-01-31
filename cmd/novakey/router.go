@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	routerMagic  = "NOVAK/1"
-	routerMaxHdr = 1024 // max bytes to read for the first route line
-    runnerClient *RunnerClient
+    routerMagic  = "NOVAK/1"
+    routerMaxHdr = 1024
 )
+var runnerClient *RunnerClient
 
 func startUnifiedListener() error {
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
