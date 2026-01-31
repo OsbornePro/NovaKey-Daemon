@@ -6,6 +6,7 @@ import (
     "encoding/binary"
     "encoding/json"
     "fmt"
+    "io"
     "net"
     "runtime"
     "strings"
