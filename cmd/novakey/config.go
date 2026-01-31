@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+    "runtime"
 
 	"gopkg.in/yaml.v3"
 )
@@ -117,6 +118,16 @@ func loadConfig() error {
 }
 
 func pickConfigPath() string {
+	// 1) Prefer OS-specific locations (user-level), then system fallback
+	paths := candidateConfigPaths()
+
+	for _, p := range paths {
+		if fileExists(p) {
+			return p
+		}
+	}
+
+	// 2) Final fallback: current directory (existing behavior)
 	if fileExists(defaultYAML) {
 		return defaultYAML
 	}
@@ -124,6 +135,49 @@ func pickConfigPath() string {
 		return defaultYML
 	}
 	return defaultJSON
+}
+
+func candidateConfigPaths() []string {
+	var out []string
+
+	// Windows: %LOCALAPPDATA%\NovaKey\server_config.yaml
+	if runtime.GOOS == "windows" {
+		if lad := os.Getenv("LOCALAPPDATA"); lad != "" {
+			out = append(out,
+				filepath.Join(lad, "NovaKey", defaultYAML),
+				filepath.Join(lad, "NovaKey", defaultYML),
+				filepath.Join(lad, "NovaKey", defaultJSON),
+			)
+		}
+		return out
+	}
+
+	// Linux/macOS: user share/app support
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		// Linux: ~/.local/share/novakey/server_config.yaml
+		out = append(out,
+			filepath.Join(home, ".local", "share", "novakey", defaultYAML),
+			filepath.Join(home, ".local", "share", "novakey", defaultYML),
+			filepath.Join(home, ".local", "share", "novakey", defaultJSON),
+		)
+
+		// macOS: ~/Library/Application Support/NovaKey/server_config.yaml
+		out = append(out,
+			filepath.Join(home, "Library", "Application Support", "NovaKey", defaultYAML),
+			filepath.Join(home, "Library", "Application Support", "NovaKey", defaultYML),
+			filepath.Join(home, "Library", "Application Support", "NovaKey", defaultJSON),
+		)
+	}
+
+	// System fallback you mentioned (Linux): /usr/share/novakey/server_config.yaml
+	out = append(out,
+		filepath.Join(string(os.PathSeparator), "usr", "share", "novakey", defaultYAML),
+		filepath.Join(string(os.PathSeparator), "usr", "share", "novakey", defaultYML),
+		filepath.Join(string(os.PathSeparator), "usr", "share", "novakey", defaultJSON),
+	)
+
+	return out
 }
 
 func fileExists(path string) bool {
